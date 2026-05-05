@@ -5901,6 +5901,185 @@ function dev1BuildCaptureLeafName(index, item, effectiveUrl, effectiveTitle) {
     return `${String(index + 1).padStart(3, '0')}_${hostPart}_${titlePart}`;
 }
 
+function dev1BuildSnapshotHelperLeafName(kind = 'helper', item = {}) {
+    const rawIndex = dev1NormalizeQueueMetadataIndex(item?.queueDisplayIndex ?? item?.index);
+    const index = rawIndex != null ? rawIndex : 0;
+    const leafBase = dev1BuildCaptureLeafName(index, item, item?.url, item?.title);
+    const timePart = formatSyncTimeForFileName(new Date().toISOString());
+    const kindPart = dev1SanitizeFilePart(kind, 'helper', 32);
+    return `${leafBase}_${kindPart}_${timePart}`;
+}
+
+function dev1BuildSnapshotHelperTargetFolder(lang = 'zh_CN') {
+    const exportRootFolder = getExportRootFolderByLang(lang);
+    const snapshotFolder = getWebSnapshotExportFolderByLang(lang);
+    const runToken = formatWebSnapshotHourFolderName(new Date().toISOString());
+    return `${exportRootFolder}/${snapshotFolder}/${runToken}`;
+}
+
+function dev1GetSnapshotHelperFolderName(kind = '', lang = 'zh_CN') {
+    const normalized = String(kind || '').trim().toLowerCase();
+    if (normalized === 'long_screenshot') return lang === 'en' ? 'Long Screenshots' : '长截图';
+    if (normalized === 'screen_recording') return lang === 'en' ? 'Screen Recordings' : '屏幕录制';
+    return lang === 'en' ? 'Area Screenshots' : '区域截图';
+}
+
+async function dev1DownloadSnapshotHelperBlob(message = {}) {
+    const rawUrl = String(message?.url || '').trim();
+    if (!rawUrl) throw new Error('Missing helper blob URL');
+    const lang = message.lang === 'en' || message.lang === 'zh_CN'
+        ? message.lang
+        : await getCurrentLang();
+    const kind = String(message?.kind || 'area_screenshot').trim().toLowerCase() || 'area_screenshot';
+    const extension = dev1SanitizeFilePart(message?.extension || (kind === 'screen_recording' ? 'webm' : 'png'), 'png', 12).replace(/^\.+/, '') || 'png';
+    const targetFolder = String(message?.item?.snapshotHelperTargetFolder || message?.item?.targetFolder || '').trim()
+        || dev1BuildSnapshotHelperTargetFolder(lang);
+    const helperFolder = dev1GetSnapshotHelperFolderName(kind, lang);
+    const leafName = dev1BuildSnapshotHelperLeafName(kind, message?.item || {});
+    const filename = `${targetFolder}/${helperFolder}/${leafName}.${extension}`;
+    const downloadId = await new Promise((resolve, reject) => {
+        try {
+            browserAPI.downloads.download({
+                url: rawUrl,
+                filename,
+                saveAs: false,
+                conflictAction: 'uniquify'
+            }, (id) => {
+                if (browserAPI.runtime.lastError) {
+                    reject(new Error(browserAPI.runtime.lastError.message || 'Helper download failed'));
+                    return;
+                }
+                const downloadId = Number(id);
+                if (!Number.isFinite(downloadId)) {
+                    reject(new Error('Helper download returned empty id'));
+                    return;
+                }
+                resolve(downloadId);
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+    await dev1WaitForDownloadComplete(downloadId, DEV1_DOWNLOAD_TERMINAL_TIMEOUT_MS, filename);
+    return { success: true, downloadId, filename };
+}
+
+async function dev1ExecuteScriptFile(tabId, filePath) {
+    return await new Promise((resolve, reject) => {
+        try {
+            browserAPI.scripting.executeScript({
+                target: { tabId: Number(tabId) },
+                files: [String(filePath || '').trim()]
+            }, (results) => {
+                if (browserAPI.runtime.lastError) {
+                    reject(new Error(browserAPI.runtime.lastError.message || 'executeScript file failed'));
+                    return;
+                }
+                resolve(results || []);
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+async function dev1SnapshotHelperCaptureVisibleTab(sender = {}) {
+    const windowId = dev1NormalizeWindowId(sender?.tab?.windowId);
+    return await new Promise((resolve, reject) => {
+        try {
+            const callback = (dataUrl) => {
+                if (browserAPI.runtime.lastError) {
+                    reject(new Error(browserAPI.runtime.lastError.message || 'captureVisibleTab failed'));
+                    return;
+                }
+                if (!dataUrl) {
+                    reject(new Error('captureVisibleTab returned empty data'));
+                    return;
+                }
+                resolve({ success: true, dataUrl });
+            };
+            if (windowId != null) {
+                browserAPI.tabs.captureVisibleTab(windowId, { format: 'png' }, callback);
+            } else {
+                browserAPI.tabs.captureVisibleTab({ format: 'png' }, callback);
+            }
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+function dev1NormalizeSnapshotHelperItems(rawItems = []) {
+    if (!Array.isArray(rawItems)) return [];
+    return rawItems.map((raw, index) => {
+        const urlText = String(raw?.url || '').trim();
+        let parsed = null;
+        try {
+            parsed = new URL(urlText);
+        } catch (_) {
+            parsed = null;
+        }
+        if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) return null;
+        return {
+            index: dev1NormalizeQueueMetadataIndex(raw?.index) ?? index,
+            url: parsed.toString(),
+            title: String(raw?.title || '').trim(),
+            folderPath: String(raw?.folderPath || '').trim(),
+            domain: String(raw?.domain || parsed.hostname || '').trim(),
+            subdomain: String(raw?.subdomain || '').trim(),
+            existingTabId: dev1NormalizeTabId(raw?.existingTabId),
+            useExistingTab: raw?.useExistingTab === true && dev1NormalizeTabId(raw?.existingTabId) != null,
+            queueBatchIndex: dev1NormalizeQueueMetadataIndex(raw?.queueBatchIndex),
+            queueBatchPosition: dev1NormalizeQueueMetadataIndex(raw?.queueBatchPosition),
+            queueDisplayIndex: dev1NormalizeQueueMetadataIndex(raw?.queueDisplayIndex),
+            snapshotHelperTargetFolder: String(raw?.snapshotHelperTargetFolder || raw?.targetFolder || '').trim()
+        };
+    }).filter(Boolean);
+}
+
+async function dev1EnableSnapshotHelperForItems(rawItems = [], lang = 'zh_CN') {
+    const items = dev1NormalizeSnapshotHelperItems(rawItems);
+    if (!items.length) return { success: true, total: 0, injectedCount: 0, failedCount: 0, results: [] };
+    const normalizedLang = lang === 'en' ? 'en' : 'zh_CN';
+    const targetFolder = dev1BuildSnapshotHelperTargetFolder(normalizedLang);
+    const results = [];
+    for (const item of items) {
+        const tabId = dev1NormalizeTabId(item.existingTabId);
+        if (tabId == null) {
+            results.push({ success: false, url: item.url, error: 'Missing tab id' });
+            continue;
+        }
+        try {
+            await dev1ExecuteScriptFile(tabId, 'dev_1/mp4-muxer.js');
+            await dev1ExecuteScriptFile(tabId, 'dev_1/snapshot_helper_content.js');
+            const showResult = await dev1ExecuteScript(tabId, (config) => {
+                if (!window.__dev1SnapshotHelper || typeof window.__dev1SnapshotHelper.show !== 'function') {
+                    return { success: false, error: 'Snapshot helper unavailable' };
+                }
+                return window.__dev1SnapshotHelper.show(config);
+            }, [{
+                ...item,
+                lang: normalizedLang,
+                snapshotHelperTargetFolder: item.snapshotHelperTargetFolder || targetFolder
+            }]);
+            if (!showResult || showResult.success !== true) {
+                throw new Error(showResult?.error || 'Snapshot helper unavailable');
+            }
+            results.push({ success: true, tabId, url: item.url });
+        } catch (error) {
+            results.push({ success: false, tabId, url: item.url, error: error?.message || 'inject failed' });
+        }
+    }
+    const injectedCount = results.filter(item => item.success === true).length;
+    return {
+        success: injectedCount > 0 || results.length === 0,
+        total: results.length,
+        injectedCount,
+        failedCount: results.length - injectedCount,
+        results
+    };
+}
+
 async function dev1BlobToZipBytes(blob) {
     if (!(blob instanceof Blob)) return new Uint8Array();
     const buffer = await blob.arrayBuffer();
@@ -8939,6 +9118,45 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
             })();
             return true; // 保持消息通道开放
+        } else if (message.action === 'dev1EnableSnapshotHelperForItems') {
+            (async () => {
+                try {
+                    const result = await dev1EnableSnapshotHelperForItems(message?.items, message?.lang);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 helper inject failed'
+                    });
+                }
+            })();
+            return true;
+        } else if (message.action === 'dev1SnapshotHelperCaptureVisibleTab') {
+            (async () => {
+                try {
+                    const result = await dev1SnapshotHelperCaptureVisibleTab(sender);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 helper capture failed'
+                    });
+                }
+            })();
+            return true;
+        } else if (message.action === 'dev1SnapshotHelperDownloadBlob') {
+            (async () => {
+                try {
+                    const result = await dev1DownloadSnapshotHelperBlob(message);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 helper download failed'
+                    });
+                }
+            })();
+            return true;
         } else if (message.action === 'dev1GetCaptureRunState') {
             (async () => {
                 try {

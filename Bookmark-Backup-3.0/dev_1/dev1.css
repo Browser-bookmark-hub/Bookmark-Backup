@@ -1501,8 +1501,50 @@
     justify-content: flex-start;
 }
 
+.dev1-export-inline-row {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+}
+
+.dev1-export-inline-row > * {
+    flex: 0 0 auto;
+}
+
+.dev1-export-inline-label {
+    color: var(--text-secondary);
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.dev1-export-inline-row .dev1-format-fixed,
+.dev1-export-inline-row .dev1-snapshot-helper-toggle,
+.dev1-export-inline-row .dev1-snapshot-helper-toggle span {
+    white-space: nowrap;
+}
+
 .dev1-field-control select {
     width: 100%;
+}
+
+.dev1-snapshot-helper-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.dev1-snapshot-helper-toggle input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent-primary);
 }
 
 .dev1-sub-field-row {
@@ -1803,6 +1845,7 @@
 
 .dev1-cell-title {
     display: -webkit-box;
+    line-clamp: 2;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
@@ -2006,6 +2049,11 @@
     .dev1-field-row {
         grid-template-columns: 1fr;
         gap: 8px;
+    }
+
+    .dev1-export-inline-row {
+        display: flex;
+        gap: 10px;
     }
 
     .dev1-sub-field-row,

@@ -10,6 +10,7 @@
     const DEV1_WHITELIST_STORAGE_KEY = 'dev1_experiment_whitelist_v1';
     const DEV1_QUEUE_BATCH_SIZE_STORAGE_KEY = 'dev1_experiment_queue_batch_size_v2';
     const DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY = 'dev1_experiment_review_auto_review_ms_v1';
+    const DEV1_SNAPSHOT_HELPER_STORAGE_KEY = 'dev1_experiment_snapshot_helper_enabled_v1';
     const DEV1_REVIEW_WINDOW_EVENT_KEY = 'dev1ReviewWindowEventV1';
 
     const runtimeApi = (typeof chrome !== 'undefined' && chrome.runtime)
@@ -183,6 +184,13 @@
         reviewActiveSinceMs: 0,
         reviewAutoReviewMs: REVIEW_AUTO_REVIEW_DEFAULT_MS,
         reviewSettingsOpen: false,
+        snapshotHelperEnabled: (() => {
+            try {
+                return localStorage.getItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY) === 'true';
+            } catch (_) {
+                return false;
+            }
+        })(),
         queueBatchSize: QUEUE_BATCH_SIZE_DEFAULT,
         queueBatchIndex: 0,
         reviewSyncEventTimerId: null,
@@ -284,7 +292,7 @@
             scopeRefreshingCurrentChanges: '正在刷新当前变化...',
             exportFormats: '导出格式',
             exportTypesLabel: '导出类型',
-            mhtmlLoadedHint: 'MHTML 使用 Chrome 官方 pageCapture.saveAsMHTML API。它只能保存抓取瞬间浏览器已经加载出来的页面状态；论坛、长列表等虚拟滚动或懒加载内容支持可能不好，未渲染区域可能空白或缺失，当前无法在本地补齐这些未加载内容。',
+            mhtmlLoadedHint: 'MHTML 使用 Chrome 官方 pageCapture.saveAsMHTML API，仅保存抓取时已加载内容；未渲染或懒加载区域可能缺失。',
             exportHelp: '导出配置：固定导出 MHTML 文件到网页快照文件夹；不再生成 ZIP。复核列表由队列批大小控制。',
             exportModeSingleFile: '文件夹直出',
             exportModeBatchZip: '文件夹直出',
@@ -393,6 +401,13 @@
             scopeWhitelistBadge: '白名单',
             fmtMhtml: 'MHTML',
             fmtMhtmlOfficial: '官方 MHTML API',
+            snapshotHelperLabel: '辅助工具',
+            snapshotHelperTip: '勾选后，会按当前队列已打开页面的 Tab ID 注入悬浮工具：区域截图、长截图、屏幕录制。',
+            snapshotHelperHint: '辅助工具包含：区域截图、长截图、屏幕录制；输出会保存到网页快照目录下对应的辅助工具文件夹。',
+            snapshotHelperEnabledStatus: '辅助工具已启用',
+            snapshotHelperDisabledStatus: '辅助工具已关闭',
+            snapshotHelperPartialStatus: '部分页面未能启用辅助工具',
+            snapshotHelperFailed: '辅助工具启用失败',
             runBlockedNoFormat: '请至少选择一种导出格式。',
             runBlockedNoQueue: '当前没有可执行的 URL。',
             colIndex: '#',
@@ -485,7 +500,7 @@
             scopeRefreshingCurrentChanges: 'Refreshing Current Changes...',
             exportFormats: 'Export Formats',
             exportTypesLabel: 'Format Types',
-            mhtmlLoadedHint: 'MHTML uses Chrome\'s official pageCapture.saveAsMHTML API. It can only save the page state already loaded in the browser at capture time; forums, long lists, virtual scrolling, and lazy-loaded content may be incomplete or blank, and this local capture flow cannot reconstruct content that was never loaded.',
+            mhtmlLoadedHint: 'MHTML uses Chrome\'s official pageCapture.saveAsMHTML API and saves only content loaded at capture time; unloaded or lazy-loaded regions may be missing.',
             exportHelp: 'Export setup: MHTML files are written directly to the Web Snapshot folder; ZIP output is no longer generated. Review lists still follow the queue batch size.',
             exportModeSingleFile: 'Folder Files',
             exportModeBatchZip: 'Folder Files',
@@ -594,6 +609,13 @@
             scopeWhitelistBadge: 'Whitelisted',
             fmtMhtml: 'MHTML',
             fmtMhtmlOfficial: 'Official MHTML API',
+            snapshotHelperLabel: 'Helper Tools',
+            snapshotHelperTip: 'When checked, floating tools are injected by the opened queue tab IDs: area screenshot, long screenshot, and screen recording.',
+            snapshotHelperHint: 'Helper outputs are saved under the Web Snapshot folder in the matching helper-tool subfolders.',
+            snapshotHelperEnabledStatus: 'Helper tools enabled',
+            snapshotHelperDisabledStatus: 'Helper tools disabled',
+            snapshotHelperPartialStatus: 'Some pages could not enable helper tools',
+            snapshotHelperFailed: 'Failed to enable helper tools',
             runBlockedNoFormat: 'Pick at least one export format.',
             runBlockedNoQueue: 'No URLs available to run.',
             colIndex: '#',
@@ -1222,6 +1244,31 @@
         persistQueueBatchSize();
     }
 
+    function loadSavedSnapshotHelperEnabled() {
+        try {
+            state.snapshotHelperEnabled = localStorage.getItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY) === 'true';
+        } catch (_) {
+            state.snapshotHelperEnabled = false;
+        }
+    }
+
+    function persistSnapshotHelperEnabled() {
+        try {
+            localStorage.setItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY, state.snapshotHelperEnabled === true ? 'true' : 'false');
+        } catch (_) { }
+    }
+
+    function isSnapshotHelperEnabled() {
+        return state.snapshotHelperEnabled === true;
+    }
+
+    function setSnapshotHelperEnabled(enabled) {
+        state.snapshotHelperEnabled = enabled === true;
+        persistSnapshotHelperEnabled();
+        const input = document.getElementById('dev1SnapshotHelperCheckbox');
+        if (input instanceof HTMLInputElement) input.checked = state.snapshotHelperEnabled === true;
+    }
+
     function loadSavedReviewSession() {
         try {
             const raw = localStorage.getItem(DEV1_REVIEW_STORAGE_KEY);
@@ -1343,7 +1390,7 @@
                 queueReviewWindowEventSync(reviewWindowId, event);
                 return;
             }
-            syncReviewWindowQueue({ silentStatus: true, fromEvent: true, removeBatchOnMissing, pruneMissingItems }).then((synced) => {
+            syncReviewWindowQueue({ silentStatus: true, fromEvent: true, removeBatchOnMissing, pruneMissingItems, refreshSnapshotHelper: true }).then((synced) => {
                 if (synced && reason !== 'tab-removed' && reason !== 'window-removed') {
                     scheduleReviewAutoReviewCheck(reviewWindowId);
                 }
@@ -2184,6 +2231,58 @@
                 : '扩展响应被中断，请重载扩展后重试。';
         }
         return raw;
+    }
+
+    function buildSnapshotHelperMessageItems(queueItems = []) {
+        return cloneQueueItems(queueItems).map((item, index) => ({
+            index: getQueueItemDisplayIndex(item, index),
+            title: item.title,
+            url: item.url,
+            folderPath: item.folderPath,
+            domain: item.domain,
+            subdomain: item.subdomain,
+            existingTabId: item.existingTabId,
+            useExistingTab: item.useExistingTab === true,
+            queueBatchIndex: item.queueBatchIndex,
+            queueBatchPosition: item.queueBatchPosition,
+            queueDisplayIndex: item.queueDisplayIndex
+        }));
+    }
+
+    async function enableSnapshotHelperForQueue(queueItems = [], options = {}) {
+        if (!isSnapshotHelperEnabled()) return null;
+        const items = buildSnapshotHelperMessageItems(getActiveQueueItems(queueItems));
+        if (!items.length) return null;
+        const response = await sendRuntimeMessage({
+            action: 'dev1EnableSnapshotHelperForItems',
+            lang: getLangKey(),
+            items
+        }, 120000);
+        if (!response || response.success !== true) {
+            throw new Error(response?.error || t('snapshotHelperFailed'));
+        }
+        if (options?.silentStatus !== true) {
+            const failed = Number(response.failedCount) || 0;
+            setStatus(failed > 0 ? t('snapshotHelperPartialStatus') : t('snapshotHelperEnabledStatus'), failed > 0 ? 'warning' : 'success');
+        }
+        return response;
+    }
+
+    async function enableSnapshotHelperForQueueWithFallbackStatus(queueItems = [], fallbackStatusText = '') {
+        if (!isSnapshotHelperEnabled()) return false;
+        try {
+            const response = await enableSnapshotHelperForQueue(queueItems, { silentStatus: true });
+            const failed = Number(response?.failedCount) || 0;
+            if (failed > 0) {
+                setStatus(fallbackStatusText ? `${fallbackStatusText}; ${t('snapshotHelperPartialStatus')}` : t('snapshotHelperPartialStatus'), 'warning');
+                return true;
+            }
+        } catch (error) {
+            const errorText = `${t('snapshotHelperFailed')}: ${error?.message || ''}`;
+            setStatus(fallbackStatusText ? `${fallbackStatusText}; ${errorText}` : errorText, 'warning');
+            return true;
+        }
+        return false;
     }
 
     function formatTimeText(isoText) {
@@ -4868,6 +4967,26 @@
             });
         }
 
+        const snapshotHelperCheckbox = root.querySelector('#dev1SnapshotHelperCheckbox');
+        if (snapshotHelperCheckbox instanceof HTMLInputElement) {
+            snapshotHelperCheckbox.checked = isSnapshotHelperEnabled();
+            snapshotHelperCheckbox.addEventListener('change', () => {
+                setSnapshotHelperEnabled(snapshotHelperCheckbox.checked === true);
+                if (!isSnapshotHelperEnabled()) {
+                    setStatus(t('snapshotHelperDisabledStatus'), 'info');
+                    return;
+                }
+                const queueItems = getActiveQueueItems(getCurrentQueueBatchItems());
+                if (isQueuePreparedWithExistingTabs(queueItems)) {
+                    enableSnapshotHelperForQueue(queueItems).catch((error) => {
+                        setStatus(`${t('snapshotHelperFailed')}: ${error?.message || ''}`, 'warning');
+                    });
+                } else {
+                    setStatus(t('snapshotHelperEnabledStatus'), 'success');
+                }
+            });
+        }
+
         const openReviewBtn = root.querySelector('#dev1OpenReviewBtn');
         if (openReviewBtn) {
             openReviewBtn.addEventListener('click', async () => {
@@ -4877,7 +4996,8 @@
                     return;
                 }
                 if (isExistingTabReviewMode(queueItems)) {
-                    setStatus(t('reviewExistingTabModeReady'), 'info');
+                    const helperStatusShown = await enableSnapshotHelperForQueueWithFallbackStatus(queueItems, t('reviewExistingTabModeReady'));
+                    if (!helperStatusShown) setStatus(t('reviewExistingTabModeReady'), 'info');
                     renderReviewWorkflowPanel();
                     return;
                 }
@@ -5424,7 +5544,7 @@
         return getActiveQueueItems(getCurrentQueueBatchItems(nextQueue));
     }
 
-    async function syncReviewWindowQueue({ silentStatus = true, fromEvent = false, removeBatchOnMissing = false, pruneMissingItems = removeBatchOnMissing } = {}) {
+    async function syncReviewWindowQueue({ silentStatus = true, fromEvent = false, removeBatchOnMissing = false, pruneMissingItems = removeBatchOnMissing, refreshSnapshotHelper = false } = {}) {
         const reviewWindowId = getReviewWindowId();
         if (reviewWindowId == null) return false;
         if (state.reviewSyncInFlight) return false;
@@ -5544,6 +5664,9 @@
             } else {
                 renderReviewWorkflowPanel();
             }
+            if (refreshSnapshotHelper === true && isSnapshotHelperEnabled()) {
+                enableSnapshotHelperForQueue(getActiveQueueItems(nextSessionBatchItems), { silentStatus: true }).catch(() => { });
+            }
             return true;
         } catch (error) {
             const message = normalizeRuntimeErrorMessage(error, t('reviewSyncFailed'));
@@ -5623,7 +5746,9 @@
         ensureReviewEventSyncState();
         rerenderAllDataPanels();
         queueReviewWindowEventSync(response.windowId, { reason: 'review-opened' });
-        setStatus(`${t('reviewReady')} (${response.total || response.items.length})`, 'success');
+        const readyText = `${t('reviewReady')} (${response.total || response.items.length})`;
+        const helperStatusShown = await enableSnapshotHelperForQueueWithFallbackStatus(response.items, readyText);
+        if (!helperStatusShown) setStatus(readyText, 'success');
         return response.items;
     }
 
@@ -5699,7 +5824,8 @@
             markWorkflowStep('submitDone', true);
             markWorkflowStep('runDone', false);
             rerenderAllDataPanels();
-            setStatus(t('reviewSubmittedReady'), 'success');
+            const helperStatusShown = await enableSnapshotHelperForQueueWithFallbackStatus(queueItems, t('reviewSubmittedReady'));
+            if (!helperStatusShown) setStatus(t('reviewSubmittedReady'), 'success');
             return;
         }
 
@@ -5736,7 +5862,8 @@
         markWorkflowStep('submitDone', true);
         markWorkflowStep('runDone', false);
         rerenderAllDataPanels();
-        setStatus(t('reviewSubmittedReady'), 'success');
+        const helperStatusShown = await enableSnapshotHelperForQueueWithFallbackStatus(queueItems, t('reviewSubmittedReady'));
+        if (!helperStatusShown) setStatus(t('reviewSubmittedReady'), 'success');
     }
 
     async function closeReviewTabForQueueItem(item) {
@@ -6527,21 +6654,28 @@
                 <section class="dev1-card dev1-export-card">
                     <h3 class="dev1-card-title">
                         ${escapeHtml(t('exportFormats'))}
-                        <span class="dev1-help-dot" tabindex="0" data-tip="${escapeHtml(t('exportHelp'))}">?</span>
                     </h3>
-                    <div class="dev1-format-row dev1-field-row">
-                        <label>${escapeHtml(t('exportTypesLabel'))}</label>
-                        <div class="dev1-field-control">
-                            <div class="dev1-format-fixed">
-                                <span class="dev1-format-pill">${escapeHtml(t('fmtMhtml'))}</span>
-                                <span class="dev1-format-fixed-note">${escapeHtml(t('fmtMhtmlOfficial'))}</span>
-                            </div>
+                    <div class="dev1-format-row dev1-export-inline-row">
+                        <span class="dev1-export-inline-label">${escapeHtml(t('exportTypesLabel'))}</span>
+                        <div class="dev1-format-fixed">
+                            <span class="dev1-format-pill">${escapeHtml(t('fmtMhtml'))}</span>
                         </div>
+                        <span class="dev1-export-inline-label">${escapeHtml(t('snapshotHelperLabel'))}</span>
+                        <label class="dev1-check-inline dev1-snapshot-helper-toggle" title="${escapeHtml(t('snapshotHelperTip'))}">
+                            <input id="dev1SnapshotHelperCheckbox" type="checkbox" ${isSnapshotHelperEnabled() ? 'checked' : ''}>
+                            <span>${escapeHtml(t('snapshotHelperLabel'))}</span>
+                        </label>
                     </div>
                     <div id="dev1MhtmlHintRow" class="dev1-format-row dev1-export-note-row">
                         <div class="dev1-export-note">
                             <i class="fas fa-circle-info"></i>
                             <span>${escapeHtml(t('mhtmlLoadedHint'))}</span>
+                        </div>
+                    </div>
+                    <div class="dev1-format-row dev1-export-note-row">
+                        <div class="dev1-export-note">
+                            <i class="fas fa-toolbox"></i>
+                            <span>${escapeHtml(t('snapshotHelperHint'))}</span>
                         </div>
                     </div>
                 </section>
@@ -6660,6 +6794,7 @@
 
         if (!state.initialized) {
             loadSavedReviewAutoReviewMs();
+            loadSavedSnapshotHelperEnabled();
         }
         renderLayout(root);
         bindRootEvents(root);
