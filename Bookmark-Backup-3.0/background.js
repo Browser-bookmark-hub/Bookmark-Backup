@@ -3255,7 +3255,6 @@ async function persistHistoryOverwriteRevertMarkerByStrategy(appliedStrategy = '
             });
             return;
         }
-        await browserAPI.storage.local.remove([HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]);
     } catch (_) { }
 }
 
@@ -3330,7 +3329,7 @@ function resolveLatestOverwriteRevertMarkerFromHistory(records = []) {
     for (const record of list) {
         if (!record || typeof record !== 'object') continue;
         const recordType = String(record?.type || '').trim().toLowerCase();
-        if (recordType !== 'revert') continue;
+        if (recordType !== 'restore' && recordType !== 'revert') continue;
         if (resolveHistoryRecordOperationStrategyBg(record) !== 'overwrite') continue;
 
         const recordMs = getHistoryRecordTimeMsBg(record);
@@ -3346,12 +3345,20 @@ function resolveLatestOverwriteRevertMarkerFromHistory(records = []) {
 
 async function syncHistoryOverwriteRevertMarkerWithHistory(syncHistory = []) {
     try {
+        const list = Array.isArray(syncHistory) ? syncHistory : [];
         const markerValue = resolveLatestOverwriteRevertMarkerFromHistory(syncHistory);
         if (markerValue) {
             await browserAPI.storage.local.set({
                 [HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]: markerValue
             });
             return markerValue;
+        }
+        if (list.length > 0) {
+            const existing = await browserAPI.storage.local.get([HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]);
+            const existingMarker = String(existing?.[HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY] || '').trim();
+            if (getHistoryRecordTimeMsBg({ time: existingMarker }) > 0) {
+                return existingMarker;
+            }
         }
         await browserAPI.storage.local.remove([HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]);
         return '';
@@ -3485,6 +3492,13 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
         );
 
         const syncTime = new Date().toISOString();
+        if (normalizedStrategy === 'overwrite') {
+            try {
+                await browserAPI.storage.local.set({
+                    [HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]: syncTime
+                });
+            } catch (_) { }
+        }
         const snapshotNaming = buildSnapshotNamingContext({ syncTime });
         const getBookmarkTreeStabilitySignature = (tree) => {
             const roots = Array.isArray(tree) ? tree : [];

@@ -4027,6 +4027,34 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         return '';
     }
 
+    function resolveLatestOverwriteOperationMarkerFromRecords(records = []) {
+        const list = Array.isArray(records) ? records : [];
+        let latestRecord = null;
+        let latestMs = -1;
+
+        for (const record of list) {
+            if (!record || typeof record !== 'object') continue;
+            const recordType = String(record?.type || '').trim().toLowerCase();
+            if (recordType !== 'restore' && recordType !== 'revert') continue;
+            if (resolveHistoryRecordOperationStrategy(record) !== 'overwrite') continue;
+
+            const recordMs = getHistoryRecordTimeMs(record);
+            if (recordMs > latestMs) {
+                latestMs = recordMs;
+                latestRecord = record;
+            }
+        }
+
+        return latestRecord ? String(latestRecord?.time || '').trim() : '';
+    }
+
+    function resolveEffectiveHistoryOverwriteRevertMarkerTime(records = [], markerRawValue = '') {
+        if (getHistoryMarkerTimeMs(markerRawValue) > 0) {
+            return markerRawValue;
+        }
+        return resolveLatestOverwriteOperationMarkerFromRecords(records);
+    }
+
     function formatHistoryNoteTimeText(value) {
         const text = String(value || '').trim();
         if (!text) return '';
@@ -4201,10 +4229,14 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         const v2ToV3HistoryDividerIndex = Number.isFinite(Number(historyPageData?.v2ToV3HistoryDividerIndex))
             ? Number(historyPageData.v2ToV3HistoryDividerIndex)
             : -1;
+        const effectiveOverwriteRevertMarkerTime = resolveEffectiveHistoryOverwriteRevertMarkerTime(
+            syncHistory,
+            overwriteRevertMarkerSettings?.[HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]
+        );
         const latestOverwriteRevertLineInsertIndex = currentPage === 1
             ? resolveLatestOverwriteRevertLineInsertIndex(
                 syncHistory,
-                overwriteRevertMarkerSettings?.[HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]
+                effectiveOverwriteRevertMarkerTime
             )
             : -1;
 

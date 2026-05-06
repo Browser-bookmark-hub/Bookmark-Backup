@@ -5895,9 +5895,6 @@ async function executeRevert(strategy) {
                 await browserAPI.storage.local.set({
                     [HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]: historyOverwriteRevertMarkerTime
                 });
-            } else {
-                historyOverwriteRevertMarkerTime = '';
-                await browserAPI.storage.local.remove([HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]);
             }
         } catch (_) { }
 
@@ -10698,8 +10695,36 @@ function getHistoryMarkerTimeMs(rawValue) {
     return 0;
 }
 
-function resolveLatestOverwriteRevertDividerInsertIndex(records = []) {
-    const markerTimeMs = getHistoryMarkerTimeMs(historyOverwriteRevertMarkerTime);
+function resolveLatestOverwriteOperationMarkerFromRecords(records = []) {
+    const list = Array.isArray(records) ? records : [];
+    let latestRecord = null;
+    let latestMs = -1;
+
+    for (const record of list) {
+        if (!record || typeof record !== 'object') continue;
+        const recordType = String(record.type || '').trim().toLowerCase();
+        if (recordType !== 'restore' && recordType !== 'revert') continue;
+        if (resolveHistoryRecordOperationStrategy(record) !== 'overwrite') continue;
+
+        const recordMs = getHistoryRecordTimeMs(record);
+        if (recordMs > latestMs) {
+            latestMs = recordMs;
+            latestRecord = record;
+        }
+    }
+
+    return latestRecord ? String(latestRecord.time || '').trim() : '';
+}
+
+function resolveEffectiveHistoryOverwriteRevertMarkerTime(records = []) {
+    if (getHistoryMarkerTimeMs(historyOverwriteRevertMarkerTime) > 0) {
+        return historyOverwriteRevertMarkerTime;
+    }
+    return resolveLatestOverwriteOperationMarkerFromRecords(records);
+}
+
+function resolveLatestOverwriteRevertDividerInsertIndex(records = [], markerRawValue = historyOverwriteRevertMarkerTime) {
+    const markerTimeMs = getHistoryMarkerTimeMs(markerRawValue);
     if (!markerTimeMs || markerTimeMs <= 0) return -1;
 
     const list = Array.isArray(records) ? records : [];
@@ -10737,8 +10762,8 @@ function resolveLatestGenerationBoundaryDividerInsertIndex(records = []) {
 function buildLatestOverwriteRevertDivider(lang = currentLang) {
     const isZh = lang === 'zh_CN';
     const label = isZh
-        ? '执行了覆盖撤销（ID会变化，后续补丁将重建）'
-        : 'Overwrite revert executed (IDs changed, later patch flow rebuilds)';
+        ? '执行了覆盖恢复/撤销（ID会变化，后续补丁将重建）'
+        : 'Overwrite restore/revert executed (IDs changed, later patch flow rebuilds)';
     return `<div class="history-warning-divider latest-overwrite-revert" role="separator" aria-label="${escapeHtml(label)}">
         <span class="history-warning-divider-line" aria-hidden="true"></span>
         <span class="history-warning-divider-label"><i class="fas fa-exclamation-triangle"></i>${escapeHtml(label)}</span>
@@ -10815,9 +10840,10 @@ function renderHistoryView() {
     const pageRecords = (syncHistoryPageRecords.length > HISTORY_PAGE_SIZE && syncHistoryPageRecords.length === totalRecords)
         ? sortedRecords.slice(startIndex, startIndex + HISTORY_PAGE_SIZE)
         : sortedRecords;
-    const hasLatestOverwriteRevertMarker = getHistoryMarkerTimeMs(historyOverwriteRevertMarkerTime) > 0;
+    const effectiveOverwriteRevertMarkerTime = resolveEffectiveHistoryOverwriteRevertMarkerTime(syncHistory);
+    const hasLatestOverwriteRevertMarker = getHistoryMarkerTimeMs(effectiveOverwriteRevertMarkerTime) > 0;
     const latestOverwriteRevertDividerInsertIndex = (currentHistoryPage === 1 && hasLatestOverwriteRevertMarker)
-        ? resolveLatestOverwriteRevertDividerInsertIndex(pageRecords)
+        ? resolveLatestOverwriteRevertDividerInsertIndex(pageRecords, effectiveOverwriteRevertMarkerTime)
         : -1;
     const latestGenerationBoundaryDividerInsertIndex = resolveLatestGenerationBoundaryDividerInsertIndex(pageRecords);
     const useGenerationBoundaryFallback = !hasLatestOverwriteRevertMarker && latestGenerationBoundaryDividerInsertIndex >= 0;
