@@ -9004,7 +9004,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const currentChangesArchiveModeHelpBtn = document.getElementById('currentChangesArchiveModeHelpBtn');
     if (currentChangesArchiveModeHelpBtn) {
         currentChangesArchiveModeHelpBtn.setAttribute('aria-label', currentChangesArchiveModeHelpAriaText);
-        currentChangesArchiveModeHelpBtn.setAttribute('title', currentChangesArchiveModeHelpTitleText);
+        currentChangesArchiveModeHelpBtn.removeAttribute('title');
     }
 
     const backupStrategyHelpBtn = document.getElementById('backupStrategyHelpBtn');
@@ -20292,6 +20292,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!currentChangesModeHelpTooltip) return;
         currentChangesModeHelpTooltip.style.opacity = '0';
         currentChangesModeHelpTooltip.style.transform = 'translateY(5px)';
+        if (currentChangesArchiveModeHelpBtn) {
+            currentChangesArchiveModeHelpBtn.classList.remove('active');
+            currentChangesArchiveModeHelpBtn.setAttribute('aria-expanded', 'false');
+        }
         const tooltipToRemove = currentChangesModeHelpTooltip;
         currentChangesModeHelpTooltip = null;
         setTimeout(() => {
@@ -20301,6 +20305,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const showCurrentChangesModeHelpTooltip = () => {
         if (currentChangesModeHelpTooltip || !currentChangesArchiveModeHelpBtn) return;
+        currentChangesArchiveModeHelpBtn.classList.add('active');
+        currentChangesArchiveModeHelpBtn.setAttribute('aria-expanded', 'true');
 
         currentChangesModeHelpTooltip = document.createElement('div');
         currentChangesModeHelpTooltip.style.cssText = `
@@ -20374,8 +20380,6 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     if (currentChangesArchiveModeHelpBtn) {
-        currentChangesArchiveModeHelpBtn.addEventListener('mouseenter', showCurrentChangesModeHelpTooltip);
-        currentChangesArchiveModeHelpBtn.addEventListener('mouseleave', removeCurrentChangesModeHelpTooltip);
         currentChangesArchiveModeHelpBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -20383,6 +20387,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 removeCurrentChangesModeHelpTooltip();
             } else {
                 showCurrentChangesModeHelpTooltip();
+            }
+        });
+        currentChangesArchiveModeHelpBtn.setAttribute('aria-expanded', 'false');
+        document.addEventListener('click', (e) => {
+            if (!currentChangesModeHelpTooltip) return;
+            if (currentChangesArchiveModeHelpBtn.contains(e.target)) return;
+            removeCurrentChangesModeHelpTooltip();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                removeCurrentChangesModeHelpTooltip();
             }
         });
     }
