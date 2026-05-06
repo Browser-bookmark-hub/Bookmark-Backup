@@ -4214,6 +4214,27 @@ function dev1NormalizeWindowId(value) {
     return normalized >= 0 ? normalized : null;
 }
 
+function dev1NormalizeTabGroupId(value) {
+    const id = Number(value);
+    if (!Number.isFinite(id)) return -1;
+    return Math.floor(id);
+}
+
+function dev1NormalizeAllTabsFolderSegment(value, fallback = '') {
+    const text = String(value || '').trim() || String(fallback || '').trim();
+    return text.replace(/\s*\/\s*/g, '／').trim();
+}
+
+async function dev1QueryTabGroupsSafe(queryInfo = {}) {
+    if (!browserAPI?.tabGroups || typeof browserAPI.tabGroups.query !== 'function') return [];
+    try {
+        const groups = await browserAPI.tabGroups.query(queryInfo);
+        return Array.isArray(groups) ? groups : [];
+    } catch (_) {
+        return [];
+    }
+}
+
 function dev1NormalizeTabId(value) {
     const id = Number(value);
     if (!Number.isFinite(id)) return null;
@@ -4747,12 +4768,28 @@ function dev1BuildBookmarkSourceItemsFromTree(tree) {
     return items;
 }
 
-function dev1BuildAllWindowTabsSourceItems(tabs = []) {
+function dev1BuildAllWindowTabsSourceItems(tabs = [], tabGroups = [], options = {}) {
     const rows = Array.isArray(tabs) ? tabs : [];
+    const groupById = new Map();
+    (Array.isArray(tabGroups) ? tabGroups : []).forEach((group) => {
+        const groupId = dev1NormalizeTabGroupId(group?.id);
+        if (groupId < 0 || groupById.has(groupId)) return;
+        groupById.set(groupId, group);
+    });
+    const groupStartIndexByKey = new Map();
+    rows.forEach((tab, sourceOrder) => {
+        const windowId = dev1NormalizeWindowId(tab?.windowId);
+        const groupId = dev1NormalizeTabGroupId(tab?.groupId);
+        const rawTabIndex = Number(tab?.index);
+        const tabIndex = Number.isFinite(rawTabIndex) ? Math.floor(rawTabIndex) : sourceOrder;
+        const key = `${windowId == null ? 'unknown' : windowId}::${groupId}`;
+        const previous = groupStartIndexByKey.get(key);
+        if (previous == null || tabIndex < previous) groupStartIndexByKey.set(key, tabIndex);
+    });
     const items = [];
     const seenTabIds = new Set();
 
-    rows.forEach((tab) => {
+    rows.forEach((tab, sourceOrder) => {
         const tabId = dev1NormalizeTabId(tab?.id);
         if (tabId == null || seenTabIds.has(tabId)) return;
         seenTabIds.add(tabId);
@@ -4769,13 +4806,30 @@ function dev1BuildAllWindowTabsSourceItems(tabs = []) {
         if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) return;
 
         const windowId = dev1NormalizeWindowId(tab?.windowId);
+        const rawTabIndex = Number(tab?.index);
+        const tabIndex = Number.isFinite(rawTabIndex) ? Math.floor(rawTabIndex) : sourceOrder;
+        const groupId = dev1NormalizeTabGroupId(tab?.groupId);
+        const group = groupId >= 0 ? (groupById.get(groupId) || null) : null;
+        const groupTitle = group ? dev1NormalizeAllTabsFolderSegment(group.title, `Group ${groupId}`) : '';
+        const groupKey = `${windowId == null ? 'unknown' : windowId}::${groupId}`;
+        const groupSortIndex = groupStartIndexByKey.has(groupKey) ? groupStartIndexByKey.get(groupKey) : tabIndex;
         const domainParts = dev1GetDomainPartsFromHostname(parsed.hostname);
-        const folderPath = windowId == null ? '' : `Window ${windowId}`;
+        const windowLabel = windowId == null ? '' : dev1NormalizeAllTabsFolderSegment(`Window ${windowId}`);
+        const folderPath = groupTitle
+            ? (windowLabel ? `${windowLabel} / ${groupTitle}` : groupTitle)
+            : (windowLabel || '');
 
         items.push({
             id: `tab_${tabId}`,
             tabId,
             windowId,
+            groupId,
+            groupTitle,
+            groupColor: String(group?.color || '').trim(),
+            groupCollapsed: group?.collapsed === true,
+            groupSortIndex,
+            tabIndex,
+            sourceOrder,
             url: parsed.toString(),
             title: String(tab?.title || parsed.toString()).trim() || parsed.toString(),
             folderPath,
@@ -5091,7 +5145,8 @@ async function dev1GetReviewWindowTabsSource(windowId) {
     }
 
     const tabs = await browserAPI.tabs.query({ windowId: reviewWindowId });
-    const items = dev1BuildAllWindowTabsSourceItems(tabs).map((item) => ({
+    const tabGroups = await dev1QueryTabGroupsSafe({ windowId: reviewWindowId });
+    const items = dev1BuildAllWindowTabsSourceItems(tabs, tabGroups).map((item) => ({
         ...item,
         reviewWindowId
     }));
@@ -9019,7 +9074,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             (async () => {
                 try {
                     const tabs = await browserAPI.tabs.query({});
-                    const items = dev1BuildAllWindowTabsSourceItems(tabs);
+                    const tabGroups = await dev1QueryTabGroupsSafe({});
+                    const items = dev1BuildAllWindowTabsSourceItems(tabs, tabGroups, { lang: message?.lang });
                     sendResponse({
                         success: true,
                         source: 'all_window_tabs',

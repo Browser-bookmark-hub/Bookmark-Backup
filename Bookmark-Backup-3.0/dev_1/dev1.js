@@ -184,6 +184,7 @@
         reviewActiveSinceMs: 0,
         reviewAutoReviewMs: REVIEW_AUTO_REVIEW_DEFAULT_MS,
         reviewSettingsOpen: false,
+        queueClearConfirmOpen: false,
         snapshotHelperEnabled: (() => {
             try {
                 return localStorage.getItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY) === 'true';
@@ -317,7 +318,10 @@
             reviewSettingsSaved: '复核停留时间已更新。',
             queueClear: '清空',
             queueCleared: '抓取队列已清空。',
-            queueClearConfirm: '确认清空当前抓取队列与复核状态，并关闭复核窗口吗？',
+            queueClearConfirmTitle: '清空抓取队列',
+            queueClearConfirm: '确认清空当前抓取队列与复核状态吗？',
+            queueClearCloseTabs: '清空并关闭页面',
+            queueClearKeepTabs: '清空但不关闭页面',
             queueEmpty: '当前筛选条件下没有待抓取 URL',
             queueSelectScopeFirst: '请先在“选取范围”里勾选至少一项并点击“完成”。',
             queueOps: '操作',
@@ -402,8 +406,8 @@
             fmtMhtml: 'MHTML',
             fmtMhtmlOfficial: '官方 MHTML API',
             snapshotHelperLabel: '辅助工具',
-            snapshotHelperTip: '勾选后，会按当前队列已打开页面的 Tab ID 注入悬浮工具：区域截图、长截图、屏幕录制。',
-            snapshotHelperHint: '辅助工具包含：区域截图、长截图、屏幕录制；输出会保存到网页快照目录下对应的辅助工具文件夹。',
+            snapshotHelperTip: '勾选后，会按当前队列已打开页面的 Tab ID 注入悬浮工具：区域截图、长截图、屏幕录制。（仅通过“在新窗口打开”的页面可用，原有 Tab 页面不会注入。）',
+            snapshotHelperHint: '辅助工具包含：区域截图、长截图、屏幕录制；输出会保存到网页快照目录下对应的辅助工具文件夹。（仅通过“在新窗口打开”的页面可用，原有 Tab 页面不会注入。）',
             snapshotHelperEnabledStatus: '辅助工具已启用',
             snapshotHelperDisabledStatus: '辅助工具已关闭',
             snapshotHelperPartialStatus: '部分页面未能启用辅助工具',
@@ -525,7 +529,10 @@
             reviewSettingsSaved: 'Review dwell time updated.',
             queueClear: 'Clear',
             queueCleared: 'Capture queue cleared.',
-            queueClearConfirm: 'Clear current capture queue and review state, and close the review window?',
+            queueClearConfirmTitle: 'Clear Capture Queue',
+            queueClearConfirm: 'Clear current capture queue and review state?',
+            queueClearCloseTabs: 'Clear and Close Tabs',
+            queueClearKeepTabs: 'Clear Without Closing Tabs',
             queueEmpty: 'No URL matches the current filter set',
             queueSelectScopeFirst: 'Pick at least one item in Scope Picker and click Done.',
             queueOps: 'Actions',
@@ -610,8 +617,8 @@
             fmtMhtml: 'MHTML',
             fmtMhtmlOfficial: 'Official MHTML API',
             snapshotHelperLabel: 'Helper Tools',
-            snapshotHelperTip: 'When checked, floating tools are injected by the opened queue tab IDs: area screenshot, long screenshot, and screen recording.',
-            snapshotHelperHint: 'Helper outputs are saved under the Web Snapshot folder in the matching helper-tool subfolders.',
+            snapshotHelperTip: 'When checked, floating tools are injected by the opened queue tab IDs: area screenshot, long screenshot, and screen recording. (Only pages opened via "Open in New Window" support this; existing tabs are not injected.)',
+            snapshotHelperHint: 'Helper outputs are saved under the Web Snapshot folder in the matching helper-tool subfolders. (Only pages opened via "Open in New Window" support this; existing tabs are not injected.)',
             snapshotHelperEnabledStatus: 'Helper tools enabled',
             snapshotHelperDisabledStatus: 'Helper tools disabled',
             snapshotHelperPartialStatus: 'Some pages could not enable helper tools',
@@ -2325,12 +2332,20 @@
         }
     }
 
+    function updateRunCancelButtonVisibility(runIsActive) {
+        const cancelBtn = document.getElementById('dev1CancelBtn');
+        if (!cancelBtn) return;
+        const active = runIsActive === true;
+        cancelBtn.hidden = !active;
+        cancelBtn.disabled = !active;
+        cancelBtn.style.display = active ? '' : 'none';
+    }
+
     function renderCaptureRunStatePanel() {
         const wrap = document.getElementById('dev1RecoveryWrap');
         if (!wrap) {
             const runIsActive = state.running || String(state.captureRunState?.status || '').toLowerCase() === 'running';
-            const cancelBtn = document.getElementById('dev1CancelBtn');
-            if (cancelBtn) cancelBtn.disabled = !runIsActive;
+            updateRunCancelButtonVisibility(runIsActive);
             updateRunPrimaryButton(runIsActive);
             return;
         }
@@ -2338,8 +2353,7 @@
         const runState = state.captureRunState;
         if (!runState || typeof runState !== 'object') {
             wrap.innerHTML = `<div class="dev1-empty">${escapeHtml(t('recoveryNone'))}</div>`;
-            const cancelBtn = document.getElementById('dev1CancelBtn');
-            if (cancelBtn) cancelBtn.disabled = true;
+            updateRunCancelButtonVisibility(false);
             updateRunPrimaryButton(false);
             return;
         }
@@ -2385,9 +2399,8 @@
         if (resumeBtn) {
             resumeBtn.disabled = state.running || !runState.resumable || String(runState.status || '').toLowerCase() === 'running';
         }
-        const cancelBtn = document.getElementById('dev1CancelBtn');
         const runIsActive = state.running || String(runState.status || '').toLowerCase() === 'running';
-        if (cancelBtn) cancelBtn.disabled = !runIsActive;
+        updateRunCancelButtonVisibility(runIsActive);
         updateRunPrimaryButton(runIsActive);
     }
 
@@ -2733,6 +2746,16 @@
             seenTabIds.add(existingTabId);
 
             const folderPath = String(rawItem?.folderPath || '').trim();
+            const rawWindowId = Number(rawItem?.windowId);
+            const windowId = Number.isFinite(rawWindowId) ? Math.floor(rawWindowId) : null;
+            const rawTabIndex = Number(rawItem?.tabIndex);
+            const tabIndex = Number.isFinite(rawTabIndex) ? Math.floor(rawTabIndex) : index;
+            const rawGroupId = Number(rawItem?.groupId);
+            const groupId = Number.isFinite(rawGroupId) ? Math.floor(rawGroupId) : -1;
+            const rawGroupSortIndex = Number(rawItem?.groupSortIndex);
+            const groupSortIndex = Number.isFinite(rawGroupSortIndex) ? Math.floor(rawGroupSortIndex) : tabIndex;
+            const rawSourceOrder = Number(rawItem?.sourceOrder);
+            const sourceOrder = Number.isFinite(rawSourceOrder) ? Math.floor(rawSourceOrder) : index;
             const host = String(rawItem?.host || parsed.hostname || '').trim().toLowerCase().replace(/^www\./, '');
             const domainParts = getDomainParts(host);
             const domain = String(rawItem?.domain || '').trim().toLowerCase() || domainParts.domain || domainParts.host || '';
@@ -2757,13 +2780,34 @@
                 actionType: '',
                 host: host || domain,
                 existingTabId,
+                windowId,
+                groupId,
+                groupTitle: String(rawItem?.groupTitle || '').trim(),
+                groupColor: String(rawItem?.groupColor || '').trim(),
+                groupCollapsed: rawItem?.groupCollapsed === true,
+                groupSortIndex,
+                tabIndex,
+                sourceOrder,
                 useExistingTab: true
             });
         });
 
         results.sort((a, b) => {
-            const titleCompare = String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' });
-            if (titleCompare !== 0) return titleCompare;
+            const windowA = Number.isFinite(Number(a.windowId)) ? Number(a.windowId) : Number.MAX_SAFE_INTEGER;
+            const windowB = Number.isFinite(Number(b.windowId)) ? Number(b.windowId) : Number.MAX_SAFE_INTEGER;
+            if (windowA !== windowB) return windowA - windowB;
+            const groupSortA = Number.isFinite(Number(a.groupSortIndex)) ? Number(a.groupSortIndex) : Number.MAX_SAFE_INTEGER;
+            const groupSortB = Number.isFinite(Number(b.groupSortIndex)) ? Number(b.groupSortIndex) : Number.MAX_SAFE_INTEGER;
+            if (groupSortA !== groupSortB) return groupSortA - groupSortB;
+            const groupA = Number.isFinite(Number(a.groupId)) ? Number(a.groupId) : Number.MAX_SAFE_INTEGER;
+            const groupB = Number.isFinite(Number(b.groupId)) ? Number(b.groupId) : Number.MAX_SAFE_INTEGER;
+            if (groupA !== groupB) return groupA - groupB;
+            const tabIndexA = Number.isFinite(Number(a.tabIndex)) ? Number(a.tabIndex) : Number.MAX_SAFE_INTEGER;
+            const tabIndexB = Number.isFinite(Number(b.tabIndex)) ? Number(b.tabIndex) : Number.MAX_SAFE_INTEGER;
+            if (tabIndexA !== tabIndexB) return tabIndexA - tabIndexB;
+            const sourceOrderA = Number.isFinite(Number(a.sourceOrder)) ? Number(a.sourceOrder) : Number.MAX_SAFE_INTEGER;
+            const sourceOrderB = Number.isFinite(Number(b.sourceOrder)) ? Number(b.sourceOrder) : Number.MAX_SAFE_INTEGER;
+            if (sourceOrderA !== sourceOrderB) return sourceOrderA - sourceOrderB;
             return String(a.url || '').localeCompare(String(b.url || ''));
         });
 
@@ -2946,7 +2990,8 @@
         };
     }
 
-    function buildFilterOptions(items) {
+    function buildFilterOptions(items, options = {}) {
+        const preserveBookmarkOrder = options?.preserveBookmarkOrder === true;
         const bookmarkMap = new Map();
         items.forEach((item) => {
             const key = item.bookmarkFilterKey || item.url;
@@ -2959,8 +3004,10 @@
                 host: item.host || item.domain || ''
             });
         });
-        const bookmark = Array.from(bookmarkMap.values())
-            .sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')));
+        const bookmark = Array.from(bookmarkMap.values());
+        if (!preserveBookmarkOrder) {
+            bookmark.sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')));
+        }
 
         const folderMap = new Map();
         const domainMap = new Map();
@@ -2982,8 +3029,10 @@
         });
 
         const folder = Array.from(folderMap.entries())
-            .map(([key, value]) => ({ key, label: value.label, count: value.count }))
-            .sort((a, b) => a.label.localeCompare(b.label));
+            .map(([key, value]) => ({ key, label: value.label, count: value.count }));
+        if (!preserveBookmarkOrder) {
+            folder.sort((a, b) => a.label.localeCompare(b.label));
+        }
 
         const domain = Array.from(domainMap.entries())
             .map(([key, count]) => ({ key, label: key, count }))
@@ -3419,6 +3468,7 @@
 
     function buildUnifiedScopeTreeModel(sourceItems, keyword = '', options = {}) {
         const folderBadgeByPath = options?.folderBadgeByPath instanceof Map ? options.folderBadgeByPath : null;
+        const preserveBookmarkOrder = options?.preserveBookmarkOrder === true;
         const root = {
             folders: new Map(),
             bookmarks: []
@@ -3467,6 +3517,14 @@
                 host: String(item?.host || item?.domain || '').trim(),
                 domain: String(item?.domain || '').trim(),
                 folderPath: folderPath,
+                windowId: Number.isFinite(Number(item?.windowId)) ? Math.floor(Number(item.windowId)) : null,
+                groupId: Number.isFinite(Number(item?.groupId)) ? Math.floor(Number(item.groupId)) : -1,
+                groupTitle: String(item?.groupTitle || '').trim(),
+                groupColor: String(item?.groupColor || '').trim(),
+                groupCollapsed: item?.groupCollapsed === true,
+                groupSortIndex: Number.isFinite(Number(item?.groupSortIndex)) ? Math.floor(Number(item.groupSortIndex)) : null,
+                tabIndex: Number.isFinite(Number(item?.tabIndex)) ? Math.floor(Number(item.tabIndex)) : null,
+                sourceOrder: Number.isFinite(Number(item?.sourceOrder)) ? Math.floor(Number(item.sourceOrder)) : null,
                 actionType: String(item?.actionType || '').trim(),
                 badgeMask: bookmarkChangeMask
             });
@@ -3504,14 +3562,27 @@
             if (labelCompare !== 0) return labelCompare;
             return String(a?.url || '').localeCompare(String(b?.url || ''));
         };
+        const compareAllTabsTreeOrder = (a, b) => {
+            const aOrder = Number.isFinite(Number(a?.tabIndex)) ? Number(a.tabIndex) : Number(a?.groupSortIndex);
+            const bOrder = Number.isFinite(Number(b?.tabIndex)) ? Number(b.tabIndex) : Number(b?.groupSortIndex);
+            const aRank = Number.isFinite(aOrder) ? aOrder : Number.MAX_SAFE_INTEGER;
+            const bRank = Number.isFinite(bOrder) ? bOrder : Number.MAX_SAFE_INTEGER;
+            if (aRank !== bRank) return aRank - bRank;
+            const aSourceOrder = Number.isFinite(Number(a?.sourceOrder)) ? Number(a.sourceOrder) : Number.MAX_SAFE_INTEGER;
+            const bSourceOrder = Number.isFinite(Number(b?.sourceOrder)) ? Number(b.sourceOrder) : Number.MAX_SAFE_INTEGER;
+            if (aSourceOrder !== bSourceOrder) return aSourceOrder - bSourceOrder;
+            if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1;
+            return String(a?.key || '').localeCompare(String(b?.key || ''));
+        };
 
         function finalizeFolderNode(folderNode) {
-            const childFolders = Array.from(folderNode.folders.values())
-                .sort(compareLabel)
-                .map(finalizeFolderNode);
-            const childBookmarks = (folderNode.bookmarks || []).slice().sort(compareBookmark);
+            const childFolders = Array.from(folderNode.folders.values());
+            if (!preserveBookmarkOrder) childFolders.sort(compareLabel);
+            const finalizedChildFolders = childFolders.map(finalizeFolderNode);
+            const childBookmarks = (folderNode.bookmarks || []).slice();
+            if (!preserveBookmarkOrder) childBookmarks.sort(compareBookmark);
             let badgeMask = Number(folderNode.badgeMask) || 0;
-            childFolders.forEach((childFolder) => {
+            finalizedChildFolders.forEach((childFolder) => {
                 badgeMask |= Number(childFolder?.badgeMask || 0);
             });
             childBookmarks.forEach((childBookmark) => {
@@ -3523,14 +3594,29 @@
                 label: String(folderNode.label || ''),
                 count: Number(folderNode.count) || 0,
                 badgeMask,
-                children: [...childFolders, ...childBookmarks]
+                groupSortIndex: finalizedChildFolders.reduce((min, childFolder) => {
+                    const value = Number(childFolder?.groupSortIndex);
+                    return Number.isFinite(value) ? Math.min(min, value) : min;
+                }, Number.MAX_SAFE_INTEGER),
+                tabIndex: [...finalizedChildFolders, ...childBookmarks].reduce((min, child) => {
+                    const value = Number.isFinite(Number(child?.tabIndex)) ? Number(child.tabIndex) : Number(child?.groupSortIndex);
+                    return Number.isFinite(value) ? Math.min(min, value) : min;
+                }, Number.MAX_SAFE_INTEGER),
+                sourceOrder: [...finalizedChildFolders, ...childBookmarks].reduce((min, child) => {
+                    const value = Number(child?.sourceOrder);
+                    return Number.isFinite(value) ? Math.min(min, value) : min;
+                }, Number.MAX_SAFE_INTEGER),
+                children: preserveBookmarkOrder
+                    ? [...finalizedChildFolders, ...childBookmarks].sort(compareAllTabsTreeOrder)
+                    : [...finalizedChildFolders, ...childBookmarks]
             };
         }
 
-        const rootFolderNodes = Array.from(root.folders.values())
-            .sort(compareLabel)
-            .map(finalizeFolderNode);
-        const rootBookmarks = (root.bookmarks || []).slice().sort(compareBookmark);
+        const rootFolders = Array.from(root.folders.values());
+        if (!preserveBookmarkOrder) rootFolders.sort(compareLabel);
+        const rootFolderNodes = rootFolders.map(finalizeFolderNode);
+        const rootBookmarks = (root.bookmarks || []).slice();
+        if (!preserveBookmarkOrder) rootBookmarks.sort(compareBookmark);
 
         const nodes = [];
         if (rootBookmarks.length > 0) {
@@ -3628,7 +3714,8 @@
             return sourceState.scopeTreeNodes;
         }
         const treeData = buildUnifiedScopeTreeModel(sourceState.items || [], '', {
-            folderBadgeByPath: sourceState.folderBadgeByPath
+            folderBadgeByPath: sourceState.folderBadgeByPath,
+            preserveBookmarkOrder: sourceKey === SOURCE_ALL_TABS
         });
         return Array.isArray(treeData?.nodes) ? treeData.nodes : [];
     }
@@ -4484,7 +4571,8 @@
                 };
             } else {
                 treeData = buildUnifiedScopeTreeModel(sourceState.items, keywordText, {
-                    folderBadgeByPath: sourceState.folderBadgeByPath
+                    folderBadgeByPath: sourceState.folderBadgeByPath,
+                    preserveBookmarkOrder: sourceKey === SOURCE_ALL_TABS
                 });
             }
             const treeUi = ensureScopeFolderTreeUiState(sourceKey);
@@ -4842,6 +4930,36 @@
         }
     }
 
+    function renderQueueClearConfirmVisibility() {
+        const modal = document.getElementById('dev1QueueClearConfirmModal');
+        if (modal) {
+            modal.classList.toggle('show', state.queueClearConfirmOpen === true);
+            modal.setAttribute('aria-hidden', state.queueClearConfirmOpen === true ? 'false' : 'true');
+        }
+    }
+
+    function openQueueClearConfirmModal() {
+        state.queueClearConfirmOpen = true;
+        renderQueueClearConfirmVisibility();
+    }
+
+    function closeQueueClearConfirmModal() {
+        state.queueClearConfirmOpen = false;
+        renderQueueClearConfirmVisibility();
+    }
+
+    async function commitQueueClearConfirmModal({ closeReviewWindow = true } = {}) {
+        closeQueueClearConfirmModal();
+        try {
+            await clearQueueAndReviewState({ closeReviewWindow: closeReviewWindow === true, clearScope: true });
+        } catch (error) {
+            setStatus(`${t('reviewSyncFailed')}: ${error?.message || ''}`, 'warning');
+            return;
+        }
+        rerenderAllDataPanels();
+        setStatus(t('queueCleared'), 'success');
+    }
+
     function openReviewSettingsModal() {
         state.reviewSettingsOpen = true;
         renderReviewSettingsVisibility();
@@ -4963,6 +5081,38 @@
             reviewSettingsModal.addEventListener('click', (event) => {
                 if (event.target === reviewSettingsModal) {
                     closeReviewSettingsModal();
+                }
+            });
+        }
+        const queueClearConfirmCloseBtn = root.querySelector('#dev1QueueClearConfirmClose');
+        if (queueClearConfirmCloseBtn) {
+            queueClearConfirmCloseBtn.addEventListener('click', closeQueueClearConfirmModal);
+        }
+        const queueClearCancelBtn = root.querySelector('#dev1QueueClearCancelBtn');
+        if (queueClearCancelBtn) {
+            queueClearCancelBtn.addEventListener('click', closeQueueClearConfirmModal);
+        }
+        const queueClearKeepTabsBtn = root.querySelector('#dev1QueueClearKeepTabsBtn');
+        if (queueClearKeepTabsBtn) {
+            queueClearKeepTabsBtn.addEventListener('click', () => {
+                commitQueueClearConfirmModal({ closeReviewWindow: false }).catch((error) => {
+                    setStatus(`${t('reviewSyncFailed')}: ${error?.message || ''}`, 'warning');
+                });
+            });
+        }
+        const queueClearCloseTabsBtn = root.querySelector('#dev1QueueClearCloseTabsBtn');
+        if (queueClearCloseTabsBtn) {
+            queueClearCloseTabsBtn.addEventListener('click', () => {
+                commitQueueClearConfirmModal({ closeReviewWindow: true }).catch((error) => {
+                    setStatus(`${t('reviewSyncFailed')}: ${error?.message || ''}`, 'warning');
+                });
+            });
+        }
+        const queueClearConfirmModal = root.querySelector('#dev1QueueClearConfirmModal');
+        if (queueClearConfirmModal) {
+            queueClearConfirmModal.addEventListener('click', (event) => {
+                if (event.target === queueClearConfirmModal) {
+                    closeQueueClearConfirmModal();
                 }
             });
         }
@@ -5122,19 +5272,8 @@
         }
         const clearBtn = root.querySelector('#dev1ClearFiltersBtn');
         if (clearBtn) {
-            clearBtn.addEventListener('click', async () => {
-                if (typeof window.confirm === 'function') {
-                    const confirmed = window.confirm(t('queueClearConfirm'));
-                    if (!confirmed) return;
-                }
-                try {
-                    await clearQueueAndReviewState({ closeReviewWindow: true, clearScope: true });
-                } catch (error) {
-                    setStatus(`${t('reviewSyncFailed')}: ${error?.message || ''}`, 'warning');
-                    return;
-                }
-                rerenderAllDataPanels();
-                setStatus(t('queueCleared'), 'success');
+            clearBtn.addEventListener('click', () => {
+                openQueueClearConfirmModal();
             });
         }
 
@@ -6089,7 +6228,7 @@
         const runIsActive = state.running || String(state.captureRunState?.status || '').toLowerCase() === 'running';
         if (runBtn) runBtn.disabled = !!disabled && !runIsActive;
         updateRunPrimaryButton(runIsActive);
-        if (cancelBtn) cancelBtn.disabled = !runIsActive;
+        updateRunCancelButtonVisibility(runIsActive);
         if (clearBtn) clearBtn.disabled = !!disabled;
         if (scopeBtn) scopeBtn.disabled = !!disabled;
         if (openReviewBtn) {
@@ -6472,9 +6611,10 @@
             allTabsSourceState.items = [];
             allTabsSourceState.folderBadgeByPath = new Map();
             allTabsSourceState.scopeTreeNodes = [];
+            allTabsSourceState.filterOptions = buildFilterOptions(allTabsSourceState.items, { preserveBookmarkOrder: true });
         }
 
-        allTabsSourceState.filterOptions = buildFilterOptions(allTabsSourceState.items);
+        allTabsSourceState.filterOptions = buildFilterOptions(allTabsSourceState.items, { preserveBookmarkOrder: true });
         pruneFiltersAgainstOptions(SOURCE_ALL_TABS);
         applyAllFilters();
         rerenderAllDataPanels();
@@ -6566,7 +6706,7 @@
 
         SOURCE_KEYS.forEach((sourceKey) => {
             const sourceState = getSourceState(sourceKey);
-            sourceState.filterOptions = buildFilterOptions(sourceState.items);
+            sourceState.filterOptions = buildFilterOptions(sourceState.items, { preserveBookmarkOrder: sourceKey === SOURCE_ALL_TABS });
             pruneFiltersAgainstOptions(sourceKey);
         });
 
@@ -6629,7 +6769,7 @@
                                 <i class="fas fa-trash-alt"></i>
                                 <span style="margin-left: 6px;">${escapeHtml(t('queueClear'))}</span>
                             </button>
-                            <button id="dev1CancelBtn" class="action-btn compact" title="${escapeHtml(t('tipRunCancel'))}" disabled>
+                            <button id="dev1CancelBtn" class="action-btn compact" title="${escapeHtml(t('tipRunCancel'))}" hidden disabled>
                                 <i class="fas fa-ban"></i>
                                 <span style="margin-left: 6px;">${escapeHtml(t('runCancelBtn'))}</span>
                             </button>
@@ -6781,6 +6921,24 @@
                         <div class="modal-footer dev1-secondary-modal-footer">
                             <button id="dev1ReviewSettingsCancelBtn" type="button" class="modal-btn">${escapeHtml(t('reviewSettingsCancel'))}</button>
                             <button id="dev1ReviewSettingsSaveBtn" type="button" class="modal-btn primary">${escapeHtml(t('reviewSettingsSave'))}</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="dev1QueueClearConfirmModal" class="modal dev1-queue-clear-confirm-overlay" aria-hidden="true">
+                    <div class="modal-content dev1-secondary-modal dev1-queue-clear-confirm-modal">
+                        <div class="modal-header compact dev1-secondary-modal-header">
+                            <h3>${escapeHtml(t('queueClearConfirmTitle'))}</h3>
+                            <button id="dev1QueueClearConfirmClose" class="modal-close" aria-label="${escapeHtml(getLangKey() === 'en' ? 'Close' : '关闭')}">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="modal-body dev1-review-settings-body">
+                            <div class="dev1-review-settings-note">${escapeHtml(t('queueClearConfirm'))}</div>
+                        </div>
+                        <div class="modal-footer dev1-secondary-modal-footer">
+                            <button id="dev1QueueClearCancelBtn" type="button" class="modal-btn">${escapeHtml(t('reviewSettingsCancel'))}</button>
+                            <button id="dev1QueueClearKeepTabsBtn" type="button" class="modal-btn">${escapeHtml(t('queueClearKeepTabs'))}</button>
+                            <button id="dev1QueueClearCloseTabsBtn" type="button" class="modal-btn primary">${escapeHtml(t('queueClearCloseTabs'))}</button>
                         </div>
                     </div>
                 </div>

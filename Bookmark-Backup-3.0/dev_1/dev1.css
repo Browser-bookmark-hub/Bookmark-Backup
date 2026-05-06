@@ -136,6 +136,10 @@
     min-width: 92px !important;
 }
 
+#dev1CancelBtn[hidden] {
+    display: none !important;
+}
+
 .dev1-review-workflow-summary {
     display: flex;
     flex-direction: column;
@@ -296,6 +300,12 @@
     left: 0 !important;
     width: 100% !important;
     z-index: 26010;
+}
+
+#dev1QueueClearConfirmModal.dev1-queue-clear-confirm-overlay {
+    left: 0 !important;
+    width: 100% !important;
+    z-index: 26020;
 }
 
 .dev1-secondary-modal {
