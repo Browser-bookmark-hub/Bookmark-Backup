@@ -1041,7 +1041,7 @@
         </div>
     </div>
 
-    <div id="clearBackupHistoryModal" class="modal content-center">
+    <div id="clearBackupHistoryModal" class="modal">
         <div class="modal-content" style="max-width: 480px;">
             <div class="modal-header compact">
                 <h3 id="clearBackupHistoryModalTitle">清除记录</h3>
@@ -1052,7 +1052,7 @@
             <div class="modal-body" style="padding: 16px 20px;">
                 <p id="clearBackupHistoryModalDesc"
                     style="font-size: 14px; color: var(--text-primary); margin: 0 0 14px 0;">
-                    选择要删除的备份历史记录范围：
+                    拖动进度条选择要删除的记录。
                 </p>
 
                 <!-- 删除范围选择区域 -->
@@ -1063,8 +1063,15 @@
                     <div id="clearHistoryRangeContainer" class="range-slider-container">
                         <!-- 滑块轨道容器 -->
                         <div id="clearHistoryRangeTrack" class="range-slider-track">
+                            <div id="clearHistoryVersionSegments" class="clear-history-version-segments">
+                                <div id="clearHistoryVersionSegmentV3"
+                                    class="clear-history-version-segment clear-history-version-segment-v3"></div>
+                                <div id="clearHistoryVersionSegmentLegacy"
+                                    class="clear-history-version-segment clear-history-version-segment-legacy"></div>
+                            </div>
                             <!-- 选中区域高亮 -->
                             <div id="clearHistoryRangeHighlight" class="range-slider-highlight"></div>
+                            <div id="clearHistoryVersionBoundary" class="clear-history-version-boundary"></div>
                         </div>
 
                         <!-- 左滑块（起始序号） -->
@@ -1084,6 +1091,18 @@
                         <div id="clearHistoryRangeMinBubble" class="range-slider-bubble">1</div>
                         <div id="clearHistoryRangeMaxBubble" class="range-slider-bubble">1</div>
                     </div>
+
+                    <div id="clearHistoryProgressLegend" class="clear-history-progress-legend">
+                        <span class="clear-history-progress-legend-item">
+                            <span class="clear-history-progress-dot clear-history-progress-dot-v3"></span>
+                            <span id="clearHistoryProgressV3Text">v3.0 0 条</span>
+                        </span>
+                        <span class="clear-history-progress-legend-item">
+                            <span class="clear-history-progress-dot clear-history-progress-dot-legacy"></span>
+                            <span id="clearHistoryProgressLegacyText">v2.1 0 条</span>
+                        </span>
+                    </div>
+                    <div id="clearHistoryVersionWarning" class="clear-history-version-warning"></div>
 
                     <!-- 选中范围显示 -->
                     <div id="clearHistorySelectionDisplay" style="text-align: center; margin-top: 8px;">
@@ -1136,7 +1155,7 @@
     </div>
 
     <!-- 清除历史二次确认弹窗 -->
-    <div id="clearHistorySecondConfirmModal" class="modal content-center">
+    <div id="clearHistorySecondConfirmModal" class="modal">
         <div class="modal-content" style="max-width: 400px;">
             <div class="modal-header compact">
                 <h3 id="clearHistorySecondConfirmTitle">确认删除</h3>
@@ -1157,7 +1176,7 @@
                             style="color: var(--error); font-weight: 700;">0</span>
                         <span id="clearHistorySecondConfirmSuffix">条记录</span>
                         <span id="clearHistoryRangeDisplay"
-                            style="font-size: 13px; color: var(--text-secondary); font-weight: 400;"></span>
+                            style="display: block; margin-top: 4px; font-size: 13px; color: var(--text-secondary); font-weight: 400; white-space: pre-line;"></span>
                     </p>
                     <p id="clearHistorySecondConfirmWarning"
                         style="font-size: 13px; color: var(--text-secondary); margin: 0;">

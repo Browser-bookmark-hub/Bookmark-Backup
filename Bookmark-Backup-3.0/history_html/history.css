@@ -1259,6 +1259,22 @@ option {
     border-color: rgba(234, 179, 8, 0.7);
 }
 
+.history-v2-to-v3-divider .history-warning-divider-line {
+    background: linear-gradient(90deg, rgba(255, 152, 0, 0), rgba(255, 152, 0, 0.9), rgba(255, 152, 0, 0));
+}
+
+.history-v2-to-v3-divider .history-warning-divider-label {
+    color: #c05f00;
+    background: rgba(255, 152, 0, 0.12);
+    border-color: rgba(255, 152, 0, 0.55);
+}
+
+[data-theme="dark"] .history-v2-to-v3-divider .history-warning-divider-label {
+    color: #ffb74d;
+    background: rgba(255, 152, 0, 0.18);
+    border-color: rgba(255, 152, 0, 0.72);
+}
+
 .commit-item {
     background: var(--bg-elevated);
     border: 1px solid var(--border-color);
@@ -10858,6 +10874,149 @@ a.tree-label.tree-bookmark-link:hover {
 
 #clearHistoryRangeContainer .range-slider-bubble {
     color: var(--error);
+}
+
+#clearHistoryRangeTrack {
+    height: 8px;
+    border-radius: 999px;
+    overflow: visible;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-color) 56%, transparent);
+}
+
+#clearHistoryRangeHighlight {
+    height: 100%;
+    background: color-mix(in srgb, var(--error) 76%, transparent);
+    border-radius: 999px;
+    z-index: 2;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--error) 22%, transparent);
+}
+
+.clear-history-version-segments {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.clear-history-version-segment {
+    display: none;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+}
+
+.clear-history-version-segment.show {
+    display: block;
+}
+
+.clear-history-version-segment-v3 {
+    background: color-mix(in srgb, var(--accent-primary) 28%, var(--bg-tertiary));
+}
+
+.clear-history-version-segment-legacy {
+    background: linear-gradient(90deg, #ffb300 0%, #ffd54f 100%);
+}
+
+.clear-history-version-boundary {
+    display: none;
+    position: absolute;
+    top: 50%;
+    width: 2px;
+    height: 18px;
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+    background: #f59e0b;
+    box-shadow: 0 0 0 2px var(--bg-secondary), 0 0 0 3px rgba(245, 158, 11, 0.45);
+    pointer-events: none;
+    z-index: 3;
+}
+
+.clear-history-version-boundary.show {
+    display: block;
+}
+
+.clear-history-progress-legend {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin: 2px 0 8px;
+    color: var(--text-tertiary);
+    font-size: 11px;
+}
+
+.clear-history-progress-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.clear-history-progress-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+}
+
+.clear-history-progress-dot-v3 {
+    background: color-mix(in srgb, var(--accent-primary) 48%, var(--bg-tertiary));
+}
+
+.clear-history-progress-dot-legacy {
+    background: #ffc107;
+}
+
+.clear-history-version-warning {
+    display: none;
+    margin-top: 8px;
+    padding: 7px 9px;
+    border-radius: 8px;
+    background: rgba(255, 152, 0, 0.12);
+    color: #a65300;
+    font-size: 12px;
+    line-height: 1.45;
+    text-align: left;
+}
+
+.clear-history-selection-summary {
+    display: inline-flex;
+    align-items: flex-start;
+}
+
+.clear-history-selection-summary-prefix {
+    flex: 0 0 auto;
+}
+
+.clear-history-selection-summary-ranges {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.clear-history-selection-summary-row {
+    display: block;
+}
+
+.clear-history-version-warning.show {
+    display: block;
+}
+
+[data-theme="dark"] .clear-history-version-warning {
+    color: #ffcc80;
+    background: rgba(255, 152, 0, 0.18);
+}
+
+#clearHistorySecondConfirmWarning.danger {
+    color: var(--error) !important;
+    background: var(--error-light);
+    border-radius: 8px;
+    padding: 8px 10px;
+    line-height: 1.45;
 }
 
 .clear-history-threshold-panel {

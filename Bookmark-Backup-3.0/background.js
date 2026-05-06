@@ -2116,6 +2116,113 @@ async function migrateToSplitStorage() {
     }
 }
 
+const LEGACY_V2_VERSION = '2.1';
+
+function isLegacyV2VersionValue(value) {
+    const text = String(value || '').trim().toLowerCase().replace(/^v/, '');
+    return text === '2' || text === '2.x' || /^2\.\d+$/.test(text);
+}
+
+function isLegacyV2HistoryRecord(record) {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+    return record.v2RecordOnlyMigrated === true || isLegacyV2VersionValue(record.legacyVersion);
+}
+
+function resolveV2ToV3HistoryDividerDisplayIndex(syncHistory) {
+    const records = Array.isArray(syncHistory) ? syncHistory : [];
+    if (records.length < 2) return -1;
+
+    for (let displayIndex = 1; displayIndex < records.length; displayIndex += 1) {
+        const previousRecord = records[records.length - displayIndex];
+        const currentRecord = records[records.length - displayIndex - 1];
+        if (!isLegacyV2HistoryRecord(previousRecord) && isLegacyV2HistoryRecord(currentRecord)) {
+            return displayIndex;
+        }
+    }
+
+    return -1;
+}
+
+function isV2RecordOnlyHistoryRecord(record) {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+    if (record.v2RecordOnlyMigrated === true || isLegacyV2VersionValue(record.legacyVersion)) return false;
+    if (record.bookmarkTree !== undefined && record.bookmarkTree !== null) return false;
+
+    const hasOwn = (key) => Object.prototype.hasOwnProperty.call(record, key);
+    const hasNewStorageMarkers = [
+        'hasData',
+        'hasChangeData',
+        'changeDataKey',
+        'snapshotKey',
+        'snapshotName',
+        'snapshotFolderName',
+        'snapshotBackupEnabled',
+        'snapshotFormat',
+        'fingerprint',
+        'comparisonGeneration',
+        'dataRetention',
+        'capabilities'
+    ].some(hasOwn);
+    if (hasNewStorageMarkers) return false;
+
+    return hasOwn('time')
+        && (
+            hasOwn('bookmarkStats')
+            || hasOwn('isFirstBackup')
+            || hasOwn('note')
+            || hasOwn('direction')
+            || hasOwn('type')
+            || hasOwn('status')
+        );
+}
+
+async function migrateV2RecordOnlyHistory() {
+    try {
+        const { syncHistory } = await browserAPI.storage.local.get(['syncHistory']);
+        if (!syncHistory || !Array.isArray(syncHistory) || syncHistory.length === 0) return;
+
+        let migratedCount = 0;
+        const migratedHistory = syncHistory.map((record) => {
+            if (!isV2RecordOnlyHistoryRecord(record)) return record;
+            migratedCount += 1;
+            return {
+                ...record,
+                legacyVersion: LEGACY_V2_VERSION,
+                recordOnly: true,
+                hasData: false,
+                hasChangeData: false,
+                canRestore: false,
+                v2RecordOnlyMigrated: true,
+                capabilities: {
+                    hasSnapshotData: false,
+                    hasChangeData: false,
+                    recordOnly: true,
+                    canExpand: false,
+                    canSearch: false,
+                    canExportSnapshot: false,
+                    canExportChanges: false,
+                    canRestore: false,
+                    canMergeRestore: false,
+                    canPatchRestore: false,
+                    canViewChanges: false,
+                    canViewSnapshot: false
+                }
+            };
+        });
+
+        if (migratedCount <= 0) return;
+
+        await browserAPI.storage.local.set({
+            syncHistory: migratedHistory,
+            v2ToV3MigrationCompletedAt: new Date().toISOString(),
+            v2LegacyRecordCount: migratedCount,
+            v2ToV3UpgradeNoticePending: true
+        });
+    } catch (e) {
+        console.error('[V2 Migration] Failed:', e);
+    }
+}
+
 async function removeBackupDataByTimes(times) {
     const keys = (Array.isArray(times) ? times : [])
         .filter(t => t !== undefined && t !== null && String(t).trim() !== '')
@@ -2134,6 +2241,7 @@ async function removeBackupDataByTimes(times) {
 browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 和 details 参数
     // 立即尝试迁移旧数据
     await migrateToSplitStorage();
+    await migrateV2RecordOnlyHistory();
 
     // 新增：初始化存储，确保首次运行时有基准
     if (details.reason === 'install' || details.reason === 'update') {
@@ -2190,6 +2298,7 @@ browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 
 browserAPI.runtime.onStartup.addListener(async () => {
     // 启动时也尝试迁移旧数据
     await migrateToSplitStorage();
+    await migrateV2RecordOnlyHistory();
 
     updateSyncAlarm();
     // initializeBadge(); // 已移除：避免重复调用（下方统一的 onStartup 会调用）
@@ -9416,6 +9525,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             // 从存储中获取备份历史记录
             browserAPI.storage.local.get(['syncHistory'], (data) => {
                 const syncHistory = Array.isArray(data.syncHistory) ? data.syncHistory : [];
+                const v2ToV3HistoryDividerIndex = resolveV2ToV3HistoryDividerDisplayIndex(syncHistory);
 
                 const paged = message && message.paged === true;
                 const rawPageSize = Number(message && message.pageSize);
@@ -9442,7 +9552,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         totalRecords,
                         totalPages,
                         currentPage,
-                        pageSize
+                        pageSize,
+                        v2ToV3HistoryDividerIndex
                     });
                     return;
                 }
@@ -9460,7 +9571,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     success: true,
                     syncHistory: payloadHistory.map(attachHistoryRecordCapabilities),
                     totalRecords: syncHistory.length,
-                    totalPages: Math.max(1, Math.ceil(syncHistory.length / (recentLimit || Math.max(1, syncHistory.length || 1))))
+                    totalPages: Math.max(1, Math.ceil(syncHistory.length / (recentLimit || Math.max(1, syncHistory.length || 1)))),
+                    v2ToV3HistoryDividerIndex
                 });
             });
             return true; // 保持消息通道开放
@@ -23293,7 +23405,7 @@ async function listRemoteFiles(source, options = {}) {
                 const serverAddress = String(settings.serverAddress || '').trim();
                 const username = String(settings.username || '').trim();
                 if (!serverAddress || !username) return '';
-                const scanMode = `${useIndexOptimizedScan ? 'idx' : 'full'}|overwrite-time-v2`;
+                const scanMode = `${useIndexOptimizedScan ? 'idx' : 'full'}|overwrite-time-v2|legacy-v2`;
                 return `webdav|${serverAddress}|${username}|${scanMode}|${indexedSnapshotKeyHash}`;
             }
 
@@ -23337,6 +23449,10 @@ async function listRemoteFiles(source, options = {}) {
             'bookmark_backup',
             'BookmarkBackup',
             'bookmarkbackup'
+        ].map(s => String(s || '').trim()).filter(Boolean)));
+        const legacyWebDavBackupFolderCandidates = Array.from(new Set([
+            'Bookmarks',
+            'bookmarks'
         ].map(s => String(s || '').trim()).filter(Boolean)));
         const overwriteFolderCandidates = Array.from(new Set(getOverwriteFolderCandidates()));
         const versionedFolderCandidates = Array.from(new Set(getVersionedFolderCandidates()));
@@ -23791,6 +23907,78 @@ async function listRemoteFiles(source, options = {}) {
                 return parts.length > 0 ? String(parts[parts.length - 1] || '').trim() : '';
             };
 
+            let legacyWebDavBackupFoldersScanned = false;
+            const scanLegacyWebDavBackupFolders = async () => {
+                if (legacyWebDavBackupFoldersScanned) return;
+                legacyWebDavBackupFoldersScanned = true;
+
+                await runBatchedTasks(legacyWebDavBackupFolderCandidates, async (legacyFolder) => {
+                    const folderPath = String(legacyFolder || '').trim().replace(/^\/+/, '').replace(/\/+$/, '');
+                    if (!folderPath) return 0;
+
+                    try {
+                        const folderUrl = `${serverAddress}${folderPath}/`;
+                        const names = await webdavPropfindCached(folderUrl, authHeader);
+                        for (const nameRaw of names) {
+                            const name = buildFileNameFromRelativePath(String(nameRaw || '')) || String(nameRaw || '').trim();
+                            if (!name) continue;
+
+                            const fileUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${name}`);
+                            const lowerName = name.toLowerCase();
+
+                            if (lowerName === 'chrome_bookmarks.json') {
+                                try {
+                                    const response = await fetch(normalizeWebDAVFetchUrl(fileUrl), {
+                                        method: 'GET',
+                                        headers: { 'Authorization': authHeader }
+                                    });
+                                    if (!response.ok) continue;
+                                    const jsonText = await response.text();
+                                    const jsonTree = parseBookmarkTreeFromJsonTextForRestore(jsonText);
+                                    if (!isBookmarkTreeShapeValid(jsonTree)) continue;
+
+                                    files.push({
+                                        name,
+                                        url: fileUrl,
+                                        source: 'webdav',
+                                        type: 'json_backup',
+                                        text: jsonText,
+                                        snapshotFolder: '',
+                                        folderPath,
+                                        legacyVersion: LEGACY_V2_VERSION,
+                                        manifestMode: 'legacy_v2'
+                                    });
+                                } catch (_) {
+                                }
+                                continue;
+                            }
+
+                            if (!shouldTreatAsSnapshotHtml({
+                                fileName: name,
+                                folderPath,
+                                snapshotFolder: ''
+                            })) {
+                                continue;
+                            }
+
+                            files.push({
+                                name,
+                                url: fileUrl,
+                                source: 'webdav',
+                                type: 'html_backup',
+                                snapshotFolder: '',
+                                folderPath,
+                                legacyVersion: LEGACY_V2_VERSION,
+                                manifestMode: 'legacy_v2'
+                            });
+                        }
+                        return names.length;
+                    } catch (_) {
+                        return 0;
+                    }
+                }, 2);
+            };
+
             try {
                 const treeFilePaths = [];
                 let treeScanSupported = false;
@@ -23875,6 +24063,8 @@ async function listRemoteFiles(source, options = {}) {
                         }
                     }
 
+                    await scanLegacyWebDavBackupFolders();
+
                     const treeSnapshotCandidateCount = files.filter((item) => item
                         && item.source === 'webdav'
                         && (item.type === 'html_backup' || item.type === 'changes_artifact')
@@ -23901,6 +24091,8 @@ async function listRemoteFiles(source, options = {}) {
             } catch (treeScanError) {
                 
             }
+
+            await scanLegacyWebDavBackupFolders();
 
             if (!useIndexOptimizedScan) {
                 // 1) 兼容旧结构：书签备份目录下直放 HTML
@@ -25331,6 +25523,7 @@ function normalizeRestoreVersionMeta(meta) {
         source: meta.source,
         sourceType: meta.sourceType,
         originalFile: meta.originalFile,
+        legacyVersion: String(meta.legacyVersion || meta?.restoreRef?.legacyVersion || '').trim() || null,
         restoreRef: meta.restoreRef,
         groupMeta: meta.groupMeta || meta?.restoreRef?.groupMeta || null,
         canRestore: meta.canRestore !== false
@@ -25424,9 +25617,10 @@ function buildRestoreVersionFromExportData(exportData, { source, originalFile, f
     });
 }
 
-function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '' }) {
+function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '', legacyVersion = '' }) {
     const name = fileName || originalFile;
     const normalizedFileUrl = String(fileUrl || '').trim();
+    const normalizedLegacyVersion = String(legacyVersion || '').trim();
 
     const inOverwriteFolder = isOverwriteFolderPathLike(snapshotFolder) || isOverwriteFolderPathLike(folderPath);
     const snapshotKeyFromName = parseSnapshotKeyFromText(name);
@@ -25468,7 +25662,8 @@ function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localF
         fingerprint: fingerprint || null,
         snapshotKey: snapshotKey || null,
         snapshotFolder: snapshotFolder || null,
-        folderPath: folderPath || null
+        folderPath: folderPath || null,
+        legacyVersion: normalizedLegacyVersion || null
     };
 
     return normalizeRestoreVersionMeta({
@@ -25476,7 +25671,7 @@ function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localF
         time: timeMs,
         displayTime: timeMs ? formatDateTime(timeMs) : name,
         seqNumber: null,
-        note: 'HTML Snapshot',
+        note: isLegacyV2VersionValue(normalizedLegacyVersion) ? 'Legacy v2.1 HTML Snapshot' : 'HTML Snapshot',
         fingerprint,
         stats: {
             bookmarkAdded: 0,
@@ -25491,6 +25686,7 @@ function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localF
         source,
         sourceType: 'html',
         originalFile,
+        legacyVersion: normalizedLegacyVersion || null,
         restoreRef,
         canRestore: true
     });
@@ -25544,8 +25740,9 @@ function parseBookmarkTreeFromJsonTextForRestore(text) {
     return extractBookmarkTreeFromJsonPayloadForRestore(parsed);
 }
 
-function buildRestoreVersionFromJsonTreeFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '' }) {
+function buildRestoreVersionFromJsonTreeFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '', legacyVersion = '' }) {
     const name = fileName || originalFile;
+    const normalizedLegacyVersion = String(legacyVersion || '').trim();
 
     const inOverwriteFolder = isOverwriteFolderPathLike(snapshotFolder) || isOverwriteFolderPathLike(folderPath);
     const snapshotKeyFromName = parseSnapshotKeyFromText(name);
@@ -25576,7 +25773,8 @@ function buildRestoreVersionFromJsonTreeFile({ source, originalFile, fileUrl, lo
         fingerprint: fingerprint || null,
         snapshotKey: snapshotKey || null,
         snapshotFolder: snapshotFolder || null,
-        folderPath: folderPath || null
+        folderPath: folderPath || null,
+        legacyVersion: normalizedLegacyVersion || null
     };
 
     return normalizeRestoreVersionMeta({
@@ -25584,7 +25782,7 @@ function buildRestoreVersionFromJsonTreeFile({ source, originalFile, fileUrl, lo
         time: timeMs,
         displayTime: timeMs ? formatDateTime(timeMs) : name,
         seqNumber: null,
-        note: 'JSON Snapshot',
+        note: isLegacyV2VersionValue(normalizedLegacyVersion) ? 'Legacy v2.1 JSON Snapshot' : 'JSON Snapshot',
         fingerprint,
         stats: {
             bookmarkAdded: 0,
@@ -25599,6 +25797,7 @@ function buildRestoreVersionFromJsonTreeFile({ source, originalFile, fileUrl, lo
         source,
         sourceType: 'json',
         originalFile,
+        legacyVersion: normalizedLegacyVersion || null,
         restoreRef,
         canRestore: true
     });
@@ -28382,7 +28581,8 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     fileName: f.name,
                     lastModifiedMs: typeof f.lastModified === 'number' ? f.lastModified : null,
                     snapshotFolder: f.snapshotFolder || '',
-                    folderPath: f.folderPath || ''
+                    folderPath: f.folderPath || '',
+                    legacyVersion: f.legacyVersion || ''
                 });
                 const snapshotKey = String(
                     version?.restoreRef?.snapshotKey
@@ -28443,7 +28643,8 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     fileName: f.name,
                     lastModifiedMs: typeof f.lastModified === 'number' ? f.lastModified : null,
                     snapshotFolder: f.snapshotFolder || '',
-                    folderPath: f.folderPath || ''
+                    folderPath: f.folderPath || '',
+                    legacyVersion: f.legacyVersion || ''
                 });
                 const snapshotKey = String(
                     version?.restoreRef?.snapshotKey

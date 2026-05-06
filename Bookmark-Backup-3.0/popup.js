@@ -4138,7 +4138,8 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         totalRecords: 0,
                         totalPages: 1,
                         currentPage: 1,
-                        pageSize: PAGE_SIZE
+                        pageSize: PAGE_SIZE,
+                        v2ToV3HistoryDividerIndex: -1
                     });
                     return;
                 }
@@ -4148,7 +4149,8 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         totalRecords: Number.isFinite(Number(response.totalRecords)) ? Number(response.totalRecords) : 0,
                         totalPages: Number.isFinite(Number(response.totalPages)) ? Number(response.totalPages) : 1,
                         currentPage: Number.isFinite(Number(response.currentPage)) ? Number(response.currentPage) : requestedPage,
-                        pageSize: Number.isFinite(Number(response.pageSize)) ? Number(response.pageSize) : PAGE_SIZE
+                        pageSize: Number.isFinite(Number(response.pageSize)) ? Number(response.pageSize) : PAGE_SIZE,
+                        v2ToV3HistoryDividerIndex: Number.isFinite(Number(response.v2ToV3HistoryDividerIndex)) ? Number(response.v2ToV3HistoryDividerIndex) : -1
                     });
                 }
                 else {
@@ -4158,7 +4160,8 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         totalRecords: 0,
                         totalPages: 1,
                         currentPage: 1,
-                        pageSize: PAGE_SIZE
+                        pageSize: PAGE_SIZE,
+                        v2ToV3HistoryDividerIndex: -1
                     });
                 }
             });
@@ -4195,6 +4198,9 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         const responsePageSize = Number.isFinite(Number(historyPageData?.pageSize))
             ? Number(historyPageData.pageSize)
             : PAGE_SIZE;
+        const v2ToV3HistoryDividerIndex = Number.isFinite(Number(historyPageData?.v2ToV3HistoryDividerIndex))
+            ? Number(historyPageData.v2ToV3HistoryDividerIndex)
+            : -1;
         const latestOverwriteRevertLineInsertIndex = currentPage === 1
             ? resolveLatestOverwriteRevertLineInsertIndex(
                 syncHistory,
@@ -4418,6 +4424,56 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
             let previousDate = null;
             let lastHistoryItem = null;
 
+            const appendV2ToV3HistoryDivider = () => {
+                if (lastHistoryItem) {
+                    lastHistoryItem.style.borderBottom = 'none';
+                }
+
+                const divider = document.createElement('div');
+                divider.className = 'history-v2-to-v3-divider';
+                divider.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    margin: 10px 0;
+                    padding: 0 8px;
+                `;
+
+                const lineStyle = `
+                    flex: 1;
+                    height: 0;
+                    border-top: 1px dashed #FF9800;
+                    opacity: 0.9;
+                `;
+
+                const leftLine = document.createElement('span');
+                leftLine.style.cssText = lineStyle;
+
+                const text = document.createElement('span');
+                text.textContent = currentLang === 'en'
+                    ? 'Above: v3.0 backups · Below: legacy v2.1 history'
+                    : '以上为 v3.0 新备份 · 以下为旧版 2.1 历史';
+                text.style.cssText = `
+                    white-space: nowrap;
+                    font-size: 12px;
+                    font-weight: 700;
+                    line-height: 1;
+                    color: #FF9800;
+                    padding: 2px 8px;
+                    border-radius: 999px;
+                    background: rgba(255, 152, 0, 0.10);
+                    border: 1px solid rgba(255, 152, 0, 0.30);
+                `;
+
+                const rightLine = document.createElement('span');
+                rightLine.style.cssText = lineStyle;
+
+                divider.appendChild(leftLine);
+                divider.appendChild(text);
+                divider.appendChild(rightLine);
+                historyList.appendChild(divider);
+            };
+
             pageRecords.forEach((record, index) => {
                 const globalIndex = startIndex + index;
                 const recordCapabilities = getPopupHistoryRecordCapabilities(record);
@@ -4448,9 +4504,14 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 const currentDateStr = `${time.getFullYear()}-${time.getMonth() + 1}-${time.getDate()}`;
                 const previousDateObj = previousDate ? new Date(previousDate) : null;
                 const previousDateStr = previousDateObj ? `${previousDateObj.getFullYear()}-${previousDateObj.getMonth() + 1}-${previousDateObj.getDate()}` : null;
+                const shouldInsertV2ToV3Divider = globalIndex === v2ToV3HistoryDividerIndex;
+
+                if (shouldInsertV2ToV3Divider) {
+                    appendV2ToV3HistoryDivider();
+                }
 
                 // 如果日期变化且不是第一条记录，在两条记录之间插入日期分割线
-                if (previousDateStr && currentDateStr !== previousDateStr && lastHistoryItem) {
+                if (!shouldInsertV2ToV3Divider && previousDateStr && currentDateStr !== previousDateStr && lastHistoryItem) {
                     const dividerColor = '#007AFF';
                     const textColor = '#007AFF';
 
@@ -6761,6 +6822,52 @@ function handleAutoSyncToggle(event) {
     });
 }
 
+function maybeShowV2ToV3UpgradeNotice() {
+    chrome.storage.local.get([
+        'v2ToV3UpgradeNoticePending',
+        'v2ToV3UpgradeNoticeShown',
+        'v2LegacyRecordCount',
+        'preferredLang',
+        'currentLang'
+    ], function (result) {
+        if (result?.v2ToV3UpgradeNoticePending !== true || result?.v2ToV3UpgradeNoticeShown === true) return;
+
+        const lang = result.currentLang || result.preferredLang || 'zh_CN';
+        const isEn = lang === 'en';
+        const count = Number(result.v2LegacyRecordCount) || 0;
+        const message = isEn
+            ? `Legacy v2.1 history has been kept as record-only${count ? ` (${count})` : ''}. Please click Upload to re-initialize backup. Old HTML files remain restorable from WebDAV or Local restore.`
+            : `已保留旧版 2.1 历史记录为仅记录${count ? `（${count}条）` : ''}。请点击初始化上传按钮重新初始化备份；旧 HTML 可从 WebDAV 或本地恢复入口选择。`;
+
+        showStatus(message, 'info', 9000);
+
+        const initHeader = document.getElementById('initHeader');
+        const initContent = document.getElementById('initContent');
+        if (initHeader && initContent) {
+            initContent.style.display = 'block';
+            initHeader.classList.remove('collapsed');
+        }
+
+        if (initHeader) {
+            try {
+                initHeader.setAttribute('tabindex', '-1');
+                initHeader.focus({ preventScroll: true });
+            } catch (_) {
+            }
+            setTimeout(() => {
+                const pageYOffset = window.pageYOffset || document.documentElement.scrollTop || 0;
+                const targetTop = initHeader.getBoundingClientRect().top + pageYOffset - 8;
+                window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+            }, 200);
+        }
+
+        chrome.storage.local.set({
+            v2ToV3UpgradeNoticeShown: true,
+            v2ToV3UpgradeNoticePending: false
+        });
+    });
+}
+
 /**
  * 处理初始化上传函数。
  * 优化：立即执行UI跳转，上传操作在后台异步执行，完成后通过系统通知告知结果。
@@ -6808,7 +6915,11 @@ function handleInitUpload() {
     }, 50);
 
     // 设置初始化标记（乐观更新，假设会成功）
-    chrome.storage.local.set({ initialized: true });
+    chrome.storage.local.set({
+        initialized: true,
+        v2ToV3UpgradeNoticePending: false,
+        v2ToV3UpgradeNoticeShown: true
+    });
 
     // ========== 异步发送初始化请求到后台（Fire and Forget） ==========
     // 后台会在完成后发送系统通知，即使popup关闭也能继续执行
@@ -10616,6 +10727,22 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         return false;
     };
 
+    const isLegacyV2BookmarksFolderPath = (pathText) => {
+        const parts = String(pathText || '')
+            .replace(/\\/g, '/')
+            .split('/')
+            .map((part) => String(part || '').trim().toLowerCase())
+            .filter(Boolean);
+        return parts.some((part) => part === 'bookmarks');
+    };
+
+    const isLegacyV2HtmlBackupName = (name) => {
+        const lower = stripBrowserDuplicateSuffix(name).toLowerCase();
+        if (!isHtmlFileName(lower)) return false;
+        return /^(?:backup_)?\d{8}_\d{4}(?:\d{2})?\.(?:html?|xhtml)$/i.test(lower)
+            || /^bookmark[ _-]?backup\.(?:html?|xhtml)$/i.test(lower);
+    };
+
     const isOverwriteFolderName = (name) => {
         const text = String(name || '').trim().toLowerCase();
         return text === '覆盖' || text === 'overwrite';
@@ -10821,6 +10948,8 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         const pathText = String(file.webkitRelativePath || name || '');
         const pathLower = pathText.toLowerCase();
         const normalizedPathText = pathText.replace(/\\/g, '/');
+        const isLegacyV2HtmlBackup = isLegacyV2HtmlBackupName(name) && (isLegacyV2BookmarksFolderPath(pathText) || allowStandalone);
+        const legacyVersion = isLegacyV2HtmlBackup ? '2.1' : '';
         const localFileKey = pathText;
         localRestoreFileMap.set(localFileKey, file);
 
@@ -10889,7 +11018,8 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                 const inBackupPath = pathText.includes('书签备份')
                     || pathLower.includes('bookmark backup')
                     || pathLower.includes('bookmark_backup')
-                    || pathLower.includes('bookmarkbackup');
+                    || pathLower.includes('bookmarkbackup')
+                    || isLegacyV2BookmarksFolderPath(pathText);
 
                 if (snapshotFolder || inBackupPath || allowStandalone || snapshotKey) {
                     localCandidates.push({
@@ -10899,7 +11029,8 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         localFileKey,
                         lastModified: file.lastModified,
                         snapshotFolder,
-                        folderPath
+                        folderPath,
+                        ...(legacyVersion ? { legacyVersion } : {})
                     });
                     continue;
                 }
@@ -10921,7 +11052,8 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         localFileKey,
                         lastModified: file.lastModified,
                         snapshotFolder,
-                        folderPath
+                        folderPath,
+                        ...(legacyVersion ? { legacyVersion } : {})
                     });
                     continue;
                 }
@@ -10977,7 +11109,8 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         text: artifactText,
                         lastModified: file.lastModified,
                         snapshotFolder,
-                        folderPath
+                        folderPath,
+                        ...(legacyVersion ? { legacyVersion } : {})
                     });
                     continue;
                 }
@@ -10990,7 +11123,8 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         localFileKey,
                         lastModified: file.lastModified,
                         snapshotFolder,
-                        folderPath
+                        folderPath,
+                        ...(legacyVersion ? { legacyVersion } : {})
                     });
                     continue;
                 }
@@ -11027,7 +11161,8 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         text: jsonText,
                         lastModified: file.lastModified,
                         snapshotFolder,
-                        folderPath
+                        folderPath,
+                        ...(legacyVersion ? { legacyVersion } : {})
                     });
                     continue;
                 }
@@ -11041,7 +11176,8 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         text: jsonText,
                         lastModified: file.lastModified,
                         snapshotFolder,
-                        folderPath
+                        folderPath,
+                        ...(legacyVersion ? { legacyVersion } : {})
                     });
                     continue;
                 }
@@ -11333,6 +11469,11 @@ function showRestoreModal(versions, source) {
         const jsonKind = String(restoreRef?.jsonKind || '').trim().toLowerCase();
         return source === 'local' && sourceType === 'json' && jsonKind === 'tree';
     };
+    const isLegacyV2RestoreVersion = (v) => {
+        const restoreRef = v?.restoreRef || {};
+        const text = String(v?.legacyVersion || restoreRef?.legacyVersion || '').trim().toLowerCase().replace(/^v/, '');
+        return text === '2' || text === '2.x' || /^2\.\d+$/.test(text);
+    };
     const isHtmlVersion = (v) => {
         const st = String(v?.sourceType || v?.restoreRef?.sourceType || '').toLowerCase();
         return st === 'html';
@@ -11592,6 +11733,19 @@ function showRestoreModal(versions, source) {
         return '';
     };
 
+    const resolveLegacyV2RestorePathText = (version, lang = cachedLang) => {
+        if (!isLegacyV2RestoreVersion(version)) return '';
+        const restoreRef = version?.restoreRef || {};
+        const sourceValue = String(version?.source || restoreRef?.source || '').trim().toLowerCase();
+        const sourceLabel = sourceValue === 'webdav'
+            ? 'WebDAV'
+            : (sourceValue === 'local' ? (lang === 'en' ? 'Local' : '本地') : sourceValue);
+        const folderPath = String(restoreRef?.folderPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').trim();
+        const fileName = resolveSnapshotDisplayFileName(version)
+            || extractLeafFileName(restoreRef?.originalFile || version?.originalFile || restoreRef?.fileUrl || restoreRef?.localFileKey || '');
+        return [sourceLabel, folderPath, fileName].filter(Boolean).join(' / ');
+    };
+
     const resolveChangesDisplayFileName = (version) => {
         const artifact = version?.restoreRef?.changesArtifact;
         if (!artifact || typeof artifact !== 'object') return '';
@@ -11645,6 +11799,15 @@ function showRestoreModal(versions, source) {
             ? (resolveChangesDisplayFileName(version) || resolveSnapshotDisplayFileName(version))
             : (resolveSnapshotDisplayFileName(version) || resolveChangesDisplayFileName(version));
         const displayRaw = fileName || rawNote || '-';
+        if (isLegacyV2RestoreVersion(version)) {
+            const legacySourceType = String(version?.sourceType || restoreRef?.sourceType || '').trim().toLowerCase();
+            const legacyPrefix = legacySourceType === 'json'
+                ? (lang === 'en' ? 'Legacy v2.1 JSON' : '旧版 2.1 JSON')
+                : (lang === 'en' ? 'Legacy v2.1 HTML' : '旧版 2.1 HTML');
+            const legacyPath = resolveLegacyV2RestorePathText(version, lang);
+            const legacyDetail = legacyPath || (displayRaw && displayRaw !== '-' ? localizeRestoreDisplayText(displayRaw, lang) : '');
+            return legacyDetail ? `${legacyPrefix} · ${legacyDetail}` : legacyPrefix;
+        }
         if (isLocalExternalJsonSnapshotVersion(version)) {
             const externalJsonPrefix = lang === 'en' ? 'External JSON' : '外部 JSON';
             return displayRaw && displayRaw !== '-'
@@ -19428,6 +19591,9 @@ document.addEventListener('DOMContentLoaded', function () {
     setTimeout(() => {
         maybePromptRestoreRecoveryTransaction().catch(() => { });
     }, 120);
+    setTimeout(() => {
+        maybeShowV2ToV3UpgradeNotice();
+    }, 700);
 
     // 初始化UI部分
     loadWebDAVToggleStatus();

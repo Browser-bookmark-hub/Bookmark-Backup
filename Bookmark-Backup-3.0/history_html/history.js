@@ -106,6 +106,16 @@ function getHistoryRecordCapabilities(record = {}) {
     };
 }
 
+function isLegacyV2HistoryVersionValue(value) {
+    const text = String(value || '').trim().toLowerCase().replace(/^v/, '');
+    return text === '2' || text === '2.x' || /^2\.\d+$/.test(text);
+}
+
+function isLegacyV2HistoryRecord(record) {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+    return record.v2RecordOnlyMigrated === true || isLegacyV2HistoryVersionValue(record.legacyVersion);
+}
+
 function getHistoryDataCapabilityBadgeMeta(capabilities = {}, lang = currentLang) {
     const isZh = lang === 'zh_CN';
     const hasSnapshot = capabilities.hasSnapshotData === true;
@@ -2520,8 +2530,8 @@ const i18n = {
         'en': 'Clear Records'
     },
     clearBackupHistoryModalDesc: {
-        'zh_CN': '选择要删除的备份历史记录数量：',
-        'en': 'Select the number of backup history records to delete:'
+        'zh_CN': '拖动进度条选择要删除的记录。',
+        'en': 'Drag the slider to choose records to delete.'
     },
     clearHistoryModePercentLabel: {
         'zh_CN': '按百分比删除',
@@ -2853,8 +2863,8 @@ const i18n = {
         'en': 'Auto select'
     },
     globalExportThSeq: {
-        'zh_CN': '序号',
-        'en': 'No.'
+        'zh_CN': '位置',
+        'en': 'Position'
     },
     globalExportThNote: {
         'zh_CN': '备注',
@@ -3697,7 +3707,6 @@ function applyLanguage() {
     if (clearHistoryCountLabelBefore) clearHistoryCountLabelBefore.textContent = i18n.clearHistoryCountLabelBefore[currentLang];
     const clearHistoryCountLabelAfter = document.getElementById('clearHistoryCountLabelAfter');
     if (clearHistoryCountLabelAfter) clearHistoryCountLabelAfter.textContent = i18n.clearHistoryCountLabelAfter[currentLang];
-
     const clearHistoryWarningThresholdTitle = document.getElementById('clearHistoryWarningThresholdTitle');
     if (clearHistoryWarningThresholdTitle) clearHistoryWarningThresholdTitle.textContent = i18n.clearHistoryWarningThresholdTitle[currentLang];
     const clearHistoryWarnYellowLabel = document.getElementById('clearHistoryWarnYellowLabel');
@@ -4053,9 +4062,17 @@ function initClearBackupHistoryModal() {
     const selectionRange = document.getElementById('clearHistorySelectionRange');
     const selectionCount = document.getElementById('clearHistorySelectionCount');
     const selectionLabel = document.getElementById('clearHistorySelectionLabel');
+    const previewContainer = document.getElementById('clearHistoryPreview');
     const previewTextEl = document.getElementById('clearHistoryPreviewText');
     const warnYellowInput = document.getElementById('clearHistoryWarnYellowInput');
     const warnRedInput = document.getElementById('clearHistoryWarnRedInput');
+    const versionWarning = document.getElementById('clearHistoryVersionWarning');
+    const versionSegmentV3 = document.getElementById('clearHistoryVersionSegmentV3');
+    const versionSegmentLegacy = document.getElementById('clearHistoryVersionSegmentLegacy');
+    const versionBoundary = document.getElementById('clearHistoryVersionBoundary');
+    const progressV3Text = document.getElementById('clearHistoryProgressV3Text');
+    const progressLegacyText = document.getElementById('clearHistoryProgressLegacyText');
+    const secondConfirmWarning = document.getElementById('clearHistorySecondConfirmWarning');
 
     if (!btn || !modal || !confirmBtn) return;
 
@@ -4063,6 +4080,7 @@ function initClearBackupHistoryModal() {
     let pendingDeleteMinSeq = 1;
     let pendingDeleteMaxSeq = 1;
     let pendingDeleteCount = 0;
+    let pendingDeleteEntries = [];
     let clearHistoryActiveThumb = 'max'; // 'min' | 'max'
 
     const syncDeleteWarningThresholdInputs = () => {
@@ -4096,7 +4114,7 @@ function initClearBackupHistoryModal() {
     const getRecordSeqNumbers = () => {
         if (!syncHistory || syncHistory.length === 0) return [];
         return syncHistory.map((record, index) => {
-            return record.seqNumber || (index + 1);
+            return getHistoryListPositionNumberByStorageIndex(index);
         });
     };
 
@@ -4108,6 +4126,254 @@ function initClearBackupHistoryModal() {
             min: Math.min(...seqNumbers),
             max: Math.max(...seqNumbers)
         };
+    };
+
+    const getDeleteEntryKey = (record) => {
+        if (!record || typeof record !== 'object') return '';
+        if (record.fingerprint) return `fp:${String(record.fingerprint)}`;
+        if (record.time != null) return `time:${String(record.time)}`;
+        return '';
+    };
+
+    const getClearHistoryEntries = () => {
+        const history = Array.isArray(syncHistory) ? syncHistory : [];
+        let legacyPosition = 0;
+        let v3Position = 0;
+        return history.map((record, index) => {
+            const isLegacy = isLegacyV2HistoryRecord(record);
+            const versionPosition = isLegacy ? ++legacyPosition : ++v3Position;
+            return {
+                record,
+                index,
+                position: getHistoryListPositionNumberByStorageIndex(index),
+                key: getDeleteEntryKey(record),
+                isLegacy,
+                versionPosition
+            };
+        });
+    };
+
+    const summarizeClearHistoryEntries = (entries) => {
+        const list = Array.isArray(entries) ? entries : [];
+        const summary = {
+            total: list.length,
+            legacy: 0,
+            v3: 0,
+            min: null,
+            max: null,
+            legacyMin: null,
+            legacyMax: null,
+            v3Min: null,
+            v3Max: null
+        };
+        list.forEach((entry) => {
+            const versionPosition = Number(entry.versionPosition);
+            if (entry.isLegacy) {
+                summary.legacy += 1;
+                if (Number.isFinite(versionPosition) && versionPosition > 0) {
+                    summary.legacyMin = summary.legacyMin == null ? versionPosition : Math.min(summary.legacyMin, versionPosition);
+                    summary.legacyMax = summary.legacyMax == null ? versionPosition : Math.max(summary.legacyMax, versionPosition);
+                }
+            } else {
+                summary.v3 += 1;
+                if (Number.isFinite(versionPosition) && versionPosition > 0) {
+                    summary.v3Min = summary.v3Min == null ? versionPosition : Math.min(summary.v3Min, versionPosition);
+                    summary.v3Max = summary.v3Max == null ? versionPosition : Math.max(summary.v3Max, versionPosition);
+                }
+            }
+            const position = Number(entry.position);
+            if (Number.isFinite(position) && position > 0) {
+                summary.min = summary.min == null ? position : Math.min(summary.min, position);
+                summary.max = summary.max == null ? position : Math.max(summary.max, position);
+            }
+        });
+        summary.hasMixed = summary.legacy > 0 && summary.v3 > 0;
+        return summary;
+    };
+
+    const getClearHistoryVersionStats = () => summarizeClearHistoryEntries(getClearHistoryEntries());
+
+    const getCurrentSliderRange = () => {
+        if (!rangeMinSlider || !rangeMaxSlider) return { min: 1, max: 1 };
+        const a = parseInt(rangeMinSlider.value, 10);
+        const b = parseInt(rangeMaxSlider.value, 10);
+        return {
+            min: Math.min(a, b),
+            max: Math.max(a, b)
+        };
+    };
+
+    const getClearHistorySelectedEntries = () => {
+        const entries = getClearHistoryEntries();
+        const range = getCurrentSliderRange();
+        return entries.filter(entry => entry.position >= range.min && entry.position <= range.max);
+    };
+
+    const formatClearHistoryLocalRange = (min, max) => {
+        if (min == null || max == null) return '-';
+        return min === max ? String(min) : `${min}-${max}`;
+    };
+
+    const getClearHistoryVersionDisplayRows = (summary) => {
+        if (!summary || summary.total <= 0) return '-';
+        const isEn = currentLang === 'en';
+        const rows = [];
+        if ((Number(summary.v3) || 0) > 0) {
+            const v3Range = formatClearHistoryLocalRange(summary.v3Min, summary.v3Max);
+            const v3Count = Number(summary.v3) || 0;
+            rows.push(isEn ? `v3.0 #${v3Range} (${v3Count})` : `v3.0 编号 ${v3Range}（${v3Count} 条）`);
+        }
+        if ((Number(summary.legacy) || 0) > 0) {
+            const legacyRange = formatClearHistoryLocalRange(summary.legacyMin, summary.legacyMax);
+            const legacyCount = Number(summary.legacy) || 0;
+            rows.push(isEn ? `v2.1 #${legacyRange} (${legacyCount})` : `v2.1 编号 ${legacyRange}（${legacyCount} 条）`);
+        }
+        return rows;
+    };
+
+    const formatClearHistoryVersionDisplayRange = (summary) => {
+        const rows = getClearHistoryVersionDisplayRows(summary);
+        if (!Array.isArray(rows)) return rows;
+        const isEn = currentLang === 'en';
+        return rows.join(summary?.hasMixed ? '\n' : (isEn ? '; ' : '；'));
+    };
+
+    const getClearHistoryEntryByPosition = (position) => {
+        const numericPosition = Number(position);
+        if (!Number.isFinite(numericPosition)) return null;
+        return getClearHistoryEntries().find(entry => entry.position === numericPosition) || null;
+    };
+
+    const getClearHistoryDisplayNumberForPosition = (position) => {
+        const entry = getClearHistoryEntryByPosition(position);
+        const versionPosition = Number(entry?.versionPosition);
+        return Number.isFinite(versionPosition) && versionPosition > 0 ? String(versionPosition) : String(position);
+    };
+
+    const formatClearHistoryLegendVersionText = (label, summary, key) => {
+        const isEn = currentLang === 'en';
+        const count = Number(summary?.[key]) || 0;
+        if (count <= 0) return isEn ? `${label} 0` : `${label} 0 条`;
+        const min = summary?.[`${key}Min`];
+        const max = summary?.[`${key}Max`];
+        const rangeText = formatClearHistoryLocalRange(min, max);
+        return isEn ? `${label} #${rangeText} (${count})` : `${label} 编号 ${rangeText}（${count} 条）`;
+    };
+
+    const buildClearHistorySelectionText = (summary) => {
+        const isEn = currentLang === 'en';
+        const count = Number(summary?.total) || 0;
+        const rangeText = formatClearHistoryVersionDisplayRange(summary);
+        return isEn
+            ? `Will delete ${count} records: ${rangeText}`
+            : `即将删除 ${count} 条：${rangeText}`;
+    };
+
+    const renderClearHistorySelectionSummary = (container, summary, options = {}) => {
+        if (!container) return;
+        const includePrefix = options.includePrefix !== false;
+        const rows = getClearHistoryVersionDisplayRows(summary);
+        if (!Array.isArray(rows) || !summary?.hasMixed) {
+            container.textContent = includePrefix
+                ? buildClearHistorySelectionText(summary)
+                : formatClearHistoryVersionDisplayRange(summary);
+            return;
+        }
+        const isEn = currentLang === 'en';
+        const count = Number(summary?.total) || 0;
+        const wrapper = document.createElement('span');
+        const prefix = document.createElement('span');
+        const ranges = document.createElement('span');
+        wrapper.className = 'clear-history-selection-summary';
+        prefix.className = 'clear-history-selection-summary-prefix';
+        ranges.className = 'clear-history-selection-summary-ranges';
+        prefix.textContent = isEn ? `Will delete ${count} records: ` : `即将删除 ${count} 条：`;
+        rows.forEach((rowText) => {
+            const row = document.createElement('span');
+            row.className = 'clear-history-selection-summary-row';
+            row.textContent = rowText;
+            ranges.appendChild(row);
+        });
+        if (includePrefix) {
+            wrapper.appendChild(prefix);
+        }
+        wrapper.appendChild(ranges);
+        container.textContent = '';
+        container.appendChild(wrapper);
+    };
+
+    const buildClearHistorySecondWarningText = (summary) => {
+        const isEn = currentLang === 'en';
+        if (summary?.hasMixed) {
+            return isEn
+                ? 'This cannot be undone. The selection spans v2.1 and v3.0 records; export first unless you intentionally want to clear across the version boundary.'
+                : '此操作不可撤销。当前选择同时包含 v2.1 与 v3.0 记录；除非确认要跨版本清理，否则建议先备份。';
+        }
+        if ((Number(summary?.legacy) || 0) > 0) {
+            return isEn
+                ? 'This cannot be undone. Only v2.1 records will be deleted; v3.0 records will be kept.'
+                : '此操作不可撤销。只会删除 v2.1 记录，v3.0 记录会保留。';
+        }
+        return isEn
+            ? 'This cannot be undone. Only v3.0 records will be deleted; v2.1 records will be kept.'
+            : '此操作不可撤销。只会删除 v3.0 记录，v2.1 记录会保留。';
+    };
+
+    const setSliderRangeFromEntries = (entries) => {
+        const summary = summarizeClearHistoryEntries(entries);
+        if (!rangeMinSlider || !rangeMaxSlider || summary.min == null || summary.max == null) return;
+        rangeMinSlider.value = String(summary.min);
+        rangeMaxSlider.value = String(summary.max);
+    };
+
+    const setClearHistorySegmentStyle = (segmentEl, summary, sliderMin, totalSlots) => {
+        if (!segmentEl || !summary || summary.total <= 0 || summary.min == null || summary.max == null || totalSlots <= 0) {
+            if (segmentEl) segmentEl.classList.remove('show');
+            return;
+        }
+        const leftPercent = ((summary.min - sliderMin) / totalSlots) * 100;
+        const rightPercent = ((summary.max - sliderMin + 1) / totalSlots) * 100;
+        segmentEl.style.left = `${Math.max(0, Math.min(100, leftPercent))}%`;
+        segmentEl.style.width = `${Math.max(0, Math.min(100, rightPercent - leftPercent))}%`;
+        segmentEl.classList.add('show');
+    };
+
+    const updateClearHistoryVersionTrack = () => {
+        if (!rangeMinSlider || !rangeMaxSlider) return;
+        const entries = getClearHistoryEntries();
+        const legacySummary = summarizeClearHistoryEntries(entries.filter(entry => entry.isLegacy));
+        const v3Summary = summarizeClearHistoryEntries(entries.filter(entry => !entry.isLegacy));
+        const allSummary = summarizeClearHistoryEntries(entries);
+        const sliderMin = parseInt(rangeMinSlider.min, 10);
+        const sliderMax = parseInt(rangeMaxSlider.max, 10);
+        const totalSlots = Math.max(1, sliderMax - sliderMin + 1);
+        const isEn = currentLang === 'en';
+
+        setClearHistorySegmentStyle(versionSegmentLegacy, legacySummary, sliderMin, totalSlots);
+        setClearHistorySegmentStyle(versionSegmentV3, v3Summary, sliderMin, totalSlots);
+
+        if (versionBoundary) {
+            if (allSummary.hasMixed && legacySummary.max != null) {
+                const boundaryPercent = ((legacySummary.max - sliderMin + 1) / totalSlots) * 100;
+                versionBoundary.style.left = `${Math.max(0, Math.min(100, boundaryPercent))}%`;
+                versionBoundary.classList.add('show');
+            } else {
+                versionBoundary.classList.remove('show');
+            }
+        }
+
+        if (progressV3Text) {
+            progressV3Text.textContent = formatClearHistoryLegendVersionText('v3.0', v3Summary, 'v3');
+            if (progressV3Text.parentElement) {
+                progressV3Text.parentElement.style.display = v3Summary.total > 0 ? '' : 'none';
+            }
+        }
+        if (progressLegacyText) {
+            progressLegacyText.textContent = formatClearHistoryLegendVersionText('v2.1', legacySummary, 'legacy');
+            if (progressLegacyText.parentElement) {
+                progressLegacyText.parentElement.style.display = legacySummary.total > 0 ? '' : 'none';
+            }
+        }
     };
 
     // 更新滑块范围高亮
@@ -4175,8 +4441,8 @@ function initClearBackupHistoryModal() {
 
         minBubble.style.left = `${ax}px`;
         maxBubble.style.left = `${bx}px`;
-        minBubble.textContent = String(a);
-        maxBubble.textContent = String(b);
+        minBubble.textContent = getClearHistoryDisplayNumberForPosition(a);
+        maxBubble.textContent = getClearHistoryDisplayNumberForPosition(b);
 
         const overlapThresholdPx = 14;
         const overlap = Math.abs(ax - bx) <= overlapThresholdPx;
@@ -4200,66 +4466,47 @@ function initClearBackupHistoryModal() {
         }
     };
 
-    // 计算要删除的记录数量（根据序号范围）
     const calculateDeleteCount = () => {
-        if (!rangeMinSlider || !rangeMaxSlider) return 0;
-
-        const a = parseInt(rangeMinSlider.value, 10);
-        const b = parseInt(rangeMaxSlider.value, 10);
-        const minSeq = Math.min(a, b);
-        const maxSeq = Math.max(a, b);
-
-        // 统计在范围内的记录数
-        const seqNumbers = getRecordSeqNumbers();
-        let count = 0;
-        for (const seq of seqNumbers) {
-            if (seq >= minSeq && seq <= maxSeq) {
-                count++;
-            }
-        }
-        return count;
+        return getClearHistorySelectedEntries().length;
     };
 
-    // 获取将要删除的序号范围字符串
     const getDeleteSeqRange = () => {
-        if (!rangeMinSlider || !rangeMaxSlider) return '';
-        const a = parseInt(rangeMinSlider.value, 10);
-        const b = parseInt(rangeMaxSlider.value, 10);
-        const minSeq = Math.min(a, b);
-        const maxSeq = Math.max(a, b);
-        if (minSeq === maxSeq) return String(minSeq);
-        return `${minSeq}-${maxSeq}`;
+        return formatClearHistoryVersionDisplayRange(summarizeClearHistoryEntries(getClearHistorySelectedEntries()));
     };
 
-    // 更新显示
     const updateDisplay = () => {
         if (!rangeMinSlider || !rangeMaxSlider) return;
 
-        const a = parseInt(rangeMinSlider.value, 10);
-        const b = parseInt(rangeMaxSlider.value, 10);
-        const minSeq = Math.min(a, b);
-        const maxSeq = Math.max(a, b);
-        const deleteCount = calculateDeleteCount();
-        const total = syncHistory.length;
+        const allSummary = getClearHistoryVersionStats();
+        const selectedEntries = getClearHistorySelectedEntries();
+        const selectedSummary = summarizeClearHistoryEntries(selectedEntries);
+        const deleteCount = selectedSummary.total;
 
-        // 隐藏原来的中间显示区域
         if (selectionRange && selectionRange.parentElement && selectionRange.parentElement.parentElement) {
             selectionRange.parentElement.parentElement.style.display = 'none';
         }
 
-        // 更新预览文本 - 替换为用户要求的格式
-        if (previewTextEl) {
-            const seqRangeStr = minSeq === maxSeq ? String(minSeq) : `${minSeq}-${maxSeq}`;
-
-            if (currentLang === 'en') {
-                previewTextEl.textContent = `Will delete No. ${seqRangeStr} (${deleteCount} records)`;
+        const warningText = allSummary.hasMixed && selectedSummary.hasMixed
+            ? buildClearHistorySelectionText(selectedSummary)
+            : '';
+        if (versionWarning) {
+            versionWarning.classList.toggle('show', !!warningText);
+            if (warningText) {
+                renderClearHistorySelectionSummary(versionWarning, selectedSummary);
             } else {
-                // 用户要求的格式：「即将删除 2 条记录 (序号 4-5)」
-                previewTextEl.textContent = `即将删除 ${deleteCount} 条记录 (序号 ${seqRangeStr})`;
+                versionWarning.textContent = '';
             }
         }
 
-        // 更新高亮
+        if (previewTextEl) {
+            previewTextEl.textContent = buildClearHistorySelectionText(selectedSummary);
+        }
+        if (previewContainer) {
+            previewContainer.style.display = warningText ? 'none' : '';
+        }
+
+        if (confirmBtn) confirmBtn.disabled = deleteCount <= 0;
+        updateClearHistoryVersionTrack();
         updateRangeHighlight();
     };
 
@@ -4278,25 +4525,32 @@ function initClearBackupHistoryModal() {
 
     const openClearModal = () => {
         const seqRange = getSeqRange();
-        const total = syncHistory.length;
+        const stats = getClearHistoryVersionStats();
+        const entries = getClearHistoryEntries();
 
         // 设置滑块范围
         if (rangeMinSlider) {
             rangeMinSlider.min = seqRange.min;
             rangeMinSlider.max = seqRange.max;
-            rangeMinSlider.value = seqRange.min; // 起始从最小序号开始
+            rangeMinSlider.value = seqRange.min;
         }
         if (rangeMaxSlider) {
             rangeMaxSlider.min = seqRange.min;
             rangeMaxSlider.max = seqRange.max;
-            // 默认选中约50%的最旧记录
-            const defaultMaxSeq = seqRange.min + Math.floor((seqRange.max - seqRange.min) / 2);
-            rangeMaxSlider.value = Math.max(seqRange.min, defaultMaxSeq);
+            rangeMaxSlider.value = seqRange.max;
+        }
+
+        if (stats.legacy > 0 && stats.v3 > 0) {
+            setSliderRangeFromEntries(entries.filter(entry => entry.isLegacy));
+        } else if (stats.legacy > 0) {
+            setSliderRangeFromEntries(entries.filter(entry => entry.isLegacy));
+        } else if (stats.v3 > 0) {
+            setSliderRangeFromEntries(entries.filter(entry => !entry.isLegacy));
         }
 
         // 设置刻度标签 - Largest on Left
-        if (minSeqLabel) minSeqLabel.textContent = String(seqRange.max); // Left Label = Max
-        if (maxSeqLabel) maxSeqLabel.textContent = String(seqRange.min); // Right Label = Min
+        if (minSeqLabel) minSeqLabel.textContent = getClearHistoryDisplayNumberForPosition(seqRange.max); // Left Label = Max
+        if (maxSeqLabel) maxSeqLabel.textContent = getClearHistoryDisplayNumberForPosition(seqRange.min); // Right Label = Min
 
         syncDeleteWarningThresholdInputs();
 
@@ -4330,23 +4584,21 @@ function initClearBackupHistoryModal() {
     const openSecondConfirmModal = () => {
         if (!rangeMinSlider || !rangeMaxSlider) return;
 
-        const a = parseInt(rangeMinSlider.value, 10);
-        const b = parseInt(rangeMaxSlider.value, 10);
-        pendingDeleteMinSeq = Math.min(a, b);
-        pendingDeleteMaxSeq = Math.max(a, b);
-        pendingDeleteCount = calculateDeleteCount();
+        pendingDeleteEntries = getClearHistorySelectedEntries();
+        const pendingSummary = summarizeClearHistoryEntries(pendingDeleteEntries);
+        pendingDeleteMinSeq = pendingSummary.min == null ? 1 : pendingSummary.min;
+        pendingDeleteMaxSeq = pendingSummary.max == null ? 1 : pendingSummary.max;
+        pendingDeleteCount = pendingSummary.total;
 
         if (deleteCountDisplay) {
             deleteCountDisplay.textContent = pendingDeleteCount;
         }
         if (rangeDisplay) {
-            const seqRangeStr = pendingDeleteMinSeq === pendingDeleteMaxSeq
-                ? String(pendingDeleteMinSeq)
-                : `${pendingDeleteMinSeq}-${pendingDeleteMaxSeq}`;
-
-            rangeDisplay.textContent = currentLang === 'en'
-                ? `(No. ${seqRangeStr})`
-                : `(序号 ${seqRangeStr})`;
+            renderClearHistorySelectionSummary(rangeDisplay, pendingSummary, { includePrefix: false });
+        }
+        if (secondConfirmWarning) {
+            secondConfirmWarning.textContent = buildClearHistorySecondWarningText(pendingSummary);
+            secondConfirmWarning.classList.toggle('danger', pendingSummary.hasMixed);
         }
         if (secondModal) {
             secondModal.classList.add('show');
@@ -4369,24 +4621,21 @@ function initClearBackupHistoryModal() {
 
         if (directDeleteBtn) directDeleteBtn.disabled = true;
         try {
-            // 按序号范围删除（支持删除最新/中间/最旧；不重排其它记录的永久序号）
             const timesToDelete = [];
             const fingerprintsToDelete = [];
-            for (let i = 0; i < syncHistory.length; i++) {
-                const record = syncHistory[i];
-                const seq = record.seqNumber || (i + 1);
-                if (seq >= pendingDeleteMinSeq && seq <= pendingDeleteMaxSeq) {
-                    if (record.fingerprint) fingerprintsToDelete.push(record.fingerprint);
-                    else timesToDelete.push(record.time);
-                }
-            }
+            pendingDeleteEntries.forEach((entry) => {
+                const record = entry.record;
+                if (!record) return;
+                if (record.fingerprint) fingerprintsToDelete.push(record.fingerprint);
+                else if (record.time != null) timesToDelete.push(record.time);
+            });
 
             const resp = await deleteBackupHistoryItems({ fingerprintsToDelete, timesToDelete });
             closeSecondConfirmModal();
             closeClearModal();
 
             if (resp && resp.success) {
-                const deletedCount = resp.deleted || pendingDeleteCount;
+                const deletedCount = Number.isFinite(Number(resp.deleted)) ? Number(resp.deleted) : pendingDeleteCount;
 
                 // 从 storage 重新获取数据以确保一致性
                 try {
@@ -4397,8 +4646,12 @@ function initClearBackupHistoryModal() {
                     });
                     syncHistory = data.syncHistory || [];
                 } catch (e) {
-                    
-                    syncHistory = syncHistory.slice(deletedCount);
+                    const pendingDeleteKeys = new Set(pendingDeleteEntries.map(entry => entry.key).filter(Boolean));
+                    const pendingDeleteIndexes = new Set(pendingDeleteEntries.map(entry => entry.index));
+                    syncHistory = syncHistory.filter((record, index) => {
+                        const key = getDeleteEntryKey(record);
+                        return !((key && pendingDeleteKeys.has(key)) || pendingDeleteIndexes.has(index));
+                    });
                 }
 
                 try {
@@ -4440,29 +4693,46 @@ function initClearBackupHistoryModal() {
         const ts = Array.isArray(timesToDelete) ? timesToDelete : [];
         return new Promise((resolve) => {
             try {
-                if (fp.length > 0) {
-                    browserAPI.runtime.sendMessage({ action: 'deleteSyncHistoryItems', fingerprints: fp }, (response) => {
+                const sendDeleteMessage = (payload, fallbackDeleted) => new Promise((innerResolve) => {
+                    browserAPI.runtime.sendMessage(payload, (response) => {
                         if (browserAPI.runtime.lastError) {
-                            resolve({ success: false, error: browserAPI.runtime.lastError.message });
+                            innerResolve({ success: false, error: browserAPI.runtime.lastError.message });
                             return;
                         }
-                        resolve(response || { success: true, deleted: fp.length });
+                        innerResolve(response || { success: true, deleted: fallbackDeleted });
                     });
-                    return;
-                }
+                });
 
-                if (ts.length > 0) {
-                    browserAPI.runtime.sendMessage({ action: 'deleteSyncHistoryItemsByTime', times: ts }, (response) => {
-                        if (browserAPI.runtime.lastError) {
-                            resolve({ success: false, error: browserAPI.runtime.lastError.message });
+                (async () => {
+                    if (fp.length <= 0 && ts.length <= 0) {
+                        resolve({ success: true, deleted: 0 });
+                        return;
+                    }
+
+                    let deleted = 0;
+
+                    if (fp.length > 0) {
+                        const fpResponse = await sendDeleteMessage({ action: 'deleteSyncHistoryItems', fingerprints: fp }, fp.length);
+                        if (!fpResponse || fpResponse.success === false) {
+                            resolve(fpResponse || { success: false });
                             return;
                         }
-                        resolve(response || { success: true, deleted: ts.length });
-                    });
-                    return;
-                }
+                        deleted += Number.isFinite(Number(fpResponse.deleted)) ? Number(fpResponse.deleted) : fp.length;
+                    }
 
-                resolve({ success: true, deleted: 0 });
+                    if (ts.length > 0) {
+                        const timeResponse = await sendDeleteMessage({ action: 'deleteSyncHistoryItemsByTime', times: ts }, ts.length);
+                        if (!timeResponse || timeResponse.success === false) {
+                            resolve(timeResponse || { success: false });
+                            return;
+                        }
+                        deleted += Number.isFinite(Number(timeResponse.deleted)) ? Number(timeResponse.deleted) : ts.length;
+                    }
+
+                    resolve({ success: true, deleted });
+                })().catch((e) => {
+                    resolve({ success: false, error: e?.message || String(e) });
+                });
             } catch (e) {
                 resolve({ success: false, error: e?.message || String(e) });
             }
@@ -4680,7 +4950,7 @@ function showGlobalExportModalWithPreselection(preselectCount = 0) {
 
     globalExportSeqNumberByTime = new Map();
     syncHistory.forEach((record, index) => {
-        const seqNumber = record.seqNumber || (index + 1);
+        const seqNumber = getHistoryListPositionNumberByStorageIndex(index);
         globalExportSeqNumberByTime.set(String(record.time), seqNumber);
     });
 
@@ -4715,13 +4985,13 @@ function showGlobalExportModalWithPreselectionBySeqRange(minSeq, maxSeq) {
 
     // 根据序号范围预选记录
     syncHistory.forEach((record, index) => {
-        const seqNumber = record.seqNumber || (index + 1);
+        const seqNumber = getHistoryListPositionNumberByStorageIndex(index);
         globalExportSelectedState[record.time] = (seqNumber >= minSeq && seqNumber <= maxSeq);
     });
 
     globalExportSeqNumberByTime = new Map();
     syncHistory.forEach((record, index) => {
-        const seqNumber = record.seqNumber || (index + 1);
+        const seqNumber = getHistoryListPositionNumberByStorageIndex(index);
         globalExportSeqNumberByTime.set(String(record.time), seqNumber);
     });
 
@@ -10005,7 +10275,8 @@ const HISTORY_PAGE_SIZE = 10;
 
 let historyIndexMeta = {
     totalRecords: 0,
-    totalPages: 1
+    totalPages: 1,
+    v2ToV3HistoryDividerIndex: -1
 };
 
 function clampHistoryPage(page, totalPages = null) {
@@ -10031,6 +10302,36 @@ function sortHistoryRecordsByTimeDesc(records) {
     return list.sort((a, b) => getHistoryRecordTimeMs(b) - getHistoryRecordTimeMs(a));
 }
 
+function getHistoryListPositionNumberByStorageIndex(index) {
+    const raw = Number(index);
+    if (!Number.isInteger(raw) || raw < 0) return 0;
+    return raw + 1;
+}
+
+function buildHistoryListPositionNumberByTimeMap() {
+    const map = new Map();
+    const history = Array.isArray(syncHistory) ? syncHistory : [];
+    history.forEach((record, index) => {
+        if (record && record.time != null) {
+            map.set(String(record.time), getHistoryListPositionNumberByStorageIndex(index));
+        }
+    });
+    return map;
+}
+
+function resolveV2ToV3HistoryDividerIndexFromDisplayRecords(records) {
+    const list = Array.isArray(records) ? records : [];
+    if (list.length < 2) return -1;
+
+    for (let i = 1; i < list.length; i += 1) {
+        if (!isLegacyV2HistoryRecord(list[i - 1]) && isLegacyV2HistoryRecord(list[i])) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 async function fetchHistoryPageData(page = 1, pageSize = HISTORY_PAGE_SIZE) {
     const safePageSize = Math.max(1, Number(pageSize) || HISTORY_PAGE_SIZE);
     const safePage = clampHistoryPage(page);
@@ -10048,7 +10349,8 @@ async function fetchHistoryPageData(page = 1, pageSize = HISTORY_PAGE_SIZE) {
                     totalRecords: 0,
                     totalPages: 1,
                     currentPage: 1,
-                    pageSize: safePageSize
+                    pageSize: safePageSize,
+                    v2ToV3HistoryDividerIndex: -1
                 });
                 return;
             }
@@ -10058,7 +10360,8 @@ async function fetchHistoryPageData(page = 1, pageSize = HISTORY_PAGE_SIZE) {
                 totalRecords: Number.isFinite(Number(response.totalRecords)) ? Number(response.totalRecords) : 0,
                 totalPages: Math.max(1, Number.isFinite(Number(response.totalPages)) ? Number(response.totalPages) : 1),
                 currentPage: clampHistoryPage(response.currentPage, response.totalPages),
-                pageSize: Number.isFinite(Number(response.pageSize)) ? Number(response.pageSize) : safePageSize
+                pageSize: Number.isFinite(Number(response.pageSize)) ? Number(response.pageSize) : safePageSize,
+                v2ToV3HistoryDividerIndex: Number.isFinite(Number(response.v2ToV3HistoryDividerIndex)) ? Number(response.v2ToV3HistoryDividerIndex) : -1
             });
         });
     });
@@ -10072,7 +10375,8 @@ async function refreshHistoryIndexPage(options = {}) {
     currentHistoryPage = data.currentPage;
     historyIndexMeta = {
         totalRecords: data.totalRecords,
-        totalPages: data.totalPages
+        totalPages: data.totalPages,
+        v2ToV3HistoryDividerIndex: data.v2ToV3HistoryDividerIndex
     };
 
     applyHistoryDeleteButtonWarningState(data.totalRecords);
@@ -10085,13 +10389,15 @@ function hydrateHistoryPageFromLocalRecords(page = currentHistoryPage) {
     const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
     const totalRecords = sortedLocal.length;
     const totalPages = Math.max(1, Math.ceil(Math.max(1, totalRecords) / HISTORY_PAGE_SIZE));
+    const v2ToV3HistoryDividerIndex = resolveV2ToV3HistoryDividerIndexFromDisplayRecords(sortedLocal);
 
     currentHistoryPage = clampHistoryPage(page, totalPages);
     const pageStart = (currentHistoryPage - 1) * HISTORY_PAGE_SIZE;
     syncHistoryPageRecords = sortedLocal.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
     historyIndexMeta = {
         totalRecords,
-        totalPages
+        totalPages,
+        v2ToV3HistoryDividerIndex
     };
 
     applyHistoryDeleteButtonWarningState(totalRecords);
@@ -10100,7 +10406,8 @@ function hydrateHistoryPageFromLocalRecords(page = currentHistoryPage) {
         records: syncHistoryPageRecords,
         totalRecords,
         totalPages,
-        currentPage: currentHistoryPage
+        currentPage: currentHistoryPage,
+        v2ToV3HistoryDividerIndex
     };
 }
 
@@ -10448,6 +10755,18 @@ function buildLatestGenerationBoundaryDivider(lang = currentLang) {
     </div>`;
 }
 
+function buildV2ToV3HistoryDivider(lang = currentLang) {
+    const isZh = lang === 'zh_CN';
+    const label = isZh
+        ? '以上为 v3.0 新备份 · 以下为 v2.1 历史'
+        : 'Above: v3.0 backups · Below: v2.1 history';
+    return `<div class="history-warning-divider history-v2-to-v3-divider" role="separator" aria-label="${escapeHtml(label)}">
+        <span class="history-warning-divider-line" aria-hidden="true"></span>
+        <span class="history-warning-divider-label"><i class="fas fa-history"></i>${escapeHtml(label)}</span>
+        <span class="history-warning-divider-line" aria-hidden="true"></span>
+    </div>`;
+}
+
 function renderHistoryView() {
     const container = document.getElementById('historyList');
     // 分页控件元素
@@ -10499,6 +10818,10 @@ function renderHistoryView() {
         : -1;
     const latestGenerationBoundaryDividerInsertIndex = resolveLatestGenerationBoundaryDividerInsertIndex(pageRecords);
     const useGenerationBoundaryFallback = !hasLatestOverwriteRevertMarker && latestGenerationBoundaryDividerInsertIndex >= 0;
+    const rawV2ToV3HistoryDividerIndex = Number(historyIndexMeta.v2ToV3HistoryDividerIndex);
+    const v2ToV3HistoryDividerIndex = Number.isFinite(rawV2ToV3HistoryDividerIndex)
+        ? rawV2ToV3HistoryDividerIndex
+        : resolveV2ToV3HistoryDividerIndexFromDisplayRecords(sortHistoryRecordsByTimeDesc(syncHistory));
 
     // 更新分页控件 UI
     if (pagination) {
@@ -10541,6 +10864,9 @@ function renderHistoryView() {
             : '';
         const latestGenerationBoundaryDivider = (useGenerationBoundaryFallback && latestGenerationBoundaryDividerInsertIndex === i && !overwriteRiskDivider)
             ? buildLatestGenerationBoundaryDivider(currentLang)
+            : '';
+        const v2ToV3HistoryDivider = (globalIndex === v2ToV3HistoryDividerIndex)
+            ? buildV2ToV3HistoryDivider(currentLang)
             : '';
 
         // 计算变化
@@ -10687,6 +11013,7 @@ function renderHistoryView() {
 
         return `
             <div class="history-record-group">
+                ${v2ToV3HistoryDivider}
                 ${latestOverwriteRevertDivider}
                 ${latestGenerationBoundaryDivider}
                 ${overwriteRiskDivider}
@@ -28491,8 +28818,7 @@ function getGlobalExportSeqRangeBounds() {
     let min = Infinity;
     let max = -Infinity;
     for (let i = 0; i < syncHistory.length; i++) {
-        const record = syncHistory[i];
-        const seqNumber = record.seqNumber || (i + 1);
+        const seqNumber = getHistoryListPositionNumberByStorageIndex(i);
         if (seqNumber < min) min = seqNumber;
         if (seqNumber > max) max = seqNumber;
     }
@@ -28616,15 +28942,15 @@ function updateGlobalExportRangePreviewText() {
     if (!enabledCbox.checked) {
         // 视觉查看模式：仅影响下方列表显示范围，不改勾选
         previewEl.textContent = currentLang === 'en'
-            ? `Showing No. ${seqRangeStr} (${countInRange})`
-            : `显示：序号 ${seqRangeStr}（${countInRange} 条）`;
+            ? `Showing positions ${seqRangeStr} (${countInRange})`
+            : `显示：位置 ${seqRangeStr}（${countInRange} 条）`;
         return;
     }
 
     // 勾选模式：影响下方列表显示，并把范围应用到勾选
     previewEl.textContent = currentLang === 'en'
-        ? `Selecting No. ${seqRangeStr} (${countInRange})`
-        : `勾选：序号 ${seqRangeStr}（${countInRange} 条）`;
+        ? `Selecting positions ${seqRangeStr} (${countInRange})`
+        : `勾选：位置 ${seqRangeStr}（${countInRange} 条）`;
 }
 
 function countGlobalExportRecordsInSeqRange(minSeq, maxSeq) {
@@ -28632,7 +28958,7 @@ function countGlobalExportRecordsInSeqRange(minSeq, maxSeq) {
     let count = 0;
     for (let i = 0; i < syncHistory.length; i++) {
         const record = syncHistory[i];
-        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || record.seqNumber || (i + 1);
+        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || getHistoryListPositionNumberByStorageIndex(i);
         if (seqNumber >= minSeq && seqNumber <= maxSeq) count++;
     }
     return count;
@@ -28657,7 +28983,7 @@ function applyGlobalExportSelectionBySeqRange(minSeq, maxSeq) {
     globalExportRangeApplyingSelection = true;
     for (let i = 0; i < syncHistory.length; i++) {
         const record = syncHistory[i];
-        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || record.seqNumber || (i + 1);
+        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || getHistoryListPositionNumberByStorageIndex(i);
         globalExportSelectedState[record.time] = (seqNumber >= minSeq && seqNumber <= maxSeq);
     }
 
@@ -28747,7 +29073,7 @@ function showGlobalExportModal() {
     // 建立序号映射（与删除弹窗口径一致：syncHistory 顺序的 index+1；newer 具有更大序号）
     globalExportSeqNumberByTime = new Map();
     syncHistory.forEach((record, index) => {
-        const seqNumber = record.seqNumber || (index + 1);
+        const seqNumber = getHistoryListPositionNumberByStorageIndex(index);
         globalExportSeqNumberByTime.set(String(record.time), seqNumber);
     });
 
@@ -28873,7 +29199,8 @@ function renderGlobalExportPage() {
         const note = record.note || '';
         const noteDisplay = note ? escapeHtml(note) : `<span style="color:var(--text-tertiary); font-style: italic;">${currentLang === 'zh_CN' ? '无备注' : 'No Note'}</span>`;
         const fingerprint = record.fingerprint || '-';
-        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || record.seqNumber || '';
+        const originalIndex = syncHistory.indexOf(record);
+        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || getHistoryListPositionNumberByStorageIndex(originalIndex);
         const recordCapabilities = getHistoryRecordCapabilities(record);
         const storedDataBadge = buildHistoryDataCapabilityBadge(recordCapabilities, currentLang);
 
