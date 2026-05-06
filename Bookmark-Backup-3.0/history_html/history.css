@@ -412,6 +412,15 @@ option {
     color: #f97316;
 }
 
+.search-mode-menu-item[data-mode-key="dev-1"].active {
+    background: rgba(16, 185, 129, 0.12);
+}
+
+.search-mode-menu-item[data-mode-key="dev-1"].active .mode-name,
+.search-mode-menu-item[data-mode-key="dev-1"].active .mode-icon {
+    color: #059669;
+}
+
 /* Dark Theme Adjustments for Active Modes */
 [data-theme="dark"] .search-mode-menu-item[data-mode-key="current-changes"].active {
     background: rgba(24, 119, 242, 0.2);
@@ -429,6 +438,15 @@ option {
 [data-theme="dark"] .search-mode-menu-item[data-mode-key="history"].active .mode-name,
 [data-theme="dark"] .search-mode-menu-item[data-mode-key="history"].active .mode-icon {
     color: #fb923c;
+}
+
+[data-theme="dark"] .search-mode-menu-item[data-mode-key="dev-1"].active {
+    background: rgba(16, 185, 129, 0.22);
+}
+
+[data-theme="dark"] .search-mode-menu-item[data-mode-key="dev-1"].active .mode-name,
+[data-theme="dark"] .search-mode-menu-item[data-mode-key="dev-1"].active .mode-icon {
+    color: #34d399;
 }
 
 .mode-icon {

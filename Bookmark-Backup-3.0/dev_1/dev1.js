@@ -7017,7 +7017,9 @@
 
     window.Dev1PageBridge = {
         render: (options = {}) => renderDev1View(options),
-        refresh: () => refreshSource({ force: true })
+        refresh: () => refreshSource({ force: true }),
+        getQueueItems: () => cloneQueueItems(getExecutionQueueItems()),
+        focusQueueTab: (tabId, rawUrl = '') => focusQueueTab(tabId, rawUrl)
     };
 
     if (runtimeApi?.runtime?.onMessage && typeof runtimeApi.runtime.onMessage.addListener === 'function') {

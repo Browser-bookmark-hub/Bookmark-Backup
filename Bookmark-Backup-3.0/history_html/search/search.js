@@ -170,8 +170,8 @@ window.SearchContextManager = {
                 : 'Seq / note / hash / date / type / direction / changes';
         } else if (ctx.view === 'dev-1') {
             placeholder = currentLang === 'zh_CN'
-                ? 'dev_1 使用面板内四维筛选（顶部搜索不参与）'
-                : 'dev_1 uses panel-side 4-dim filters (top search is disabled)';
+                ? '搜索当前网页快照队列：序号 / 名字 / URL / 域名 / 子域名'
+                : 'Search current Web Snapshot queue: index / name / URL / domain / subdomain';
         }
 
         if (placeholder) {
@@ -819,6 +819,224 @@ function renderSearchResultsPanel(results, options = {}) {
     panel.innerHTML = `${typeToggleHtml}${rowsHtml}`;
     showSearchResultsPanel();
     updateSearchResultSelection(0);
+}
+
+function getDev1QueueItemsForSearch() {
+    try {
+        if (window.Dev1PageBridge && typeof window.Dev1PageBridge.getQueueItems === 'function') {
+            const items = window.Dev1PageBridge.getQueueItems();
+            if (Array.isArray(items)) return items;
+        }
+    } catch (_) { }
+
+    try {
+        const raw = localStorage.getItem('dev1_experiment_queue_v1');
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function normalizeDev1QueueSearchItem(rawItem, index) {
+    if (!rawItem || typeof rawItem !== 'object') return null;
+    const url = String(rawItem.url || '').trim();
+    const title = String(rawItem.title || '').trim() || url;
+    if (!title && !url) return null;
+    const tabIdRaw = Number(rawItem.existingTabId);
+    const tabId = Number.isFinite(tabIdRaw) ? Math.floor(tabIdRaw) : null;
+    const domain = String(rawItem.domain || rawItem.host || '').trim();
+    const subdomain = String(rawItem.subdomainLabel || rawItem.subdomain || '').trim();
+    const displayIndexRaw = Number(rawItem.queueDisplayIndex);
+    const displayIndex = Number.isFinite(displayIndexRaw) ? Math.floor(displayIndexRaw) : index;
+    const displayNumber = displayIndex + 1;
+    const searchable = [
+        String(displayNumber),
+        title,
+        url,
+        domain,
+        subdomain
+    ].join(' ').toLowerCase();
+
+    return {
+        nodeType: 'dev1_queue',
+        title,
+        url,
+        domain,
+        subdomain,
+        existingTabId: tabId,
+        reviewed: rawItem.reviewed === true,
+        queueDisplayIndex: displayIndex,
+        queueDisplayNumber: displayNumber,
+        __searchable: searchable,
+        __index: String(displayNumber),
+        __title: title.toLowerCase(),
+        __url: url.toLowerCase(),
+        __domain: domain.toLowerCase(),
+        __subdomain: subdomain.toLowerCase()
+    };
+}
+
+function scoreDev1QueueSearchItem(item, tokens, query) {
+    if (!item || !Array.isArray(tokens) || !tokens.length) return -Infinity;
+    let score = 0;
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (normalizedQuery) {
+        if (item.__title === normalizedQuery) score += 180;
+        if (item.__url === normalizedQuery) score += 170;
+        if (item.__domain === normalizedQuery) score += 150;
+        if (item.__subdomain === normalizedQuery) score += 145;
+        if (item.__index === normalizedQuery) score += 170;
+    }
+    for (const token of tokens) {
+        const t = String(token || '').trim().toLowerCase();
+        if (!t) continue;
+        let matched = false;
+        if (item.__title && item.__title.startsWith(t)) {
+            score += 120;
+            matched = true;
+        } else if (item.__title && item.__title.includes(t)) {
+            score += 90;
+            matched = true;
+        } else if (item.__index && item.__index === t) {
+            score += 115;
+            matched = true;
+        } else if (item.__domain && item.__domain.includes(t)) {
+            score += 82;
+            matched = true;
+        } else if (item.__subdomain && item.__subdomain.includes(t)) {
+            score += 80;
+            matched = true;
+        } else if (item.__url && item.__url.includes(t)) {
+            score += 70;
+            matched = true;
+        } else if (item.__searchable && item.__searchable.includes(t)) {
+            score += 45;
+            matched = true;
+        }
+        if (!matched) return -Infinity;
+    }
+    return score;
+}
+
+function renderDev1QueueSearchResultsPanel(results, options = {}) {
+    const { query = '' } = options;
+    const panel = getSearchResultsPanel();
+    if (!panel) return;
+
+    try {
+        const input = document.getElementById('searchInput');
+        const currentQ = (input && typeof input.value === 'string') ? input.value.trim().toLowerCase() : '';
+        const expectedQ = String(query || '').trim().toLowerCase();
+        if (typeof window.currentView === 'string' && window.currentView !== 'dev-1') return;
+        if (currentQ !== expectedQ) return;
+    } catch (_) { }
+
+    searchUiState.view = 'dev-1';
+    searchUiState.query = query;
+    searchUiState.results = Array.isArray(results) ? results : [];
+    searchUiState.selectedIndex = -1;
+
+    if (!searchUiState.results.length) {
+        const emptyText = options.emptyText || getSearchI18nText('searchNoResults', '没有找到匹配的队列条目', 'No matching queue items');
+        panel.innerHTML = `<div class="search-results-empty">${escapeHtml(emptyText)}</div>`;
+        showSearchResultsPanel();
+        return;
+    }
+
+    const isZh = currentLang === 'zh_CN';
+    const rowsHtml = searchUiState.results.map((item, idx) => {
+        const safeTitle = escapeHtml(item.title || (isZh ? '（无标题）' : '(Untitled)'));
+        const metaParts = [];
+        if (item.url) metaParts.push(item.url);
+        if (item.domain) metaParts.push(item.domain);
+        if (item.subdomain) metaParts.push(item.subdomain);
+        const metaText = metaParts.join(' ｜ ');
+        let iconHtml = `<div class="search-result-icon-box-inline" style="display:flex; align-items:center; justify-content:center; width:20px; height:20px; flex-shrink:0;">
+            <i class="fas fa-camera-retro" style="color:#0ea5e9; font-size:14px;"></i>
+        </div>`;
+        if (item.url && typeof getFaviconUrl === 'function') {
+            const faviconSrc = getFaviconUrl(item.url);
+            if (faviconSrc) {
+                iconHtml = `<img class="search-result-favicon" src="${escapeHtml(faviconSrc)}" data-bookmark-url="${escapeHtml(item.url)}" alt="">`;
+            }
+        }
+        return `
+            <div class="search-result-item search-result-dev1-queue-item" role="option" data-index="${idx}" data-tab-id="${escapeHtml(item.existingTabId == null ? '' : String(item.existingTabId))}">
+                <div class="search-result-left">
+                    ${iconHtml}
+                </div>
+                <div class="search-result-content">
+                    <div class="search-result-title-row">
+                        <span class="search-result-title-text">${safeTitle}</span>
+                        <span class="search-result-index-tag">${escapeHtml(String(item.queueDisplayNumber || idx + 1))}</span>
+                    </div>
+                    ${metaText ? `<div class="search-result-meta-row">${escapeHtml(metaText)}</div>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    panel.innerHTML = rowsHtml;
+    showSearchResultsPanel();
+    updateSearchResultSelection(0);
+}
+
+function searchDev1QueueAndRender(query) {
+    const q = String(query || '').trim();
+    if (!q) {
+        hideSearchResultsPanel();
+        return;
+    }
+
+    const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const queueItems = getDev1QueueItemsForSearch()
+        .map((item, index) => normalizeDev1QueueSearchItem(item, index))
+        .filter(Boolean);
+
+    if (!queueItems.length) {
+        renderDev1QueueSearchResultsPanel([], {
+            query: q,
+            emptyText: getSearchI18nText('searchNoResults', '当前网页快照队列为空', 'Current Web Snapshot queue is empty')
+        });
+        return;
+    }
+
+    const results = queueItems
+        .map((item) => ({ item, score: scoreDev1QueueSearchItem(item, tokens, q) }))
+        .filter(entry => Number.isFinite(entry.score) && entry.score > -Infinity)
+        .sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return (a.item.queueDisplayIndex || 0) - (b.item.queueDisplayIndex || 0);
+        })
+        .slice(0, 30)
+        .map(entry => entry.item);
+
+    renderDev1QueueSearchResultsPanel(results, { query: q });
+}
+
+async function activateDev1QueueSearchResultAtIndex(index) {
+    const idx = typeof index === 'number' ? index : parseInt(index, 10);
+    if (Number.isNaN(idx) || idx < 0 || idx >= searchUiState.results.length) return;
+    const item = searchUiState.results[idx];
+    if (!item) return;
+
+    hideSearchResultsPanel();
+    try {
+        const inputEl = document.getElementById('searchInput');
+        if (inputEl) inputEl.value = '';
+    } catch (_) { }
+
+    try {
+        if (window.Dev1PageBridge && typeof window.Dev1PageBridge.focusQueueTab === 'function') {
+            await window.Dev1PageBridge.focusQueueTab(item.existingTabId, item.url || '');
+        }
+    } catch (error) {
+        const message = error?.message || (currentLang === 'zh_CN' ? '无法定位对应页面' : 'Unable to focus the matching tab');
+        try {
+            if (typeof showToast === 'function') showToast(message, 'warning', 2200);
+        } catch (_) { }
+    }
 }
 
 // ==================== 搜索索引构建 ====================
@@ -3310,6 +3528,8 @@ function activateSearchResult(index) {
     const view = searchUiState.view;
     if (view === 'history') {
         activateHistorySearchResultAtIndex(index);
+    } else if (view === 'dev-1') {
+        activateDev1QueueSearchResultAtIndex(index);
     } else {
         activateSearchResultAtIndex(index);
     }
@@ -3841,11 +4061,11 @@ const SEARCH_MODES = [
     },
     {
         key: 'dev-1',
-        label: '第一维 / dev_1',
-        labelEn: 'Dimension-1 / dev_1',
+        label: '网页快照',
+        labelEn: 'Web Snapshot',
         icon: 'fa-flask',
-        desc: '使用实验区四维筛选与导出',
-        descEn: 'Use dev_1 panel filters and export actions'
+        desc: '搜索当前网页快照队列',
+        descEn: 'Search current Web Snapshot queue'
     }
 ];
 
@@ -3926,35 +4146,35 @@ const SEARCH_MODE_GUIDES = {
     },
     'dev-1': {
         title: {
-            zh_CN: 'dev_1 实验区',
-            en: 'dev_1 Experiment View'
+            zh_CN: '网页快照',
+            en: 'Web Snapshot'
         },
         summary: {
-            zh_CN: '此视图使用面板内四维筛选（书签/文件夹/域名/子域名）和导出按钮，顶部搜索不参与。',
-            en: 'This view uses panel filters (bookmark/folder/domain/subdomain) and export buttons; top search is not used.'
+            zh_CN: '可搜索当前网页快照队列中的序号、名字、URL、域名和子域名；点击候选项会跳转到对应页面。',
+            en: 'Search index, name, URL, domain, and subdomain in the current Web Snapshot queue; selecting a result focuses the matching tab.'
         },
         rules: {
             zh_CN: [
-                '先刷新“当前变化”来源，再选择筛选维度',
-                '筛选后队列即为静默抓取目标',
-                '导出格式支持 HTML / MD / MHTML'
+                '搜索范围为当前网页快照队列',
+                '多个关键词用空格分隔，按“并且（AND）”匹配',
+                '点击候选项会定位对应页面'
             ],
             en: [
-                'Refresh current-change source before filtering',
-                'Filtered queue becomes the silent-capture target set',
-                'Export formats: HTML / MD / MHTML'
+                'Search scope is the current Web Snapshot queue',
+                'Use spaces between keywords (AND match)',
+                'Selecting a result locates the matching page'
             ]
         },
         examples: {
             zh_CN: [
-                '选择域名后执行导出',
-                '按子域名筛选队列',
-                '仅导出 MHTML'
+                '12',
+                'example.com',
+                'github'
             ],
             en: [
-                'Filter by domain then export',
-                'Filter queue by subdomain',
-                'Export MHTML only'
+                '12',
+                'example.com',
+                'github'
             ]
         }
     }
@@ -4088,8 +4308,8 @@ function renderSearchModeMenu() {
                 : 'Match seq, note, hash, date, type, direction, and changes';
         } else {
             desc = isZh
-                ? '使用 dev_1 面板内筛选与导出'
-                : 'Use dev_1 panel filters and export';
+                ? '搜索当前队列，点击跳转对应页面'
+                : 'Search current queue and focus the matching tab';
         }
 
         return `
@@ -7042,6 +7262,7 @@ if (typeof window !== 'undefined') {
     window.hideSearchResultsPanel = hideSearchResultsPanel;
     window.searchCurrentChangesAndRender = searchCurrentChangesAndRender;
     window.resetCurrentChangesSearchDb = resetCurrentChangesSearchDb;
+    window.searchDev1QueueAndRender = searchDev1QueueAndRender;
 
     // ==================== Phase 2: 备份历史搜索 ====================
     window.searchBackupHistoryAndRender = searchBackupHistoryAndRender;

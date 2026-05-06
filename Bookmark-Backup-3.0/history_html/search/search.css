@@ -163,9 +163,45 @@
     border-bottom: none;
 }
 
-.search-result-item:hover,
-.search-result-item.selected {
+.search-result-item:hover {
     background: var(--bg-tertiary);
+}
+
+.search-result-item.selected {
+    background: rgba(16, 185, 129, 0.12);
+    border-left: 3px solid #10b981;
+    padding-left: 9px;
+}
+
+.search-result-item.selected .search-result-title,
+.search-result-item.selected .search-result-title-text,
+.search-result-item.selected .mode-name {
+    color: #047857;
+}
+
+.search-result-item.selected .search-result-index,
+.search-result-item.selected .search-result-index-tag {
+    background: rgba(16, 185, 129, 0.18);
+    color: #047857;
+    border-color: rgba(16, 185, 129, 0.35);
+}
+
+[data-theme="dark"] .search-result-item.selected {
+    background: rgba(16, 185, 129, 0.18);
+    border-left-color: #34d399;
+}
+
+[data-theme="dark"] .search-result-item.selected .search-result-title,
+[data-theme="dark"] .search-result-item.selected .search-result-title-text,
+[data-theme="dark"] .search-result-item.selected .mode-name {
+    color: #6ee7b7;
+}
+
+[data-theme="dark"] .search-result-item.selected .search-result-index,
+[data-theme="dark"] .search-result-item.selected .search-result-index-tag {
+    background: rgba(16, 185, 129, 0.24);
+    color: #6ee7b7;
+    border-color: rgba(52, 211, 153, 0.45);
 }
 
 /* ==================== 结果行布局 ==================== */

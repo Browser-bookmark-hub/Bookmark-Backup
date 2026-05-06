@@ -469,6 +469,7 @@ let currentView = (() => {
         return 'current-changes';
     }
 })();
+window.currentView = currentView;
 
 function syncHistoryViewParam(view) {
     try {
@@ -3265,6 +3266,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     syncHistoryViewParam(currentView);
+    window.currentView = currentView;
 
     // 立即应用视图状态到DOM
     
@@ -6681,7 +6683,7 @@ function initSidebarToggle() {
 
 function updateTopSearchVisibilityForView(view) {
     const normalizedView = String(view || '').trim().toLowerCase();
-    const shouldHide = normalizedView === 'dev-1';
+    const shouldHide = false;
     const searchContainer = document.querySelector('.history-header .search-container') || document.querySelector('.search-container');
     if (!searchContainer) return;
 
@@ -6729,6 +6731,7 @@ function switchView(view) {
 
     // 更新全局变量
     currentView = view;
+    window.currentView = view;
     syncHistoryViewParam(view);
 
     // 当前变化预览的展开状态仅在当前页面会话中有效；每次重新进入时重置
@@ -22437,7 +22440,11 @@ function performSearch(query) {
             }
             break;
         case 'dev-1':
-            hideSearchResultsPanel();
+            if (typeof searchDev1QueueAndRender === 'function') {
+                searchDev1QueueAndRender(query);
+            } else {
+                hideSearchResultsPanel();
+            }
             break;
     }
 }
