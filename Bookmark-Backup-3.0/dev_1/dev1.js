@@ -4896,29 +4896,50 @@
         renderReviewWorkflowPanel();
     }
 
+    function moveFocusOutOfHiddenModal(modal, fallbackElement) {
+        if (!(modal instanceof HTMLElement)) return;
+        const activeElement = document.activeElement;
+        if (!(activeElement instanceof HTMLElement) || !modal.contains(activeElement)) return;
+        if (fallbackElement instanceof HTMLElement && typeof fallbackElement.focus === 'function') {
+            fallbackElement.focus({ preventScroll: true });
+        } else {
+            activeElement.blur();
+        }
+    }
+
     function renderScopePanelVisibility() {
         const scopeModal = document.getElementById('dev1ScopeModal');
-        if (scopeModal) {
-            scopeModal.classList.toggle('show', state.scopePanelOpen === true);
-            scopeModal.setAttribute('aria-hidden', state.scopePanelOpen === true ? 'false' : 'true');
-        }
         const scopeBtn = document.getElementById('dev1ScopeBtn');
+        const isOpen = state.scopePanelOpen === true;
+        if (scopeModal) {
+            if (!isOpen) moveFocusOutOfHiddenModal(scopeModal, scopeBtn);
+            scopeModal.classList.toggle('show', isOpen);
+            scopeModal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+            if ('inert' in scopeModal) {
+                scopeModal.inert = !isOpen;
+            }
+        }
         if (scopeBtn) {
-            scopeBtn.classList.toggle('active', state.scopePanelOpen === true);
-            scopeBtn.setAttribute('aria-expanded', state.scopePanelOpen === true ? 'true' : 'false');
+            scopeBtn.classList.toggle('active', isOpen);
+            scopeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         }
     }
 
     function renderReviewSettingsVisibility() {
         const modal = document.getElementById('dev1ReviewSettingsModal');
-        if (modal) {
-            modal.classList.toggle('show', state.reviewSettingsOpen === true);
-            modal.setAttribute('aria-hidden', state.reviewSettingsOpen === true ? 'false' : 'true');
-        }
         const settingsBtn = document.getElementById('dev1ReviewSettingsBtn');
+        const isOpen = state.reviewSettingsOpen === true;
+        if (modal) {
+            if (!isOpen) moveFocusOutOfHiddenModal(modal, settingsBtn);
+            modal.classList.toggle('show', isOpen);
+            modal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+            if ('inert' in modal) {
+                modal.inert = !isOpen;
+            }
+        }
         if (settingsBtn) {
-            settingsBtn.classList.toggle('active', state.reviewSettingsOpen === true);
-            settingsBtn.setAttribute('aria-expanded', state.reviewSettingsOpen === true ? 'true' : 'false');
+            settingsBtn.classList.toggle('active', isOpen);
+            settingsBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         }
         const input = document.getElementById('dev1ReviewAutoReviewMsInput');
         if (input instanceof HTMLInputElement && document.activeElement !== input) {
@@ -4932,9 +4953,15 @@
 
     function renderQueueClearConfirmVisibility() {
         const modal = document.getElementById('dev1QueueClearConfirmModal');
+        const clearBtn = document.getElementById('dev1ClearFiltersBtn');
+        const isOpen = state.queueClearConfirmOpen === true;
         if (modal) {
-            modal.classList.toggle('show', state.queueClearConfirmOpen === true);
-            modal.setAttribute('aria-hidden', state.queueClearConfirmOpen === true ? 'false' : 'true');
+            if (!isOpen) moveFocusOutOfHiddenModal(modal, clearBtn);
+            modal.classList.toggle('show', isOpen);
+            modal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+            if ('inert' in modal) {
+                modal.inert = !isOpen;
+            }
         }
     }
 
