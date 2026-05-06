@@ -514,6 +514,7 @@ function buildSafetyCheckpointHelpHtml(lang = 'zh_CN') {
                 <li>It is triggered by restore/revert flows that enter the recovery transaction layer, mainly <span class="backup-history-safety-help-highlight">overwrite restore, patch restore, overwrite revert, and patch revert</span> from the main UI or history page.</li>
                 <li>Import merge is additive and keeps existing bookmarks. It may use internal transaction data for interruption cleanup, but it does not replace the displayed latest temporary safety snapshot.</li>
                 <li>It keeps only the latest operation's before-operation browser snapshot and target-state snapshot; the current browser snapshot is generated only when you export it.</li>
+                <li>Manual export is saved under <span class="backup-history-safety-help-highlight">Bookmark Backup / Manual Export / Safety Snapshots / time_session</span>, containing Before Operation, Target State, optional Current Browser snapshots, and Safety Snapshot Manifest JSON.</li>
                 <li>You can open it from the right side of the <span class="backup-history-safety-help-highlight">Backup History</span> title.</li>
                 <li>For long-term old data, keep backup-history snapshot data or change data enabled. Temporary Safety Snapshot is mainly for short-term incident recovery.</li>
             </ul>
@@ -526,6 +527,7 @@ function buildSafetyCheckpointHelpHtml(lang = 'zh_CN') {
             <li>触发范围是进入恢复事务层的恢复/撤销流程，主要包括主 UI 或历史页面里的 <span class="backup-history-safety-help-highlight">覆盖恢复、补丁恢复、覆盖撤销、补丁撤销</span>。</li>
             <li>导入合并是添加型操作，会保留现有书签；它只保留中断清理所需的内部事务数据，不会覆盖这里展示的最近一次临时安全快照。</li>
             <li>这里只保留最近一次操作的“操作前浏览器快照”和“目标状态快照”；“当前浏览器快照”是在导出时即时读取的。</li>
+            <li>手动导出会保存到<span class="backup-history-safety-help-highlight">书签备份 / 手动导出 / 高危操作安全快照 / 时间_会话</span>，包含操作前、目标状态、可选的当前浏览器快照，以及安全快照清单 JSON。</li>
             <li>入口位置在<span class="backup-history-safety-help-highlight">“备份历史”标题右侧</span>。</li>
             <li>如果需要保留更早的历史数据，应开启备份历史里的快照数据或变化数据；临时安全快照主要用于短期应急恢复。</li>
         </ul>
@@ -10833,7 +10835,12 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
             .split('/')
             .map(part => String(part || '').trim())
             .filter(Boolean);
-        return parts.some(part => snapshotFolderNameReg.test(part) || isOverwriteFolderName(part));
+        return parts.some(part => {
+            const normalized = String(part || '').trim().toLowerCase();
+            return snapshotFolderNameReg.test(part)
+                || isOverwriteFolderName(part)
+                || SAFETY_SNAPSHOT_FOLDER_SEGMENTS.has(normalized);
+        });
     };
 
     const isCurrentChangesArtifactName = (name) => {
@@ -10908,6 +10915,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         'bookmarks_history',
         'bookmarks-history'
     ]);
+    const SAFETY_SNAPSHOT_FOLDER_SEGMENTS = new Set(['高危操作安全快照', 'safety snapshots', 'safety_snapshots', 'safety-snapshots']);
 
     const shouldTreatAsChangesArtifact = ({ name, pathText, snapshotFolder }) => {
         const fileName = String(name || '').trim();
@@ -10924,6 +10932,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         const inManualExportFolder = pathSegments.some((segment) => MANUAL_EXPORT_FOLDER_SEGMENTS.has(segment));
         const inCurrentChangesFolder = pathSegments.some((segment) => CURRENT_CHANGES_FOLDER_SEGMENTS.has(segment));
         const inManualHistoryFolder = pathSegments.some((segment) => MANUAL_HISTORY_FOLDER_SEGMENTS.has(segment));
+        const inSafetySnapshotFolder = pathSegments.some((segment) => SAFETY_SNAPSHOT_FOLDER_SEGMENTS.has(segment));
         const isLegacyManualExportChangesLeaf = /^changes-(simple|detailed|collection)\.(?:json|html?|xhtml)$/i.test(fileName);
 
         const inManualHistoryExportFolder = inManualExportFolder && inManualHistoryFolder;
@@ -10934,6 +10943,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         if (inCurrentChangesFolder) return true;
         if (inManualHistoryExportFolder) return true;
         if (inManualHistoryFolder) return true;
+        if (inSafetySnapshotFolder) return false;
         if (inSnapshotOrOverwriteFolder && hasChangesNameHint) return true;
         if (allowStandalone && hasStandaloneChangesArtifactHints(fileName)) return true;
         return hasChangesNameHint;
@@ -11075,8 +11085,18 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                     ? pathText.slice(0, pathText.lastIndexOf('/'))
                     : '';
                 const inSnapshotPath = isInSnapshotOrOverwriteFolder(pathText, snapshotFolder);
+                const shouldUseSnapshotHtmlPathHint = shouldTreatAsSnapshotHtmlByFolder({ name, pathText, snapshotFolder })
+                    && (inSnapshotPath || snapshotKey);
+                let isSnapshotHtmlByContent = false;
 
-                if (shouldTreatAsSnapshotHtmlByFolder({ name, pathText, snapshotFolder }) && (inSnapshotPath || snapshotKey)) {
+                if (!shouldUseSnapshotHtmlPathHint) {
+                    const headText = typeof file.slice === 'function'
+                        ? await file.slice(0, 64 * 1024).text()
+                        : await file.text();
+                    isSnapshotHtmlByContent = isLikelyNetscapeBookmarkHtmlText(headText);
+                }
+
+                if (shouldUseSnapshotHtmlPathHint || isSnapshotHtmlByContent) {
                     localCandidates.push({
                         name,
                         source: 'local',
@@ -11093,30 +11113,40 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
 
             if (!allowStandalone && isJsonFileName(name)) {
                 const snapshotFolder = extractSnapshotFolderFromPath(pathText);
-                const snapshotKey = resolveSnapshotKeyForLocalCandidate(pathText, snapshotFolder, name);
                 const folderPath = pathText.includes('/')
                     ? pathText.slice(0, pathText.lastIndexOf('/'))
                     : '';
-                const inSnapshotPath = isInSnapshotOrOverwriteFolder(pathText, snapshotFolder);
-                const isChangesArtifact = shouldTreatAsChangesArtifact({ name, pathText, snapshotFolder });
+                const jsonText = typeof file.text === 'function'
+                    ? await file.text()
+                    : '';
+                const isChangesArtifactByContent = isCurrentChangesArtifactJsonText(jsonText);
 
-                if (!isChangesArtifact && (inSnapshotPath || snapshotKey)) {
-                    const jsonText = typeof file.text === 'function'
-                        ? await file.text()
-                        : '';
-                    if (isStandaloneBookmarkTreeJsonText(jsonText)) {
-                        localCandidates.push({
-                            name,
-                            source: 'local',
-                            type: 'json_backup',
-                            localFileKey,
-                            text: jsonText,
-                            lastModified: file.lastModified,
-                            snapshotFolder,
-                            folderPath
-                        });
-                        continue;
-                    }
+                if (!isChangesArtifactByContent && isStandaloneBookmarkTreeJsonText(jsonText)) {
+                    localCandidates.push({
+                        name,
+                        source: 'local',
+                        type: 'json_backup',
+                        localFileKey,
+                        text: jsonText,
+                        lastModified: file.lastModified,
+                        snapshotFolder,
+                        folderPath
+                    });
+                    continue;
+                }
+
+                if (isChangesArtifactByContent || shouldTreatAsChangesArtifact({ name, pathText, snapshotFolder })) {
+                    localCandidates.push({
+                        name,
+                        source: 'local',
+                        type: 'changes_artifact',
+                        localFileKey,
+                        text: jsonText,
+                        lastModified: file.lastModified,
+                        snapshotFolder,
+                        folderPath
+                    });
+                    continue;
                 }
             }
 
@@ -11183,12 +11213,13 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                 const jsonText = typeof file.text === 'function'
                     ? await file.text()
                     : '';
+                const isChangesArtifactByContent = isCurrentChangesArtifactJsonText(jsonText);
 
-                if (hasStandaloneChangesArtifactHints(name) || isCurrentChangesArtifactJsonText(jsonText)) {
+                if (!isChangesArtifactByContent && isStandaloneBookmarkTreeJsonText(jsonText)) {
                     localCandidates.push({
                         name,
                         source: 'local',
-                        type: 'changes_artifact',
+                        type: 'json_backup',
                         localFileKey,
                         text: jsonText,
                         lastModified: file.lastModified,
@@ -11199,11 +11230,11 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                     continue;
                 }
 
-                if (isStandaloneBookmarkTreeJsonText(jsonText)) {
+                if (isChangesArtifactByContent || hasStandaloneChangesArtifactHints(name)) {
                     localCandidates.push({
                         name,
                         source: 'local',
-                        type: 'json_backup',
+                        type: 'changes_artifact',
                         localFileKey,
                         text: jsonText,
                         lastModified: file.lastModified,
@@ -11497,9 +11528,7 @@ function showRestoreModal(versions, source) {
         if (!v || typeof v !== 'object') return false;
         const restoreRef = v?.restoreRef || {};
         const sourceType = String(v?.sourceType || restoreRef?.sourceType || '').trim().toLowerCase();
-        const source = String(v?.source || restoreRef?.source || '').trim().toLowerCase();
-        const jsonKind = String(restoreRef?.jsonKind || '').trim().toLowerCase();
-        return source === 'local' && sourceType === 'json' && jsonKind === 'tree';
+        return sourceType === 'json' && isLocalExternalStandardSnapshotVersion(v);
     };
     const isLegacyV2RestoreVersion = (v) => {
         const restoreRef = v?.restoreRef || {};
@@ -11523,6 +11552,7 @@ function showRestoreModal(versions, source) {
         'bookmarks-history'
     ]);
     const CURRENT_CHANGES_FOLDER_SEGMENTS = new Set(['当前变化', 'current changes', 'current_changes', 'current-changes']);
+    const SAFETY_SNAPSHOT_FOLDER_SEGMENTS = new Set(['高危操作安全快照', 'safety snapshots', 'safety_snapshots', 'safety-snapshots']);
     const normalizePathTextForSegments = (value) => {
         const raw = String(value || '').trim();
         if (!raw) return '';
@@ -11589,6 +11619,7 @@ function showRestoreModal(versions, source) {
         let hasManualExportSegment = false;
         let hasVersionedSegment = false;
         let hasManualHistoryOrCurrentChangesSegment = false;
+        let hasSafetySnapshotSegment = false;
 
         for (const value of values) {
             const segments = splitPathSegmentsLower(value);
@@ -11604,8 +11635,12 @@ function showRestoreModal(versions, source) {
             if (segments.some(seg => MANUAL_HISTORY_FOLDER_SEGMENTS.has(seg) || CURRENT_CHANGES_FOLDER_SEGMENTS.has(seg))) {
                 hasManualHistoryOrCurrentChangesSegment = true;
             }
+            if (segments.some(seg => SAFETY_SNAPSHOT_FOLDER_SEGMENTS.has(seg))) {
+                hasSafetySnapshotSegment = true;
+            }
         }
 
+        if (hasSafetySnapshotSegment) return 'safety_snapshot';
         if (hasManualExportSegment) return 'manual_export';
         if (hasVersionedSegment) return 'versioned';
         if (hasManualHistoryOrCurrentChangesSegment) return 'manual_export';
@@ -11623,11 +11658,13 @@ function showRestoreModal(versions, source) {
             || version?.folderType
             || ''
         ).trim().toLowerCase();
+        if (explicitFolderType === 'safety_snapshot') return 'manual_export';
         if (explicitFolderType === 'manual_export') return 'manual_export';
         if (explicitFolderType === 'overwrite') return 'overwrite';
         if (explicitFolderType === 'versioned') return 'versioned';
 
         const coreType = detectTypeFromPathValues(collectRestoreCorePathValues(version, restoreRef));
+        if (coreType === 'safety_snapshot') return 'manual_export';
         if (coreType === 'manual_export' || coreType === 'overwrite') return coreType;
 
         const overwriteMode = String(restoreRef.overwriteMode || '').trim().toLowerCase();
@@ -11641,6 +11678,7 @@ function showRestoreModal(versions, source) {
             if (coreType === 'overwrite') return 'overwrite';
 
             const artifactType = detectTypeFromPathValues(collectChangesArtifactPathValues(restoreRef));
+            if (artifactType === 'safety_snapshot') return 'manual_export';
             if (artifactType === 'manual_export') return 'manual_export';
             if (artifactType === 'overwrite') return 'overwrite';
             if (isSyntheticChangesArtifactKey) return 'changes_artifact';
@@ -11668,6 +11706,65 @@ function showRestoreModal(versions, source) {
         }
 
         return 'versioned';
+    };
+    const isOwnSnapshotLeafName = (value) => {
+        const leaf = extractLeafFileName(value).toLowerCase();
+        if (!leaf) return false;
+        if (/^\d{8}_\d{4}(?:\d{2})?(?:_[0-9a-f]{6,12})?\.(?:html?|xhtml|json)$/i.test(leaf)) return true;
+        if (/^bookmark[_ -]?backup\.(?:html?|xhtml|json)$/i.test(leaf)) return true;
+        return leaf === '操作前浏览器快照.html'
+            || leaf === '目标状态快照.html'
+            || leaf === '当前浏览器快照.html'
+            || leaf === 'before operation browser snapshot.html'
+            || leaf === 'target state snapshot.html'
+            || leaf === 'current browser snapshot.html';
+    };
+    const isInternalSnapshotRestoreVersion = (version) => {
+        if (!version || typeof version !== 'object') return false;
+        const restoreRef = version?.restoreRef || {};
+        if (isLegacyV2RestoreVersion(version)) return true;
+        const explicitFolderType = String(
+            restoreRef.folderType
+            || restoreRef?.changesArtifact?.folderType
+            || version?.folderType
+            || ''
+        ).trim().toLowerCase();
+        if (explicitFolderType === 'safety_snapshot'
+            || explicitFolderType === 'manual_export'
+            || explicitFolderType === 'overwrite'
+            || explicitFolderType === 'versioned') {
+            return true;
+        }
+        if (restoreRef?.indexMatched === true) return true;
+        if (String(restoreRef?.manualExportSourceKind || '').trim()) return true;
+        const overwriteMode = String(restoreRef?.overwriteMode || '').trim().toLowerCase();
+        if (overwriteMode === 'overwrite' || overwriteMode === 'versioned') return true;
+        const snapshotKey = String(restoreRef?.snapshotKey || version?.snapshotKey || '').trim().toLowerCase();
+        if (snapshotKey && !snapshotKey.startsWith('__changes_artifact_')) return true;
+        const pathType = detectTypeFromPathValues([
+            ...collectRestoreCorePathValues(version, restoreRef),
+            ...collectChangesArtifactPathValues(restoreRef)
+        ]);
+        if (pathType === 'safety_snapshot' || pathType === 'manual_export' || pathType === 'overwrite' || pathType === 'versioned') {
+            return true;
+        }
+        return [
+            version?.originalFile,
+            restoreRef?.originalFile,
+            restoreRef?.sourceFile,
+            restoreRef?.localFileKey,
+            restoreRef?.fileUrl
+        ].some(isOwnSnapshotLeafName);
+    };
+    const isLocalExternalStandardSnapshotVersion = (version) => {
+        if (!version || typeof version !== 'object') return false;
+        const restoreRef = version?.restoreRef || {};
+        const sourceValue = String(version?.source || restoreRef?.source || '').trim().toLowerCase();
+        const sourceType = String(version?.sourceType || restoreRef?.sourceType || '').trim().toLowerCase();
+        if (sourceValue !== 'local') return false;
+        if (sourceType !== 'html' && sourceType !== 'json') return false;
+        if (sourceType === 'json' && String(restoreRef?.jsonKind || '').trim().toLowerCase() !== 'tree') return false;
+        return !isInternalSnapshotRestoreVersion(version);
     };
     const getRestoreFolderBadgeText = (lang, folderType) => {
         if (folderType === 'overwrite') return lang === 'en' ? 'Overwrite' : '覆盖';
@@ -19995,7 +20092,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 '   │        ├─ backup-history-log_from_20260305_090000_to_20260307_180000.md',
                 '   │        └─ 20260225_123456_abcd1234/',
                 '   │           ├─ 20260225_123456_abcd1234.html',
-                '   │           └─ bookmark-changes_simple_20260225_123456_abcd1234.json'
+                '   │           └─ bookmark-changes_simple_20260225_123456_abcd1234.json',
+                '   └─ Safety Snapshots/',
+                '      └─ 20260307_180000_a3f2/',
+                '         ├─ Before Operation Browser Snapshot.html',
+                '         ├─ Target State Snapshot.html',
+                '         ├─ Current Browser Snapshot.html',
+                '         └─ Safety Snapshot Manifest.json'
             ]
             : [
                 '书签备份/',
@@ -20021,7 +20124,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 '   │        ├─ 备份历史log_20260305_090000开始_20260307_180000截止.md',
                 '   │        └─ 20260225_123456_abcd1234/',
                 '   │           ├─ 20260225_123456_abcd1234.html',
-                '   │           └─ 书签变化_简略_20260225_123456_abcd1234.json'
+                '   │           └─ 书签变化_简略_20260225_123456_abcd1234.json',
+                '   └─ 高危操作安全快照/',
+                '      └─ 20260307_180000_a3f2/',
+                '         ├─ 操作前浏览器快照.html',
+                '         ├─ 目标状态快照.html',
+                '         ├─ 当前浏览器快照.html',
+                '         └─ 安全快照清单.json'
             ];
         return lines.join('\n');
     };

@@ -23606,6 +23606,7 @@ function buildHistorySafetyCheckpointHelpHtml() {
                 <li>It is triggered by restore/revert flows that enter the recovery transaction layer, mainly <span class="backup-history-safety-help-highlight">overwrite restore, patch restore, overwrite revert, and patch revert</span> from the main UI or history page.</li>
                 <li>Import merge is additive and keeps existing bookmarks. It may use internal transaction data for interruption cleanup, but it does not replace the displayed latest temporary safety snapshot.</li>
                 <li>It keeps only the latest operation's before-operation browser snapshot and target-state snapshot; the current browser snapshot is generated only when you export it.</li>
+                <li>Manual export is saved under <span class="backup-history-safety-help-highlight">Bookmark Backup / Manual Export / Safety Snapshots / time_session</span>, containing Before Operation, Target State, optional Current Browser snapshots, and Safety Snapshot Manifest JSON.</li>
                 <li>You can open it from the right side of the <span class="backup-history-safety-help-highlight">Backup History</span> title.</li>
                 <li>For long-term old data, keep backup-history snapshot data or change data enabled. Temporary Safety Snapshot is mainly for short-term incident recovery.</li>
             </ul>
@@ -23618,6 +23619,7 @@ function buildHistorySafetyCheckpointHelpHtml() {
             <li>触发范围是进入恢复事务层的恢复/撤销流程，主要包括主 UI 或历史页面里的 <span class="backup-history-safety-help-highlight">覆盖恢复、补丁恢复、覆盖撤销、补丁撤销</span>。</li>
             <li>导入合并是添加型操作，会保留现有书签；它只保留中断清理所需的内部事务数据，不会覆盖这里展示的最近一次临时安全快照。</li>
             <li>这里只保留最近一次操作的“操作前浏览器快照”和“目标状态快照”；“当前浏览器快照”是在导出时即时读取的。</li>
+            <li>手动导出会保存到<span class="backup-history-safety-help-highlight">书签备份 / 手动导出 / 高危操作安全快照 / 时间_会话</span>，包含操作前、目标状态、可选的当前浏览器快照，以及安全快照清单 JSON。</li>
             <li>入口位置在<span class="backup-history-safety-help-highlight">“备份历史”标题右侧</span>。</li>
             <li>如果需要保留更早的历史数据，应开启备份历史里的快照数据或变化数据；临时安全快照主要用于短期应急恢复。</li>
         </ul>

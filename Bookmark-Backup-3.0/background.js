@@ -25631,7 +25631,7 @@ function buildRestoreVersionFromExportData(exportData, { source, originalFile, f
     });
 }
 
-function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '', legacyVersion = '' }) {
+function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '', legacyVersion = '', hasFullSnapshotMeta = false }) {
     const name = fileName || originalFile;
     const normalizedFileUrl = String(fileUrl || '').trim();
     const normalizedLegacyVersion = String(legacyVersion || '').trim();
@@ -25754,7 +25754,12 @@ function parseBookmarkTreeFromJsonTextForRestore(text) {
     return extractBookmarkTreeFromJsonPayloadForRestore(parsed);
 }
 
-function buildRestoreVersionFromJsonTreeFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '', legacyVersion = '' }) {
+function hasRestoreSnapshotRootFolderTypeIdentity(bookmarkTree) {
+    const roots = getRestoreSnapshotRootNodes(bookmarkTree);
+    return roots.length > 0 && roots.every((node) => !!normalizeBookmarkFolderType(node?.folderType || ''));
+}
+
+function buildRestoreVersionFromJsonTreeFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '', legacyVersion = '', rootIdentityComplete = false }) {
     const name = fileName || originalFile;
     const normalizedLegacyVersion = String(legacyVersion || '').trim();
 
@@ -28457,6 +28462,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             'bookmarks-history'
         ]);
         const CURRENT_CHANGES_FOLDER_SEGMENTS = new Set(['当前变化', 'current changes', 'current_changes', 'current-changes']);
+        const SAFETY_SNAPSHOT_FOLDER_SEGMENTS = new Set(['高危操作安全快照', 'safety snapshots', 'safety_snapshots', 'safety-snapshots']);
 
         const normalizePathTextForSegments = (value) => {
             const raw = String(value || '').trim();
@@ -28482,6 +28488,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             let hasManualExport = false;
             let hasVersioned = false;
             let hasManualHistoryOrCurrentChanges = false;
+            let hasSafetySnapshot = false;
 
             for (const value of values || []) {
                 const segments = splitPathSegmentsLower(value);
@@ -28497,8 +28504,12 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 if (segments.some(seg => MANUAL_HISTORY_FOLDER_SEGMENTS.has(seg) || CURRENT_CHANGES_FOLDER_SEGMENTS.has(seg))) {
                     hasManualHistoryOrCurrentChanges = true;
                 }
+                if (segments.some(seg => SAFETY_SNAPSHOT_FOLDER_SEGMENTS.has(seg))) {
+                    hasSafetySnapshot = true;
+                }
             }
 
+            if (hasSafetySnapshot) return 'safety_snapshot';
             if (hasManualExport) return 'manual_export';
             if (hasVersioned) return 'versioned';
             if (hasManualHistoryOrCurrentChanges) return 'manual_export';
@@ -28583,7 +28594,8 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
         const htmlCandidates = candidates.filter((f) => {
             if (!f || f.type !== 'html_backup') return false;
             if (!hasManualExportIndex) return true;
-            return detectFolderTypeByMetaLike(f, { includeSnapshotFallback: false }) !== 'manual_export';
+            const folderType = detectFolderTypeByMetaLike(f, { includeSnapshotFallback: false });
+            return folderType !== 'manual_export';
         });
         for (const f of htmlCandidates) {
             try {
@@ -28639,7 +28651,8 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
         const jsonSnapshotCandidates = candidates.filter((f) => {
             if (!f || f.type !== 'json_backup') return false;
             if (!hasManualExportIndex) return true;
-            return detectFolderTypeByMetaLike(f, { includeSnapshotFallback: false }) !== 'manual_export';
+            const folderType = detectFolderTypeByMetaLike(f, { includeSnapshotFallback: false });
+            return folderType !== 'manual_export';
         });
         for (const f of jsonSnapshotCandidates) {
             try {
@@ -28685,7 +28698,8 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
         const changesArtifactCandidates = candidates.filter((f) => {
             if (!f || f.type !== 'changes_artifact') return false;
             if (!hasManualExportIndex) return true;
-            return detectFolderTypeByMetaLike(f, { includeSnapshotFallback: false }) !== 'manual_export';
+            const folderType = detectFolderTypeByMetaLike(f, { includeSnapshotFallback: false });
+            return folderType !== 'manual_export';
         });
         const artifactBundleBySnapshotKey = new Map();
 
@@ -29351,7 +29365,60 @@ function createOverwriteRestorePlanError(overwritePlan) {
     return error;
 }
 
-function buildOverwriteRestorePlan(bookmarkTree, containerState = {}) {
+function getRestoreRootFallbackLeafName(value) {
+    const text = String(value || '').trim().replace(/\\/g, '/');
+    if (!text) return '';
+    const parts = text.split('/').filter(Boolean);
+    return String(parts.length > 0 ? parts[parts.length - 1] : text).trim().toLowerCase();
+}
+
+function isOwnRestoreSnapshotLeafNameForRootFallback(value) {
+    const leaf = getRestoreRootFallbackLeafName(value);
+    if (!leaf) return false;
+    if (/^\d{8}_\d{4}(?:\d{2})?(?:_[0-9a-f]{6,12})?\.(?:html?|xhtml|json)$/i.test(leaf)) return true;
+    if (/^bookmark[_ -]?backup\.(?:html?|xhtml|json)$/i.test(leaf)) return true;
+    return leaf === '操作前浏览器快照.html'
+        || leaf === '目标状态快照.html'
+        || leaf === '当前浏览器快照.html'
+        || leaf === 'before operation browser snapshot.html'
+        || leaf === 'target state snapshot.html'
+        || leaf === 'current browser snapshot.html';
+}
+
+function isOwnRestorePathForRootFallback(restoreRef = {}) {
+    const values = [
+        restoreRef?.snapshotFolder,
+        restoreRef?.snapshotFolderName,
+        restoreRef?.folderPath,
+        restoreRef?.localFileKey,
+        restoreRef?.fileUrl,
+        restoreRef?.originalFile,
+        restoreRef?.sourceFile
+    ];
+    const pathText = values.map((value) => String(value || '')).join('/').replace(/\\/g, '/').toLowerCase();
+    if (/(^|\/)(覆盖|overwrite|版本化|多版本|versioned|versioning|手动导出|manual export|manual_export|manual-export|备份历史|backup history|backup_history|backup-history|bookmarks history|bookmarks_history|bookmarks-history|高危操作安全快照|safety snapshots|safety_snapshots|safety-snapshots)(\/|$)/i.test(pathText)) return true;
+    return values.some(isOwnRestoreSnapshotLeafNameForRootFallback);
+}
+
+function isLocalExternalStandardSnapshotRestoreRef(restoreRef = {}) {
+    const source = String(restoreRef?.source || '').trim().toLowerCase();
+    const sourceType = String(restoreRef?.sourceType || '').trim().toLowerCase();
+    if (source !== 'local') return false;
+    if (sourceType !== 'html' && sourceType !== 'json') return false;
+    if (sourceType === 'json' && String(restoreRef?.jsonKind || '').trim().toLowerCase() !== 'tree') return false;
+    if (restoreRef?.indexMatched === true) return false;
+    if (restoreRef?.hasFullSnapshotMeta === true || restoreRef?.rootIdentityComplete === true) return false;
+    if (String(restoreRef?.folderType || '').trim()) return false;
+    if (String(restoreRef?.manualExportSourceKind || '').trim()) return false;
+    if (String(restoreRef?.legacyVersion || '').trim()) return false;
+    if (String(restoreRef?.overwriteMode || '').trim()) return false;
+    const snapshotKey = String(restoreRef?.snapshotKey || '').trim();
+    if (snapshotKey && !snapshotKey.toLowerCase().startsWith('__changes_artifact_')) return false;
+    return !isOwnRestorePathForRootFallback(restoreRef);
+}
+
+function buildOverwriteRestorePlan(bookmarkTree, containerState = {}, options = {}) {
+    const allowDefaultRootFallback = options?.allowDefaultRootFallback !== false;
     const snapshotRoots = getRestoreSnapshotRootNodes(bookmarkTree);
     if (!snapshotRoots.length) {
         return buildOverwriteRestorePlanFailure(
@@ -29447,7 +29514,7 @@ function buildOverwriteRestorePlan(bookmarkTree, containerState = {}) {
             ? getRootMatchMapValue(containerState.containerByKey, snapshotRoot)
             : null;
 
-        if (!targetContainer && !hasFolderType) {
+        if (!targetContainer && !hasFolderType && allowDefaultRootFallback) {
             targetContainer = defaultContainer;
         }
 
@@ -29479,9 +29546,9 @@ function buildOverwriteRestorePlan(bookmarkTree, containerState = {}) {
     return { success: true, assignments };
 }
 
-async function buildOverwriteRestorePlanAgainstCurrentBrowser(bookmarkTree) {
+async function buildOverwriteRestorePlanAgainstCurrentBrowser(bookmarkTree, options = {}) {
     const containerState = await findBookmarkContainers();
-    const overwritePlan = buildOverwriteRestorePlan(bookmarkTree, containerState);
+    const overwritePlan = buildOverwriteRestorePlan(bookmarkTree, containerState, options);
     return { containerState, overwritePlan };
 }
 
@@ -31664,13 +31731,16 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
         }
 
         const lang = await getCurrentLang();
+        const overwritePlanOptions = {
+            allowDefaultRootFallback: !isLocalExternalStandardSnapshotRestoreRef(restoreRef)
+        };
 
         let cachedOverwriteExecutionContext = null;
         const ensureOverwriteExecutionContext = async () => {
             if (cachedOverwriteExecutionContext) {
                 return cachedOverwriteExecutionContext;
             }
-            cachedOverwriteExecutionContext = await buildOverwriteRestorePlanAgainstCurrentBrowser(tree);
+            cachedOverwriteExecutionContext = await buildOverwriteRestorePlanAgainstCurrentBrowser(tree, overwritePlanOptions);
             return cachedOverwriteExecutionContext;
         };
 
@@ -32153,7 +32223,10 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
             return { success: false, error: 'No bookmark tree data found for selected version' };
         }
 
-        const { containerState, overwritePlan } = await buildOverwriteRestorePlanAgainstCurrentBrowser(tree);
+        const previewStrategy = String(strategy || '').trim().toLowerCase();
+        const { containerState, overwritePlan } = await buildOverwriteRestorePlanAgainstCurrentBrowser(tree, {
+            allowDefaultRootFallback: previewStrategy === 'merge' || !isLocalExternalStandardSnapshotRestoreRef(restoreRef)
+        });
         if (!overwritePlan.success) {
             return buildOverwriteRestorePlanFailureResponse(overwritePlan);
         }
