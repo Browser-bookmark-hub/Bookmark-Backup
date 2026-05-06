@@ -187,9 +187,9 @@
         queueClearConfirmOpen: false,
         snapshotHelperEnabled: (() => {
             try {
-                return localStorage.getItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY) === 'true';
+                return localStorage.getItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY) !== 'false';
             } catch (_) {
-                return false;
+                return true;
             }
         })(),
         queueBatchSize: QUEUE_BATCH_SIZE_DEFAULT,
@@ -1253,9 +1253,9 @@
 
     function loadSavedSnapshotHelperEnabled() {
         try {
-            state.snapshotHelperEnabled = localStorage.getItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY) === 'true';
+            state.snapshotHelperEnabled = localStorage.getItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY) !== 'false';
         } catch (_) {
-            state.snapshotHelperEnabled = false;
+            state.snapshotHelperEnabled = true;
         }
     }
 
