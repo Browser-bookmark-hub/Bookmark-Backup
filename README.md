@@ -42,7 +42,7 @@ Bookmark-Backup-3.0/
 |-- dev_1/                            [TOOLS] 网页快照、MHTML、截图、录屏和队列辅助能力。
 |-- github/                           [SYNC] GitHub 仓库备份目标的 API 封装。
 |-- _locales/                         [I18N] 中英文扩展名称、描述和工具栏标题。
-|-- docs/PROJECT_STRUCTURE.md          [DOC] 更完整的项目结构说明。
+|-- docs/PROJECT_STRUCTURE.md         [DOC] 更完整的项目结构说明。
 \-- LICENSE                           [DOC] 开源许可。
 ```
 
@@ -128,7 +128,7 @@ Bookmark-Backup-3.0/
 |-- dev_1/                            [TOOLS] Web snapshot, MHTML, screenshot, recording, and queue helper tools.
 |-- github/                           [SYNC] GitHub repository backup API wrapper.
 |-- _locales/                         [I18N] Chinese/English extension name, description, and action title.
-|-- docs/PROJECT_STRUCTURE.md          [DOC] More complete project structure notes.
+|-- docs/PROJECT_STRUCTURE.md         [DOC] More complete project structure notes.
 \-- LICENSE                           [DOC] Open-source license.
 ```
 
