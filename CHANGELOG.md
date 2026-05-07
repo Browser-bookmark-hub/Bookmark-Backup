@@ -7,6 +7,16 @@
 
 ---
 
+## v3.0
+
+1. 新增云端 2：支持 GitHub Repo 备份，包含仓库、分支、Base Path、Token 配置与连接测试。
+2. 新增设置与初始化：支持快照备份、当前变化归档、备份策略、HTML / JSON 格式和恢复到初始状态。
+3. 新增当前变化页面：支持新增、删除、修改、移动的可视化查看，并提供简略、详细、集合视图和当前变化撤销。
+4. 新增备份历史恢复：支持补丁恢复、覆盖恢复、导入合并、补丁撤销、覆盖撤销，并加入预演确认和临时安全快照。
+5. 新增网页快照：支持从书签树、当前变化、所有窗口 Tab 选取范围，按树 / 域名 / 子域名筛选队列，并导出 Chrome 官方 MHTML 格式。
+6. 稳定性优化：优化恢复/撤销事务保护、失败回滚、补丁降级、执行后校验，以及大批量书签下的懒加载、缓存、快速对比和智能移动检测。
+
+
 ## 📢 版本更新 v2.0
 
 <img src="png/v2.0_setting.png" alt="动态提醒设置界面" width="500">
@@ -68,6 +78,16 @@
 # Release Notes
 
 ---
+
+## v3.0
+
+1. Added Cloud 2: GitHub Repo backup with repository, branch, Base Path, Token setup, and connection testing.
+2. Added settings and initialization options: snapshot backup, current changes archive, backup strategy, HTML / JSON formats, and reset to initial state.
+3. Added Current Changes page: view added, deleted, modified, and moved bookmarks with Simple, Detailed, and Collection views, plus current-change revert.
+4. Added Backup History restore: supports Patch Restore, Overwrite Restore, Import Merge, Patch Revert, Overwrite Revert, preflight confirmation, and temporary safety snapshots.
+5. Added Web Snapshot: select capture scope from bookmark tree, current changes, or all window tabs, filter by tree / domain / subdomain, and export with Chrome’s official MHTML format.
+6. Stability optimizations: improved restore/revert transaction protection, failure rollback, patch fallback, post-apply verification, lazy loading, caching, fast comparison, and smart move detection for large bookmark sets.
+
 
 ## 📢 Release Notes v2.0
 
