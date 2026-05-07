@@ -3232,7 +3232,7 @@ async function initializeGitHubRepoConfigSection() {
                     themeParam = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
                 }
 
-                const url = chrome.runtime.getURL(`github-token-guide.html?lang=${langParam}&theme=${themeParam}`);
+                const url = chrome.runtime.getURL(`github/github-token-guide.html?lang=${langParam}&theme=${themeParam}`);
                 if (chrome.tabs && chrome.tabs.create) {
                     chrome.tabs.create({ url });
                 } else {

@@ -4,7 +4,7 @@
     "description": "插件名称"
   },
   "extensionDescription": {
-    "message": "书签快照（Git）",
+    "message": "书签版本管理（Git）",
     "description": "插件描述"
   },
   "actionTitle": {

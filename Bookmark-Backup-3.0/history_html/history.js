@@ -4937,31 +4937,27 @@ function showGlobalExportModalWithPreselection(preselectCount = 0) {
     globalExportCurrentPage = 1;
     globalExportSelectedState = {};
 
+    const records = getGlobalExportHistoryRecords();
+    refreshGlobalExportSeqNumberMap();
+
     if (!syncHistory || syncHistory.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
+        setGlobalExportEmptyTableMessage(tbody, currentLang === 'zh_CN' ? '暂无备份记录' : 'No backup records');
         document.getElementById('globalExportPagination').style.display = 'none';
         modal.classList.add('show');
         return;
     }
 
     // 预选最旧的 preselectCount 条记录
-    syncHistory.forEach((record, index) => {
+    records.forEach((record, index) => {
         // 索引 0 是最旧的记录
         globalExportSelectedState[record.time] = (index < preselectCount);
-    });
-
-    globalExportSeqNumberByTime = new Map();
-    syncHistory.forEach((record, index) => {
-        const seqNumber = getHistoryListPositionNumberByStorageIndex(index);
-        globalExportSeqNumberByTime.set(String(record.time), seqNumber);
     });
 
     // 显示分页控件
     document.getElementById('globalExportPagination').style.display = 'flex';
 
-    // 渲染当前页
+    setupGlobalExportRangeUiForOpen({ source: 'global', autoEnable: false, autoExpand: false });
     renderGlobalExportPage();
-
     updateGlobalExportStatus();
 
     modal.classList.add('show');
@@ -4978,23 +4974,20 @@ function showGlobalExportModalWithPreselectionBySeqRange(minSeq, maxSeq) {
     globalExportCurrentPage = 1;
     globalExportSelectedState = {};
 
+    const records = getGlobalExportHistoryRecords();
+    refreshGlobalExportSeqNumberMap();
+
     if (!syncHistory || syncHistory.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
+        setGlobalExportEmptyTableMessage(tbody, currentLang === 'zh_CN' ? '暂无备份记录' : 'No backup records');
         document.getElementById('globalExportPagination').style.display = 'none';
         modal.classList.add('show');
         return;
     }
 
     // 根据序号范围预选记录
-    syncHistory.forEach((record, index) => {
-        const seqNumber = getHistoryListPositionNumberByStorageIndex(index);
+    records.forEach((record) => {
+        const seqNumber = getGlobalExportRecordSeqNumber(record);
         globalExportSelectedState[record.time] = (seqNumber >= minSeq && seqNumber <= maxSeq);
-    });
-
-    globalExportSeqNumberByTime = new Map();
-    syncHistory.forEach((record, index) => {
-        const seqNumber = getHistoryListPositionNumberByStorageIndex(index);
-        globalExportSeqNumberByTime.set(String(record.time), seqNumber);
     });
 
     // 显示分页控件
@@ -28714,6 +28707,55 @@ let globalExportRangeApplyingSelection = false;
 let globalExportActiveRangeThumb = 'max'; // 'min' | 'max'
 let globalExportRangeRafPending = false;
 
+function getGlobalExportHistoryRecords() {
+    return (Array.isArray(syncHistory) ? syncHistory : [])
+        .filter(record => record);
+}
+
+function refreshGlobalExportSeqNumberMap() {
+    globalExportSeqNumberByTime = new Map();
+    (Array.isArray(syncHistory) ? syncHistory : []).forEach((record, index) => {
+        if (!record) return;
+        const seqNumber = getHistoryListPositionNumberByStorageIndex(index);
+        globalExportSeqNumberByTime.set(String(record.time), seqNumber);
+    });
+}
+
+function getGlobalExportRecordSeqNumber(record) {
+    if (!record) return 0;
+    const mapped = globalExportSeqNumberByTime.get(String(record.time));
+    if (Number.isFinite(mapped) && mapped > 0) return mapped;
+    const index = (Array.isArray(syncHistory) ? syncHistory : []).findIndex(item => String(item?.time) === String(record.time));
+    return index >= 0 ? getHistoryListPositionNumberByStorageIndex(index) : 0;
+}
+
+function setGlobalExportEmptyTableMessage(tbody, message) {
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="7" style="padding: 30px; text-align: center; color: var(--text-tertiary);">${escapeHtml(message)}</td></tr>`;
+}
+
+function getGlobalExportVisibleHistoryRecords() {
+    let visibleHistory = getGlobalExportHistoryRecords().slice().reverse();
+
+    if (isGlobalExportRangePanelExpanded()) {
+        const minSlider = document.getElementById('globalExportRangeMin');
+        const maxSlider = document.getElementById('globalExportRangeMax');
+        if (minSlider && maxSlider) {
+            const a = parseInt(minSlider.value, 10);
+            const b = parseInt(maxSlider.value, 10);
+            const minSeq = Math.min(a, b);
+            const maxSeq = Math.max(a, b);
+            visibleHistory = visibleHistory.filter((record) => {
+                const seqNumber = getGlobalExportRecordSeqNumber(record);
+                if (!Number.isFinite(seqNumber)) return true;
+                return seqNumber >= minSeq && seqNumber <= maxSeq;
+            });
+        }
+    }
+
+    return visibleHistory;
+}
+
 function initGlobalExportRangeUI() {
     const toggleBtn = document.getElementById('globalExportRangeToggleBtn');
     const panel = document.getElementById('globalExportRangePanel');
@@ -28848,12 +28890,13 @@ function setGlobalExportRangeEnabled(enabled) {
 }
 
 function getGlobalExportSeqRangeBounds() {
-    if (!syncHistory || syncHistory.length === 0) return { min: 1, max: 1 };
+    const records = getGlobalExportHistoryRecords();
+    if (records.length === 0) return { min: 1, max: 1 };
 
     let min = Infinity;
     let max = -Infinity;
-    for (let i = 0; i < syncHistory.length; i++) {
-        const seqNumber = getHistoryListPositionNumberByStorageIndex(i);
+    for (const record of records) {
+        const seqNumber = getGlobalExportRecordSeqNumber(record);
         if (seqNumber < min) min = seqNumber;
         if (seqNumber > max) max = seqNumber;
     }
@@ -28989,11 +29032,11 @@ function updateGlobalExportRangePreviewText() {
 }
 
 function countGlobalExportRecordsInSeqRange(minSeq, maxSeq) {
-    if (!syncHistory || syncHistory.length === 0) return 0;
+    const records = getGlobalExportHistoryRecords();
+    if (records.length === 0) return 0;
     let count = 0;
-    for (let i = 0; i < syncHistory.length; i++) {
-        const record = syncHistory[i];
-        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || getHistoryListPositionNumberByStorageIndex(i);
+    for (const record of records) {
+        const seqNumber = getGlobalExportRecordSeqNumber(record);
         if (seqNumber >= minSeq && seqNumber <= maxSeq) count++;
     }
     return count;
@@ -29013,12 +29056,12 @@ function applyGlobalExportSelectionByCurrentThumbRange() {
 }
 
 function applyGlobalExportSelectionBySeqRange(minSeq, maxSeq) {
-    if (!syncHistory || syncHistory.length === 0) return;
+    const records = getGlobalExportHistoryRecords();
+    if (records.length === 0) return;
 
     globalExportRangeApplyingSelection = true;
-    for (let i = 0; i < syncHistory.length; i++) {
-        const record = syncHistory[i];
-        const seqNumber = globalExportSeqNumberByTime.get(String(record.time)) || getHistoryListPositionNumberByStorageIndex(i);
+    for (const record of records) {
+        const seqNumber = getGlobalExportRecordSeqNumber(record);
         globalExportSelectedState[record.time] = (seqNumber >= minSeq && seqNumber <= maxSeq);
     }
 
@@ -29042,16 +29085,21 @@ function setupGlobalExportRangeUiForOpen({ source = 'global', minSeq = null, max
 
     if (!enabledCbox || !minSlider || !maxSlider) return;
 
-    globalExportRangeBoundsCache = getGlobalExportSeqRangeBounds();
-    const bounds = globalExportRangeBoundsCache;
+    const recordBounds = getGlobalExportSeqRangeBounds();
+    const requestedMinSeq = minSeq == null ? recordBounds.min : Number(minSeq);
+    const requestedMaxSeq = maxSeq == null ? recordBounds.max : Number(maxSeq);
+    const nextMinSeq = Number.isFinite(requestedMinSeq) ? requestedMinSeq : recordBounds.min;
+    const nextMaxSeq = Number.isFinite(requestedMaxSeq) ? requestedMaxSeq : recordBounds.max;
+    const bounds = {
+        min: Math.min(recordBounds.min, nextMinSeq, nextMaxSeq),
+        max: Math.max(recordBounds.max, nextMinSeq, nextMaxSeq)
+    };
+    globalExportRangeBoundsCache = bounds;
 
     minSlider.min = String(bounds.min);
     minSlider.max = String(bounds.max);
     maxSlider.min = String(bounds.min);
     maxSlider.max = String(bounds.max);
-
-    const nextMinSeq = minSeq == null ? bounds.min : minSeq;
-    const nextMaxSeq = maxSeq == null ? bounds.max : maxSeq;
 
     minSlider.value = String(nextMinSeq);
     maxSlider.value = String(nextMaxSeq);
@@ -29093,24 +29141,22 @@ function showGlobalExportModal() {
     globalExportCurrentPage = 1;
     globalExportSelectedState = {};
 
+    const records = getGlobalExportHistoryRecords();
+    refreshGlobalExportSeqNumberMap();
+
     if (!syncHistory || syncHistory.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="padding: 30px; text-align: center; color: var(--text-tertiary);">暂无备份记录</td></tr>';
+        setGlobalExportEmptyTableMessage(tbody, currentLang === 'zh_CN' ? '暂无备份记录' : 'No backup records');
         document.getElementById('globalExportPagination').style.display = 'none';
         modal.classList.add('show');
         return;
     }
 
     // 初始化所有记录为选中状态
-    syncHistory.forEach(record => {
+    records.forEach(record => {
         globalExportSelectedState[record.time] = true;
     });
 
-    // 建立序号映射（与删除弹窗口径一致：syncHistory 顺序的 index+1；newer 具有更大序号）
-    globalExportSeqNumberByTime = new Map();
-    syncHistory.forEach((record, index) => {
-        const seqNumber = getHistoryListPositionNumberByStorageIndex(index);
-        globalExportSeqNumberByTime.set(String(record.time), seqNumber);
-    });
+    setupGlobalExportRangeUiForOpen({ source: 'global', autoEnable: false, autoExpand: false });
 
     // 渲染当前页
     renderGlobalExportPage();
@@ -29133,7 +29179,7 @@ function showGlobalExportModal() {
     });
 
     document.getElementById('globalExportNextPage').addEventListener('click', () => {
-        const totalPages = Math.ceil(syncHistory.length / GLOBAL_EXPORT_PAGE_SIZE);
+        const totalPages = Math.ceil(getGlobalExportVisibleHistoryRecords().length / GLOBAL_EXPORT_PAGE_SIZE);
         if (globalExportCurrentPage < totalPages) {
             globalExportCurrentPage++;
             renderGlobalExportPage();
@@ -29144,7 +29190,7 @@ function showGlobalExportModal() {
     const newPageInput = document.getElementById('globalExportPageInput');
     newPageInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-            const totalPages = Math.ceil(syncHistory.length / GLOBAL_EXPORT_PAGE_SIZE);
+            const totalPages = Math.ceil(getGlobalExportVisibleHistoryRecords().length / GLOBAL_EXPORT_PAGE_SIZE);
             let targetPage = parseInt(newPageInput.value, 10);
             if (isNaN(targetPage) || targetPage < 1) targetPage = 1;
             if (targetPage > totalPages) targetPage = totalPages;
@@ -29153,7 +29199,7 @@ function showGlobalExportModal() {
         }
     });
     newPageInput.addEventListener('blur', () => {
-        const totalPages = Math.ceil(syncHistory.length / GLOBAL_EXPORT_PAGE_SIZE);
+        const totalPages = Math.ceil(getGlobalExportVisibleHistoryRecords().length / GLOBAL_EXPORT_PAGE_SIZE);
         let targetPage = parseInt(newPageInput.value, 10);
         if (isNaN(targetPage) || targetPage < 1) targetPage = 1;
         if (targetPage > totalPages) targetPage = totalPages;
@@ -29166,7 +29212,6 @@ function showGlobalExportModal() {
         }
     });
 
-    setupGlobalExportRangeUiForOpen({ source: 'global', autoEnable: false, autoExpand: false });
     updateGlobalExportStatus();
     modal.classList.add('show');
 }
@@ -29183,29 +29228,14 @@ function renderGlobalExportPage() {
 
     tbody.innerHTML = '';
 
-    const reversedHistory = [...syncHistory].reverse();
-    let visibleHistory = reversedHistory;
-
-    // 视觉查看模式：如果范围面板展开，则下方列表只显示该范围内的记录
-    if (isGlobalExportRangePanelExpanded()) {
-        const minSlider = document.getElementById('globalExportRangeMin');
-        const maxSlider = document.getElementById('globalExportRangeMax');
-        if (minSlider && maxSlider) {
-            const a = parseInt(minSlider.value, 10);
-            const b = parseInt(maxSlider.value, 10);
-            const minSeq = Math.min(a, b);
-            const maxSeq = Math.max(a, b);
-            visibleHistory = reversedHistory.filter((record) => {
-                const seqNumber = globalExportSeqNumberByTime.get(String(record.time));
-                if (!Number.isFinite(seqNumber)) return true;
-                return seqNumber >= minSeq && seqNumber <= maxSeq;
-            });
-        }
-    }
+    const visibleHistory = getGlobalExportVisibleHistoryRecords();
 
     if (visibleHistory.length === 0) {
         const colspan = 7;
-        tbody.innerHTML = `<tr><td colspan="${colspan}" style="padding: 20px; text-align: center; color: var(--text-tertiary);">${currentLang === 'zh_CN' ? '该范围内暂无记录' : 'No records in this range'}</td></tr>`;
+        const message = getGlobalExportHistoryRecords().length === 0
+            ? (currentLang === 'zh_CN' ? '暂无备份记录' : 'No backup records')
+            : (currentLang === 'zh_CN' ? '该范围内暂无记录' : 'No records in this range');
+        tbody.innerHTML = `<tr><td colspan="${colspan}" style="padding: 20px; text-align: center; color: var(--text-tertiary);">${escapeHtml(message)}</td></tr>`;
         if (pagination) pagination.style.display = 'none';
         return;
     }
@@ -29337,8 +29367,15 @@ function updateSelectAllCheckboxState() {
     const selectAllCheckbox = document.getElementById('globalExportSelectAll');
     if (!selectAllCheckbox) return;
 
-    const allSelected = Object.values(globalExportSelectedState).every(v => v === true);
-    const noneSelected = Object.values(globalExportSelectedState).every(v => v === false);
+    const selectedValues = Object.values(globalExportSelectedState);
+    if (selectedValues.length === 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+        return;
+    }
+
+    const allSelected = selectedValues.every(v => v === true);
+    const noneSelected = selectedValues.every(v => v === false);
 
     selectAllCheckbox.checked = allSelected;
     selectAllCheckbox.indeterminate = !allSelected && !noneSelected;
