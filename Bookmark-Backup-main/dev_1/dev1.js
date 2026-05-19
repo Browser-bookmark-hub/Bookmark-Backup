@@ -810,6 +810,12 @@
         return Math.floor(number);
     }
 
+    function normalizeBookmarkDateAdded(value) {
+        const number = Number(value);
+        if (!Number.isFinite(number) || number <= 0) return 0;
+        return Math.floor(number);
+    }
+
     function normalizeQueueItem(rawItem) {
         const url = String(rawItem?.url || '').trim();
         if (!url) return null;
@@ -831,6 +837,9 @@
         const reviewWindowId = Number.isFinite(reviewWindowIdRaw) ? Math.floor(reviewWindowIdRaw) : null;
         const rawLastAccessed = Number(rawItem?.reviewLastAccessed ?? rawItem?.lastAccessed);
         const reviewLastAccessed = Number.isFinite(rawLastAccessed) ? Math.floor(rawLastAccessed) : 0;
+        const rawSourceOrder = Number(rawItem?.sourceOrder);
+        const sourceOrder = Number.isFinite(rawSourceOrder) ? Math.floor(rawSourceOrder) : null;
+        const dateAdded = normalizeBookmarkDateAdded(rawItem?.dateAdded);
         const queueBatchIndex = normalizeQueueMetadataIndex(rawItem?.queueBatchIndex);
         const queueBatchPosition = normalizeQueueMetadataIndex(rawItem?.queueBatchPosition);
         const queueDisplayIndex = normalizeQueueMetadataIndex(rawItem?.queueDisplayIndex);
@@ -844,6 +853,8 @@
             actionText: String(rawItem?.actionText || '').trim(),
             host,
             sourceLabel: String(rawItem?.sourceLabel || '').trim(),
+            sourceOrder,
+            dateAdded,
             reviewWindowId,
             existingTabId,
             useExistingTab: existingTabId != null && rawItem?.useExistingTab === true,
@@ -1614,6 +1625,32 @@
             addedCount,
             skippedCount
         };
+    }
+
+    function sortQueueItemsByScopeKind(items, scopeKind) {
+        const kind = scopeKind === 'subdomain' ? 'subdomain' : 'domain';
+        const list = cloneQueueItems(items);
+        return list.sort((a, b) => {
+            const groupKeyA = kind === 'subdomain'
+                ? String(a?.subdomain || '__root__').trim().toLowerCase()
+                : String(a?.domain || '').trim().toLowerCase();
+            const groupKeyB = kind === 'subdomain'
+                ? String(b?.subdomain || '__root__').trim().toLowerCase()
+                : String(b?.domain || '').trim().toLowerCase();
+            const groupCompare = groupKeyA.localeCompare(groupKeyB, undefined, { sensitivity: 'base' });
+            if (groupCompare !== 0) return groupCompare;
+
+            const dateDiff = normalizeBookmarkDateAdded(b?.dateAdded) - normalizeBookmarkDateAdded(a?.dateAdded);
+            if (dateDiff !== 0) return dateDiff;
+
+            const sourceOrderA = Number.isFinite(Number(a?.sourceOrder)) ? Number(a.sourceOrder) : Number.MAX_SAFE_INTEGER;
+            const sourceOrderB = Number.isFinite(Number(b?.sourceOrder)) ? Number(b.sourceOrder) : Number.MAX_SAFE_INTEGER;
+            if (sourceOrderA !== sourceOrderB) return sourceOrderA - sourceOrderB;
+
+            const titleCompare = String(a?.title || '').localeCompare(String(b?.title || ''), undefined, { sensitivity: 'base' });
+            if (titleCompare !== 0) return titleCompare;
+            return String(a?.url || '').localeCompare(String(b?.url || ''), undefined, { sensitivity: 'base' });
+        });
     }
 
     function clearLockedQueueItems() {
@@ -2590,7 +2627,9 @@
                             folderPath,
                             folderFilterKey: folderPath || '__root__',
                             folderFilterLabel: folderPath || t('rootFolderLabel'),
-                            actionText: ''
+                            actionText: '',
+                            sourceOrder: items.length,
+                            dateAdded: normalizeBookmarkDateAdded(node?.dateAdded)
                         });
                     }
                 }
@@ -2809,6 +2848,9 @@
             const domain = String(rawItem?.domain || '').trim().toLowerCase() || domainParts.domain || domainParts.host || '';
             const rawSubdomain = String(rawItem?.subdomain || '').trim().toLowerCase();
             const subdomain = rawSubdomain || (domainParts.hasSubdomain ? domainParts.host : '__root__');
+            const rawSourceOrder = Number(rawItem?.sourceOrder);
+            const sourceOrder = Number.isFinite(rawSourceOrder) ? Math.floor(rawSourceOrder) : index;
+            const dateAdded = normalizeBookmarkDateAdded(rawItem?.dateAdded);
 
             results.push({
                 index,
@@ -2826,16 +2868,10 @@
                 subdomainLabel: subdomain === '__root__' ? t('rootSubdomainLabel') : subdomain,
                 actionText: '',
                 actionType: '',
-                host: host || domain
+                host: host || domain,
+                sourceOrder,
+                dateAdded
             });
-        });
-
-        results.sort((a, b) => {
-            const titleCompare = String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' });
-            if (titleCompare !== 0) return titleCompare;
-            const folderCompare = String(a.folderPath || '').localeCompare(String(b.folderPath || ''), undefined, { sensitivity: 'base' });
-            if (folderCompare !== 0) return folderCompare;
-            return String(a.url || '').localeCompare(String(b.url || ''));
         });
 
         return results;
@@ -4124,12 +4160,15 @@
                 domain: String(item?.domain || '').trim().toLowerCase(),
                 subdomain: String(item?.subdomain || '').trim().toLowerCase() || '__root__',
                 folderPath: String(item?.folderPath || '').trim(),
+                dateAdded: normalizeBookmarkDateAdded(item?.dateAdded),
                 actionType,
                 badgeMask
             });
         });
 
-        const compareByLabel = (a, b) => {
+        const compareByNewestDateThenLabel = (a, b) => {
+            const dateDiff = normalizeBookmarkDateAdded(b?.dateAdded) - normalizeBookmarkDateAdded(a?.dateAdded);
+            if (dateDiff !== 0) return dateDiff;
             const titleCompare = String(a?.label || '').localeCompare(String(b?.label || ''), undefined, { sensitivity: 'base' });
             if (titleCompare !== 0) return titleCompare;
             return String(a?.url || '').localeCompare(String(b?.url || ''), undefined, { sensitivity: 'base' });
@@ -4139,7 +4178,7 @@
         const allowPathMatch = shouldEnableScopePathFieldMatch(query);
         const groups = Array.from(groupMap.values())
             .map((group) => {
-                const allChildren = (group.children || []).slice().sort(compareByLabel);
+                const allChildren = (group.children || []).slice().sort(compareByNewestDateThenLabel);
                 if (!query) {
                     return {
                         key: group.key,
@@ -4188,9 +4227,6 @@
             })
             .filter(Boolean)
             .sort((a, b) => {
-                if (Number(b.displayCount) !== Number(a.displayCount)) {
-                    return Number(b.displayCount) - Number(a.displayCount);
-                }
                 return String(a.label || '').localeCompare(String(b.label || ''), undefined, { sensitivity: 'base' });
             });
 
@@ -5337,7 +5373,11 @@
         if (scopeDoneBtn) {
             scopeDoneBtn.addEventListener('click', async () => {
                 applyAllFilters();
-                const selectedItems = cloneQueueItems(state.filteredItems);
+                const activeScopeKind = getActiveScopeKind();
+                let selectedItems = cloneQueueItems(state.filteredItems);
+                if (activeScopeKind === 'domain' || activeScopeKind === 'subdomain') {
+                    selectedItems = sortQueueItemsByScopeKind(selectedItems, activeScopeKind);
+                }
                 const previousQueue = cloneQueueItems(state.lockedQueueItems);
                 const appendResult = appendLockedQueueItems(selectedItems);
                 state.scopePanelOpen = false;

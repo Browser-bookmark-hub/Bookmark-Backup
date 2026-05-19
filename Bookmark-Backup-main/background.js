@@ -4941,7 +4941,9 @@ function dev1BuildBookmarkSourceItemsFromTree(tree) {
                             subdomainLabel: domainParts.hasSubdomain
                                 ? (domainParts.subdomainHost || domainParts.host || '')
                                 : '',
-                            actionText: 'bookmark_api'
+                            actionText: 'bookmark_api',
+                            sourceOrder: items.length,
+                            dateAdded: Number.isFinite(Number(node?.dateAdded)) ? Math.floor(Number(node.dateAdded)) : 0
                         });
                     }
                 }
@@ -4954,14 +4956,6 @@ function dev1BuildBookmarkSourceItemsFromTree(tree) {
     }
 
     walk(rootNodes, []);
-
-    items.sort((a, b) => {
-        const titleCompare = String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' });
-        if (titleCompare !== 0) return titleCompare;
-        const folderCompare = String(a.folderPath || '').localeCompare(String(b.folderPath || ''), undefined, { sensitivity: 'base' });
-        if (folderCompare !== 0) return folderCompare;
-        return String(a.url || '').localeCompare(String(b.url || ''));
-    });
 
     return items;
 }
