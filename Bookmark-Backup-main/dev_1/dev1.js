@@ -9,6 +9,7 @@
     const DEV1_REVIEW_STORAGE_KEY = 'dev1_experiment_review_v1';
     const DEV1_WHITELIST_STORAGE_KEY = 'dev1_experiment_whitelist_v1';
     const DEV1_QUEUE_BATCH_SIZE_STORAGE_KEY = 'dev1_experiment_queue_batch_size_v2';
+    const DEV1_QUEUE_COLUMN_WIDTHS_STORAGE_KEY = 'dev1_experiment_queue_column_widths_v1';
     const DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY = 'dev1_experiment_review_auto_review_ms_v1';
     const DEV1_SNAPSHOT_HELPER_STORAGE_KEY = 'dev1_experiment_snapshot_helper_enabled_v1';
     const DEV1_REVIEW_WINDOW_EVENT_KEY = 'dev1ReviewWindowEventV1';
@@ -31,6 +32,8 @@
     const QUEUE_BATCH_SIZE_DEFAULT = 10;
     const QUEUE_BATCH_SIZE_MIN = 1;
     const QUEUE_BATCH_SIZE_MAX = 50;
+    const QUEUE_TABLE_COLUMN_DEFAULT_WIDTHS = [112, 58, 52, 320, 280, 150, 190, 180];
+    const QUEUE_TABLE_COLUMN_MIN_WIDTHS = [80, 48, 48, 180, 180, 110, 120, 120];
 
     function createEmptyFilterOptions() {
         return {
@@ -194,6 +197,7 @@
         })(),
         snapshotHelperTargetFolder: '',
         queueBatchSize: QUEUE_BATCH_SIZE_DEFAULT,
+        queueColumnWidths: null,
         queueBatchIndex: 0,
         reviewSyncEventTimerId: null,
         reviewAutoReviewTimerId: null,
@@ -1250,6 +1254,109 @@
             persistQueueSnapshot();
         }
         persistQueueBatchSize();
+    }
+
+    function createDefaultQueueColumnWidths() {
+        return QUEUE_TABLE_COLUMN_DEFAULT_WIDTHS.slice(0);
+    }
+
+    function getQueueTableColumnCount() {
+        return QUEUE_TABLE_COLUMN_DEFAULT_WIDTHS.length;
+    }
+
+    function getQueueTableColumnDefaultWidth(columnIndex) {
+        const index = Math.max(1, Math.floor(Number(columnIndex) || 1)) - 1;
+        return Number(QUEUE_TABLE_COLUMN_DEFAULT_WIDTHS[index]) || 120;
+    }
+
+    function getQueueTableColumnMinWidth(columnIndex) {
+        const index = Math.max(1, Math.floor(Number(columnIndex) || 1)) - 1;
+        return Number(QUEUE_TABLE_COLUMN_MIN_WIDTHS[index]) || 80;
+    }
+
+    function normalizeQueueColumnWidth(value, columnIndex) {
+        const fallback = getQueueTableColumnDefaultWidth(columnIndex);
+        const raw = Number(value);
+        if (!Number.isFinite(raw)) return fallback;
+        return Math.max(getQueueTableColumnMinWidth(columnIndex), Math.floor(raw));
+    }
+
+    function normalizeQueueColumnWidths(raw) {
+        const list = Array.isArray(raw) ? raw : [];
+        const count = getQueueTableColumnCount();
+        const widths = [];
+        for (let i = 0; i < count; i += 1) {
+            widths.push(normalizeQueueColumnWidth(list[i], i + 1));
+        }
+        return widths;
+    }
+
+    function getQueueColumnWidths() {
+        if (!Array.isArray(state.queueColumnWidths) || state.queueColumnWidths.length !== getQueueTableColumnCount()) {
+            state.queueColumnWidths = normalizeQueueColumnWidths(state.queueColumnWidths);
+        }
+        return state.queueColumnWidths;
+    }
+
+    function loadSavedQueueColumnWidths() {
+        try {
+            const raw = localStorage.getItem(DEV1_QUEUE_COLUMN_WIDTHS_STORAGE_KEY);
+            if (!raw) {
+                state.queueColumnWidths = createDefaultQueueColumnWidths();
+                return;
+            }
+            const parsed = JSON.parse(raw);
+            state.queueColumnWidths = normalizeQueueColumnWidths(parsed);
+        } catch (_) {
+            state.queueColumnWidths = createDefaultQueueColumnWidths();
+        }
+    }
+
+    function persistQueueColumnWidths() {
+        try {
+            localStorage.setItem(DEV1_QUEUE_COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(getQueueColumnWidths()));
+        } catch (_) { }
+    }
+
+    function applyQueueTableColumnWidth(tableEl, columnIndex, width) {
+        if (!(tableEl instanceof HTMLTableElement)) return;
+        const normalizedIndex = Math.max(1, Math.min(getQueueTableColumnCount(), Math.floor(Number(columnIndex) || 1)));
+        const normalizedWidth = normalizeQueueColumnWidth(width, normalizedIndex);
+        tableEl.querySelectorAll(`th:nth-child(${normalizedIndex}), td:nth-child(${normalizedIndex})`).forEach((cell) => {
+            if (cell instanceof HTMLElement) {
+                cell.style.width = `${normalizedWidth}px`;
+            }
+        });
+    }
+
+    function applyQueueTableColumnWidths(tableEl) {
+        if (!(tableEl instanceof HTMLTableElement)) return;
+        const widths = getQueueColumnWidths();
+        for (let index = 0; index < widths.length; index += 1) {
+            applyQueueTableColumnWidth(tableEl, index + 1, widths[index]);
+        }
+    }
+
+    function setQueueColumnWidth(columnIndex, width, options = {}) {
+        const normalizedIndex = Math.max(1, Math.min(getQueueTableColumnCount(), Math.floor(Number(columnIndex) || 1)));
+        const normalizedWidth = normalizeQueueColumnWidth(width, normalizedIndex);
+        const widths = getQueueColumnWidths();
+        widths[normalizedIndex - 1] = normalizedWidth;
+
+        const tableEl = options.tableEl instanceof HTMLTableElement
+            ? options.tableEl
+            : document.querySelector('#dev1QueueWrap .dev1-table-queue');
+        applyQueueTableColumnWidth(tableEl, normalizedIndex, normalizedWidth);
+
+        if (options.persist === true) {
+            persistQueueColumnWidths();
+        }
+    }
+
+    function getQueueColumnResizeTipText() {
+        return getLangKey() === 'en'
+            ? 'Drag to resize column'
+            : '拖动调整列宽';
     }
 
     function loadSavedSnapshotHelperEnabled() {
@@ -4711,6 +4818,16 @@
         return '<i class="fas fa-bookmark dev1-queue-name-fallback-icon" aria-hidden="true"></i>';
     }
 
+    function renderQueueHeaderCell(labelText, columnIndex) {
+        const titleText = getQueueColumnResizeTipText();
+        return `
+            <th data-col-index="${Math.max(1, Math.floor(Number(columnIndex) || 1))}">
+                <span class="dev1-col-head-text">${escapeHtml(labelText || '')}</span>
+                <span class="dev1-col-resize-handle" data-col-resize="${Math.max(1, Math.floor(Number(columnIndex) || 1))}" title="${escapeHtml(titleText)}" aria-hidden="true"></span>
+            </th>
+        `;
+    }
+
     function renderQueueTable() {
         const wrap = document.getElementById('dev1QueueWrap');
         if (!wrap) return;
@@ -4776,19 +4893,23 @@
             <table class="dev1-table dev1-table-queue">
                 <thead>
                     <tr>
-                        <th>${escapeHtml(t('colOps'))}</th>
-                        <th>${escapeHtml(t('colStatus'))}</th>
-                        <th>${escapeHtml(t('colIndex'))}</th>
-                        <th>${escapeHtml(t('colTitle'))}</th>
-                        <th>${escapeHtml(t('colUrl'))}</th>
-                        <th>${escapeHtml(t('colDomain'))}</th>
-                        <th>${escapeHtml(t('colSubdomain'))}</th>
-                        <th>${escapeHtml(t('colAction'))}</th>
+                        ${renderQueueHeaderCell(t('colOps'), 1)}
+                        ${renderQueueHeaderCell(t('colStatus'), 2)}
+                        ${renderQueueHeaderCell(t('colIndex'), 3)}
+                        ${renderQueueHeaderCell(t('colTitle'), 4)}
+                        ${renderQueueHeaderCell(t('colUrl'), 5)}
+                        ${renderQueueHeaderCell(t('colDomain'), 6)}
+                        ${renderQueueHeaderCell(t('colSubdomain'), 7)}
+                        ${renderQueueHeaderCell(t('colAction'), 8)}
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
             </table>
         `;
+        const tableEl = wrap.querySelector('table.dev1-table-queue');
+        if (tableEl instanceof HTMLTableElement) {
+            applyQueueTableColumnWidths(tableEl);
+        }
     }
 
     function renderReviewWorkflowPanel() {
@@ -5510,6 +5631,73 @@
                         setStatus(`${t('queueFocusTabFailed')}: ${error?.message || ''}`, 'warning');
                     });
                 }
+            });
+            queueWrap.addEventListener('pointerdown', (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLElement)) return;
+                const resizeHandle = target.closest('.dev1-col-resize-handle[data-col-resize]');
+                if (!(resizeHandle instanceof HTMLElement)) return;
+
+                const rawColumnIndex = Number(resizeHandle.dataset.colResize);
+                if (!Number.isFinite(rawColumnIndex)) return;
+                const columnIndex = Math.max(1, Math.min(getQueueTableColumnCount(), Math.floor(rawColumnIndex)));
+                const tableEl = queueWrap.querySelector('table.dev1-table-queue');
+                if (!(tableEl instanceof HTMLTableElement)) return;
+                const headerCell = resizeHandle.closest('th');
+                const startWidth = headerCell instanceof HTMLElement
+                    ? headerCell.getBoundingClientRect().width
+                    : getQueueColumnWidths()[columnIndex - 1];
+                const startX = Number(event.clientX);
+                if (!Number.isFinite(startX) || !Number.isFinite(startWidth) || startWidth <= 0) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                const pointerId = event.pointerId;
+                let latestWidth = startWidth;
+
+                const onPointerMove = (moveEvent) => {
+                    if (moveEvent.pointerId !== pointerId) return;
+                    const deltaX = Number(moveEvent.clientX) - startX;
+                    latestWidth = startWidth + deltaX;
+                    setQueueColumnWidth(columnIndex, latestWidth, { tableEl, persist: false });
+                    moveEvent.preventDefault();
+                };
+
+                const stopResize = (shouldPersist) => {
+                    document.removeEventListener('pointermove', onPointerMove);
+                    document.removeEventListener('pointerup', onPointerUp);
+                    document.removeEventListener('pointercancel', onPointerCancel);
+                    document.body.classList.remove('dev1-col-resize-active');
+                    if (shouldPersist) {
+                        setQueueColumnWidth(columnIndex, latestWidth, { tableEl, persist: true });
+                    }
+                    try {
+                        if (typeof resizeHandle.releasePointerCapture === 'function') {
+                            resizeHandle.releasePointerCapture(pointerId);
+                        }
+                    } catch (_) { }
+                };
+
+                const onPointerUp = (upEvent) => {
+                    if (upEvent.pointerId !== pointerId) return;
+                    stopResize(true);
+                };
+
+                const onPointerCancel = (cancelEvent) => {
+                    if (cancelEvent.pointerId !== pointerId) return;
+                    stopResize(false);
+                };
+
+                document.body.classList.add('dev1-col-resize-active');
+                document.addEventListener('pointermove', onPointerMove);
+                document.addEventListener('pointerup', onPointerUp);
+                document.addEventListener('pointercancel', onPointerCancel);
+                try {
+                    if (typeof resizeHandle.setPointerCapture === 'function') {
+                        resizeHandle.setPointerCapture(pointerId);
+                    }
+                } catch (_) { }
             });
         }
 
@@ -6587,6 +6775,7 @@
         if (!state.initialized) {
             loadSavedReviewAutoReviewMs();
             loadSavedQueueBatchSize();
+            loadSavedQueueColumnWidths();
             loadSavedQueueSnapshot();
             loadSavedReviewSession();
             loadSavedWhitelist();
@@ -6639,6 +6828,7 @@
         if (!state.initialized) {
             loadSavedReviewAutoReviewMs();
             loadSavedQueueBatchSize();
+            loadSavedQueueColumnWidths();
             loadSavedQueueSnapshot();
             loadSavedReviewSession();
             loadSavedWhitelist();
@@ -6685,6 +6875,7 @@
         if (!state.initialized) {
             loadSavedReviewAutoReviewMs();
             loadSavedQueueBatchSize();
+            loadSavedQueueColumnWidths();
             loadSavedQueueSnapshot();
             loadSavedReviewSession();
             loadSavedWhitelist();
@@ -6998,6 +7189,7 @@
 
         if (!state.initialized) {
             loadSavedReviewAutoReviewMs();
+            loadSavedQueueColumnWidths();
             loadSavedSnapshotHelperEnabled();
         }
         renderLayout(root);

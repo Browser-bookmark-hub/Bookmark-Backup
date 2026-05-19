@@ -1744,12 +1744,12 @@
 
 .dev1-table-queue th:nth-child(4),
 .dev1-table-queue td:nth-child(4) {
-    width: 240px;
+    width: 320px;
 }
 
 .dev1-table-queue th:nth-child(5),
 .dev1-table-queue td:nth-child(5) {
-    width: 360px;
+    width: 280px;
 }
 
 .dev1-table-queue th:nth-child(6),
@@ -1771,6 +1771,58 @@
 .dev1-table-queue td {
     text-align: center;
     vertical-align: middle;
+}
+
+.dev1-table-queue th {
+    position: sticky;
+}
+
+.dev1-table-queue th .dev1-col-head-text {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    padding: 0 6px;
+}
+
+.dev1-col-resize-handle {
+    position: absolute;
+    top: 0;
+    right: -5px;
+    width: 10px;
+    height: 100%;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 3;
+}
+
+.dev1-col-resize-handle::before {
+    content: "";
+    position: absolute;
+    top: 22%;
+    bottom: 22%;
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    background: transparent;
+    transition: background 0.15s ease;
+}
+
+.dev1-table-queue th:hover .dev1-col-resize-handle::before,
+.dev1-col-resize-handle:hover::before,
+body.dev1-col-resize-active .dev1-col-resize-handle::before {
+    background: rgba(var(--accent-primary-rgb, 13, 110, 253), 0.35);
+}
+
+body.dev1-col-resize-active,
+body.dev1-col-resize-active * {
+    cursor: col-resize !important;
+    user-select: none !important;
 }
 
 .dev1-table-queue td:nth-child(2) .dev1-pill {
