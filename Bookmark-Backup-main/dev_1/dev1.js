@@ -329,6 +329,7 @@
             queueClearKeepTabs: '清空但不关闭页面',
             queueEmpty: '当前筛选条件下没有待抓取 URL',
             queueSelectScopeFirst: '请先在“选取范围”里勾选至少一项并点击“完成”。',
+            queueCloseTabHint: '关闭页面是双向同步：清空队列或在队列里删除条目会关闭对应页面；关闭复核窗口里的页面也会移出对应队列项。',
             queueOps: '操作',
             queueOpDelete: '删除',
             queueOpWhitelistAdd: '进白名单',
@@ -540,6 +541,7 @@
             queueClearKeepTabs: 'Clear Without Closing Tabs',
             queueEmpty: 'No URL matches the current filter set',
             queueSelectScopeFirst: 'Pick at least one item in Scope Picker and click Done.',
+            queueCloseTabHint: 'Page closing is bidirectional: clearing the queue or deleting a queue row closes the matching page; closing a review-window page removes the matching queue row.',
             queueOps: 'Actions',
             queueOpDelete: 'Delete',
             queueOpWhitelistAdd: 'Whitelist',
@@ -4870,8 +4872,21 @@
 
         const queueItems = getExecutionQueueItems();
         if (!Array.isArray(queueItems) || queueItems.length === 0) {
-            const hint = hasAnyScopeSelection() ? t('queueEmpty') : t('queueSelectScopeFirst');
-            wrap.innerHTML = `<div class="dev1-empty">${escapeHtml(hint)}</div>`;
+            const hasScopeSelection = hasAnyScopeSelection();
+            const hint = hasScopeSelection ? t('queueEmpty') : t('queueSelectScopeFirst');
+            if (hasScopeSelection) {
+                wrap.innerHTML = `<div class="dev1-empty">${escapeHtml(hint)}</div>`;
+            } else {
+                wrap.innerHTML = `
+                    <div class="dev1-empty">${escapeHtml(hint)}</div>
+                    <div class="dev1-format-row dev1-export-note-row dev1-queue-hint-row">
+                        <div class="dev1-export-note dev1-queue-hint-note">
+                            <i class="fas fa-circle-info"></i>
+                            <span>${escapeHtml(t('queueCloseTabHint'))}</span>
+                        </div>
+                    </div>
+                `;
+            }
             return;
         }
 
@@ -7192,7 +7207,6 @@
                             <ul class="dev1-review-settings-warning-list">
                                 <li id="dev1ReviewAutoReviewHelpText">${escapeHtml(getReviewAutoReviewHelpText())}</li>
                                 <li>${escapeHtml(t('queueHelpSubmitWarning'))}</li>
-                                <li>${escapeHtml(t('queueHelpWarning'))}</li>
                             </ul>
                         </div>
                         <div class="modal-footer dev1-secondary-modal-footer">

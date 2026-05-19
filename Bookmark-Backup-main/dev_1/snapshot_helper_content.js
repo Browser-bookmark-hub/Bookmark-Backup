@@ -214,6 +214,7 @@
         this._cachedTheme = null;
         this._isScreenshotting = false;
         this.activeSessionCleanup = null;
+        this._longShotStabilityCleanup = null;
         this.t = (key) => this.translate(key);
       }
 
@@ -620,6 +621,144 @@
         }
         container.remove();
       }
+    }
+
+    _prepareLongScreenshotStability() {
+      if (typeof this._longShotStabilityCleanup === 'function') {
+        try { this._longShotStabilityCleanup(); } catch (_) { }
+        this._longShotStabilityCleanup = null;
+      }
+
+      const root = document.documentElement;
+      const body = document.body;
+      if (!root || !body) return () => { };
+
+      const styleId = 'dev1-longshot-stability-style';
+      let styleEl = document.getElementById(styleId);
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = styleId;
+        styleEl.textContent = `
+          html.dev1-longshot-active,
+          body.dev1-longshot-active {
+            scroll-behavior: auto !important;
+            overscroll-behavior: auto !important;
+          }
+          html.dev1-longshot-active,
+          body.dev1-longshot-active,
+          html.dev1-longshot-active body {
+            scrollbar-width: none !important;
+          }
+          html.dev1-longshot-active::-webkit-scrollbar,
+          body.dev1-longshot-active::-webkit-scrollbar,
+          html.dev1-longshot-active body::-webkit-scrollbar {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+          }
+          html.dev1-longshot-active *:not(#zoom-invariant-fixed-layer):not(#zoom-invariant-fixed-layer *) {
+            transition-duration: 0s !important;
+            transition-delay: 0s !important;
+            animation-duration: 0s !important;
+            animation-delay: 0s !important;
+            animation-play-state: paused !important;
+            scroll-behavior: auto !important;
+          }
+          .dev1-longshot-hide-fixed {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+          }
+          .dev1-longshot-unstick {
+            position: relative !important;
+            inset: auto !important;
+            top: auto !important;
+            right: auto !important;
+            bottom: auto !important;
+            left: auto !important;
+          }
+        `;
+        (document.head || root).appendChild(styleEl);
+      }
+
+      root.classList.add('dev1-longshot-active');
+      body.classList.add('dev1-longshot-active');
+
+      const touchedElements = new Set();
+      const shouldSkip = (el) => {
+        if (!(el instanceof HTMLElement)) return true;
+        const tag = String(el.tagName || '').toUpperCase();
+        if (tag === 'HTML' || tag === 'BODY') return true;
+        if (el.id === HOST_ID || el.closest(`#${HOST_ID}`)) return true;
+        if (el.closest('#zoom-invariant-fixed-layer')) return true;
+        return false;
+      };
+
+      const markElement = (el) => {
+        if (shouldSkip(el)) return;
+        let position = '';
+        try {
+          position = String(getComputedStyle(el).position || '');
+        } catch (_) {
+          return;
+        }
+        if (position === 'fixed') {
+          if (!el.classList.contains('dev1-longshot-hide-fixed')) {
+            el.classList.add('dev1-longshot-hide-fixed');
+            touchedElements.add(el);
+          }
+          return;
+        }
+        if (position === 'sticky') {
+          if (!el.classList.contains('dev1-longshot-unstick')) {
+            el.classList.add('dev1-longshot-unstick');
+            touchedElements.add(el);
+          }
+        }
+      };
+
+      const scanNode = (node) => {
+        if (!(node instanceof HTMLElement)) return;
+        markElement(node);
+        node.querySelectorAll('*').forEach(markElement);
+      };
+
+      scanNode(body);
+
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'attributes') {
+            markElement(mutation.target);
+            return;
+          }
+          mutation.addedNodes.forEach((node) => {
+            scanNode(node);
+          });
+        });
+      });
+      observer.observe(body, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['style', 'class']
+      });
+
+      const cleanup = () => {
+        observer.disconnect();
+        touchedElements.forEach((el) => {
+          if (!(el instanceof HTMLElement)) return;
+          el.classList.remove('dev1-longshot-hide-fixed');
+          el.classList.remove('dev1-longshot-unstick');
+        });
+        root.classList.remove('dev1-longshot-active');
+        body.classList.remove('dev1-longshot-active');
+        if (this._longShotStabilityCleanup === cleanup) {
+          this._longShotStabilityCleanup = null;
+        }
+      };
+
+      this._longShotStabilityCleanup = cleanup;
+      return cleanup;
     }
 
     // Screenshot Features
@@ -2785,9 +2924,15 @@
         return success;
       };
 
+      const releaseStability = this._prepareLongScreenshotStability();
+      const waitForStabilityStyle = async () => {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await new Promise(resolve => setTimeout(resolve, 130));
+      };
+
       // ===== Initial Capture =====
       try {
-        await new Promise(r => setTimeout(r, 200));
+        await waitForStabilityStyle();
         setStatus('IDLE', t('screenshot_capturing_initial', 'Capturing initial view...'));
 
         if (hasViewportChanged()) {
@@ -2949,6 +3094,7 @@
         hideControlTooltip();
         uiContainer.remove();
         indicator.remove();
+        try { releaseStability(); } catch (_) { }
         this._removeZoomInvariantContainer();
         if (scrollTimer) clearTimeout(scrollTimer);
         // 长截图结束，清除截图状态

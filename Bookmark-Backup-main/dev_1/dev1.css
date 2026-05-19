@@ -2049,6 +2049,17 @@ body.dev1-col-resize-active * {
     color: var(--text-secondary);
 }
 
+.dev1-queue-hint-row {
+    margin: 0 10px 10px;
+}
+
+.dev1-queue-hint-note {
+    width: 100%;
+    box-sizing: border-box;
+    justify-content: center;
+    text-align: center;
+}
+
 .dev1-note {
     margin-top: 10px;
     font-size: 12px;
