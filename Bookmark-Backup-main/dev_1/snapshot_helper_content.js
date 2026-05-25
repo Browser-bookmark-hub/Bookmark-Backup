@@ -22,10 +22,15 @@
       zh_CN: {
         title: '网页快照辅助工具',
         save_mhtml: '保存 MHTML',
+        save_md: '保存 MD',
         mhtml_saving: '保存中...',
+        md_saving: '保存中...',
         mhtml_saved: 'MHTML 已保存',
+        md_saved: 'MD 已保存',
         mhtml_failed: 'MHTML 保存失败',
+        md_failed: 'MD 保存失败',
         mhtml_tooltip: '保存 MHTML 网页快照',
+        md_tooltip: '保存 Markdown 网页快照',
         open_web_snapshot: '打开网页快照页',
         open_web_snapshot_tooltip: '打开网页快照页面',
         screenshot_area: '区域截图',
@@ -86,10 +91,15 @@
       en: {
         title: 'Web Snapshot Helper',
         save_mhtml: 'Save MHTML',
+        save_md: 'Save MD',
         mhtml_saving: 'Saving...',
+        md_saving: 'Saving...',
         mhtml_saved: 'MHTML saved',
+        md_saved: 'MD saved',
         mhtml_failed: 'MHTML save failed',
+        md_failed: 'MD save failed',
         mhtml_tooltip: 'Save an MHTML web snapshot',
+        md_tooltip: 'Save a Markdown web snapshot',
         open_web_snapshot: 'Open Web Snapshot page',
         open_web_snapshot_tooltip: 'Open the Web Snapshot page',
         screenshot_area: 'Area Screenshot',
@@ -247,7 +257,7 @@
         if (!host) {
           host = document.createElement('div');
           host.id = HOST_ID;
-          host.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483647;pointer-events:auto;';
+          host.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483647;pointer-events:none;';
           document.documentElement.appendChild(host);
         }
         this.host = host;
@@ -263,7 +273,12 @@
         let startY = 0;
         let startRight = 18;
         let startBottom = 18;
+        let startLeft = 0;
+        let startTop = 0;
+        let startWidth = 0;
+        let startHeight = 0;
         let moved = false;
+        const useLeftTop = options.useLeftTop || false;
 
         const finishDrag = (event) => {
           if (event && activePointerId != null && event.pointerId !== activePointerId) return;
@@ -289,10 +304,22 @@
           const deltaY = event.clientY - startY;
           if (!moved && Math.abs(deltaX) <= 3 && Math.abs(deltaY) <= 3) return;
           moved = true;
-          const nextRight = Math.max(0, Math.min(window.innerWidth - 40, startRight - deltaX));
-          const nextBottom = Math.max(0, Math.min(window.innerHeight - 40, startBottom - deltaY));
-          host.style.right = `${nextRight}px`;
-          host.style.bottom = `${nextBottom}px`;
+          if (useLeftTop) {
+            const nextLeft = Math.max(0, Math.min(window.innerWidth - startWidth, startLeft + deltaX));
+            const nextTop = Math.max(0, Math.min(window.innerHeight - startHeight, startTop + deltaY));
+            host.style.left = `${nextLeft}px`;
+            host.style.top = `${nextTop}px`;
+            host.__dev1ManuallyDragged = true;
+          } else {
+            const nextRight = Math.max(0, Math.min(window.innerWidth - 40, startRight - deltaX));
+            const nextBottom = Math.max(0, Math.min(window.innerHeight - 40, startBottom - deltaY));
+            host.style.right = `${nextRight}px`;
+            host.style.bottom = `${nextBottom}px`;
+            this._updateQuadrant();
+            if (typeof this._repositionMdSettingsPanel === 'function') {
+              this._repositionMdSettingsPanel();
+            }
+          }
           event.preventDefault();
         };
 
@@ -305,8 +332,15 @@
           startX = event.clientX;
           startY = event.clientY;
           const rect = host.getBoundingClientRect();
-          startRight = Math.max(0, window.innerWidth - rect.right);
-          startBottom = Math.max(0, window.innerHeight - rect.bottom);
+          if (useLeftTop) {
+            startLeft = rect.left;
+            startTop = rect.top;
+            startWidth = rect.width;
+            startHeight = rect.height;
+          } else {
+            startRight = Math.max(0, window.innerWidth - rect.right);
+            startBottom = Math.max(0, window.innerHeight - rect.bottom);
+          }
           try { handle.setPointerCapture(event.pointerId); } catch (_) { }
           window.addEventListener('pointermove', onMove, true);
           window.addEventListener('pointerup', finishDrag, true);
@@ -314,6 +348,23 @@
           window.addEventListener('blur', finishDrag, true);
           event.preventDefault();
         });
+      }
+
+      _updateQuadrant(force = false) {
+        if (!this.host || !this.shadow) return;
+        const root = this.shadow.querySelector('.dev1-helper-root');
+        const launcher = this.shadow.querySelector('.dev1-helper-launcher');
+        if (!root || !launcher) return;
+        if (!force && root.dataset.open === 'true') return; // 展开时不翻转排版，防止跳动
+        
+        const rect = launcher.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        
+        const isTop = centerY < window.innerHeight / 2;
+        const isLeft = centerX < window.innerWidth / 2;
+        
+        root.className = `dev1-helper-root pos-${isTop ? 'top' : 'bottom'}-${isLeft ? 'left' : 'right'}`;
       }
 
       _renderPanel() {
@@ -326,21 +377,26 @@
         shadow.innerHTML = `
           <style>
             :host { all: initial; }
-            .dev1-helper-root { display:flex; flex-direction:column; align-items:flex-end; gap:10px; pointer-events:auto; }
-            .dev1-helper-launcher { width:54px; height:54px; border-radius:18px; border:1px solid ${border}; background:${bg}; color:${color}; box-shadow:0 14px 36px rgba(15,23,42,0.32); display:flex; align-items:center; justify-content:center; cursor:grab; user-select:none; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+            .dev1-helper-root { position: relative; width: 54px; height: 54px; pointer-events: auto; }
+            .dev1-helper-launcher { position: absolute; inset: 0; border-radius:18px; border:1px solid ${border}; background:${bg}; color:${color}; box-shadow:0 14px 36px rgba(15,23,42,0.32); display:flex; align-items:center; justify-content:center; cursor:grab; user-select:none; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; z-index: 2; }
             .dev1-helper-launcher:active { cursor:grabbing; }
             .dev1-helper-launcher-icon { width:28px; height:28px; border-radius:10px; background:${this.darkModeEnabled ? '#1e3a5f' : '#dbeafe'}; color:#3b82f6; display:flex; align-items:center; justify-content:center; }
-            .dev1-helper-panel { width: 500px; max-width: min(500px, calc(100vw - 36px)); border-radius: 18px; background: ${bg}; color: ${color}; border: 1px solid ${border}; box-shadow: 0 18px 50px rgba(15,23,42,0.34); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; pointer-events: auto; }
+            .dev1-helper-panel { position: absolute; z-index: 1; width: 500px; max-width: min(500px, calc(100vw - 36px)); border-radius: 18px; background: ${bg}; color: ${color}; border: 1px solid ${border}; box-shadow: 0 18px 50px rgba(15,23,42,0.34); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; pointer-events: auto; }
+            .dev1-helper-root.pos-bottom-right .dev1-helper-panel { bottom: 64px; right: 0; }
+            .dev1-helper-root.pos-bottom-left .dev1-helper-panel { bottom: 64px; left: 0; }
+            .dev1-helper-root.pos-top-right .dev1-helper-panel { top: 64px; right: 0; }
+            .dev1-helper-root.pos-top-left .dev1-helper-panel { top: 64px; left: 0; }
             .dev1-helper-header { display:flex; align-items:center; gap:8px; padding:10px 12px; background:${this.darkModeEnabled ? '#2d2d2d' : '#f8fafc'}; cursor:move; user-select:none; }
             .dev1-helper-title { flex:1; font-size:13px; font-weight:700; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
             .dev1-helper-btn { width:26px; height:26px; border:0; border-radius:8px; background:${this.darkModeEnabled ? '#374151' : '#e2e8f0'}; color:inherit; cursor:pointer; }
             .dev1-helper-btn:hover { background:${this.darkModeEnabled ? '#4b5563' : '#cbd5e1'}; }
             .dev1-helper-mhtml { width:auto; min-width:48px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
+            .dev1-helper-md { width:auto; min-width:34px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
             .dev1-helper-open-snapshot svg { transform:translateY(1px); }
             .dev1-helper-feedback { max-width:116px; font-size:11px; color:${this.darkModeEnabled ? '#93c5fd' : '#2563eb'}; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
             .dev1-helper-tip { position:fixed; z-index:2147483647; max-width:220px; padding:7px 9px; border-radius:8px; background:${this.darkModeEnabled ? '#111827' : '#0f172a'}; color:#fff; font-size:11px; line-height:1.35; box-shadow:0 10px 28px rgba(15,23,42,0.28); pointer-events:none; opacity:0; transform:translateY(-4px); transition:opacity 80ms ease, transform 80ms ease; }
             .dev1-helper-tip[data-show="true"] { opacity:1; transform:translateY(0); }
-            .dev1-helper-body { padding: 0 14px 16px; cursor:move; }
+            .dev1-helper-body { padding: 0 14px 16px; }
             .dev1-helper-body button { cursor:pointer; }
             .dev1-helper-root[data-open="false"] .dev1-helper-panel { display:none; }
           </style>
@@ -349,12 +405,13 @@
               <div class="dev1-helper-header">
                 <div class="dev1-helper-title">${this.translate('title')}</div>
                 <div class="dev1-helper-feedback" aria-live="polite"></div>
+                <button class="dev1-helper-btn dev1-helper-md" type="button" aria-label="${this.translate('md_tooltip')}" data-tip="${this.translate('md_tooltip')}" data-no-drag="true">MD</button>
                 <button class="dev1-helper-btn dev1-helper-mhtml" type="button" aria-label="${this.translate('mhtml_tooltip')}" data-tip="${this.translate('mhtml_tooltip')}" data-no-drag="true">MHTML</button>
                 <button class="dev1-helper-btn dev1-helper-open-snapshot" type="button" aria-label="${this.translate('open_web_snapshot_tooltip')}" data-tip="${this.translate('open_web_snapshot_tooltip')}" data-no-drag="true">
                   <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"></path><path d="M10 14L21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>
                 </button>
-                <button class="dev1-helper-btn dev1-helper-min" type="button">−</button>
                 <button class="dev1-helper-btn dev1-helper-close" type="button">×</button>
+                <button class="dev1-helper-btn dev1-helper-min" type="button">−</button>
               </div>
               <div class="dev1-helper-body"></div>
             </div>
@@ -370,6 +427,7 @@
         const launcher = shadow.querySelector('.dev1-helper-launcher');
         const minBtn = shadow.querySelector('.dev1-helper-min');
         const mhtmlBtn = shadow.querySelector('.dev1-helper-mhtml');
+        const mdBtn = shadow.querySelector('.dev1-helper-md');
         const openSnapshotBtn = shadow.querySelector('.dev1-helper-open-snapshot');
         const bindTip = (button) => {
           if (!button) return;
@@ -406,6 +464,7 @@
         const setOpen = (open) => {
           root.dataset.open = open ? 'true' : 'false';
           launcher.setAttribute('aria-expanded', open ? 'true' : 'false');
+          if (open) this._updateQuadrant(true);
         };
         launcher.addEventListener('click', () => {
           if (launcher.__dev1LastDragMoved) return;
@@ -418,12 +477,15 @@
         });
         minBtn.addEventListener('click', () => setOpen(false));
         bindTip(mhtmlBtn);
+        bindTip(mdBtn);
         bindTip(openSnapshotBtn);
         mhtmlBtn.addEventListener('click', () => this._saveCurrentMhtml(mhtmlBtn));
+        mdBtn.addEventListener('click', () => { this._collapsePanel(); this._showMdSettingsPanel(launcher); });
         openSnapshotBtn.addEventListener('click', () => this._openWebSnapshotPage());
         this._bindDrag(host, launcher, { skipInteractive: false });
-        this._bindDrag(host, panel);
+        this._bindDrag(host, panel.querySelector('.dev1-helper-header'), { skipInteractive: true });
         this._renderScreenshotOptions(body);
+        requestAnimationFrame(() => this._updateQuadrant(true));
       }
 
       _setHeaderFeedback(message = '', timeoutMs = 2400) {
@@ -464,6 +526,37 @@
           if (button) {
             button.disabled = false;
             button.textContent = previousText || 'MHTML';
+          }
+        }
+      }
+
+
+      async _saveCurrentMd(button) {
+        if (button && button.disabled) return;
+        const previousText = button ? button.textContent : '';
+        if (button) {
+          button.disabled = true;
+          button.textContent = '...';
+        }
+        this._setHeaderFeedback(this.translate('md_saving'), 0);
+        const previousVisibility = this.host ? this.host.style.visibility : '';
+        if (this.host) this.host.style.visibility = 'hidden';
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        try {
+          const response = await sendRuntimeMessage({
+            action: 'dev1SnapshotHelperSaveCurrentMd',
+            lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
+            item: this.config
+          }, 120000);
+          if (!response || response.success !== true) throw new Error(response?.error || 'Markdown save failed');
+          this._setHeaderFeedback(this.translate('md_saved'));
+        } catch (error) {
+          this._setHeaderFeedback(`${this.translate('md_failed')}: ${error?.message || error}`, 5000);
+        } finally {
+          if (this.host) this.host.style.visibility = previousVisibility;
+          if (button) {
+            button.disabled = false;
+            button.textContent = previousText || 'MD';
           }
         }
       }
@@ -886,6 +979,488 @@
       container.appendChild(row);
     }
 
+    _getScopedStorage() {
+      return window.__dev1TabScopedStorage || null;
+    }
+
+    _getCurrentUrl() {
+      return String(this.config?.url || location.href || '').trim();
+    }
+
+    _getMdSettingsPanel() {
+      return (this.shadow && this.shadow.querySelector('#md-settings-panel')) || document.getElementById('md-settings-panel');
+    }
+
+    _removeMdSettingsPanel() {
+      const settings = this._getMdSettingsPanel();
+      if (settings) {
+        if (settings._resizeHandler) {
+          window.removeEventListener('resize', settings._resizeHandler);
+          window.removeEventListener('scroll', settings._resizeHandler);
+        }
+        settings.remove();
+      }
+      this._mdSettingsAnchor = null;
+    }
+
+    _repositionMdSettingsPanel() {
+      const panel = this._getMdSettingsPanel();
+      const anchor = this._mdSettingsAnchor;
+      if (!panel || !anchor) return;
+
+      const rect = anchor.getBoundingClientRect();
+      const PANEL_WIDTH = 340;
+      const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      const PANEL_HEIGHT = Math.max(600, Math.floor(viewportHeight * 0.92));
+      
+      panel.style.height = `${PANEL_HEIGHT}px`;
+
+      if (!panel.__dev1ManuallyDragged) {
+        let left = rect.left - PANEL_WIDTH + rect.width;
+        if (left + PANEL_WIDTH > window.innerWidth) left = window.innerWidth - PANEL_WIDTH - 10;
+        if (left < 10) left = 10;
+
+        let top = rect.top - PANEL_HEIGHT - 10;
+        if (top < 10) {
+          top = rect.bottom + 10;
+          if (top + PANEL_HEIGHT > viewportHeight) {
+            top = Math.max(10, viewportHeight - PANEL_HEIGHT - 10);
+          }
+        }
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
+      } else {
+        let left = parseFloat(panel.style.left) || 0;
+        let top = parseFloat(panel.style.top) || 0;
+        
+        if (left + PANEL_WIDTH > window.innerWidth) left = window.innerWidth - PANEL_WIDTH - 10;
+        if (left < 10) left = 10;
+        if (top + PANEL_HEIGHT > viewportHeight) top = Math.max(10, viewportHeight - PANEL_HEIGHT - 10);
+        if (top < 10) top = 10;
+
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
+      }
+    }
+
+    async _showMdSettingsPanel(anchor) {
+      const existing = this._getMdSettingsPanel();
+      if (existing) { this._removeMdSettingsPanel(); return; }
+
+      this._mdSettingsAnchor = anchor;
+      const isDark = this.darkModeEnabled;
+      const rect = anchor.getBoundingClientRect();
+      const PANEL_WIDTH = 340;
+      const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      const PANEL_HEIGHT = Math.max(600, Math.floor(viewportHeight * 0.92));
+      
+      let left = rect.left - PANEL_WIDTH + rect.width;
+      if (left + PANEL_WIDTH > window.innerWidth) left = window.innerWidth - PANEL_WIDTH - 10;
+      if (left < 10) left = 10;
+
+      let top = rect.top - PANEL_HEIGHT - 10;
+      if (top < 10) {
+        top = rect.bottom + 10;
+        if (top + PANEL_HEIGHT > viewportHeight) {
+          top = Math.max(10, viewportHeight - PANEL_HEIGHT - 10);
+        }
+      }
+
+      const panel = document.createElement('div');
+      panel.id = 'md-settings-panel';
+      panel.style.cssText = `
+        position: fixed;
+        top: ${top}px;
+        left: ${left}px;
+        width: ${PANEL_WIDTH}px;
+        height: ${PANEL_HEIGHT}px;
+        background: ${isDark ? '#2d2d2d' : '#f8fafc'};
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        z-index: 2147483648;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: ${isDark ? '#e5e7eb' : '#1e293b'};
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      `;
+
+      const defaultTemplate = `---\ntitle: "{{title}}"\nsource: "{{url}}"\nauthor: "{{author}}"\npublished: "{{published}}"\ncreated: "{{created}}"\ndescription: "{{description}}"\ntags:\n  - clippings\n---\n\n{{content}}`;
+      
+      const scoped = this._getScopedStorage();
+      const currentUrl = this._getCurrentUrl();
+      const tabId = this.config?.existingTabId;
+
+      let initialContent = null;
+      let initialNotes = '';
+      let initialArticle = '';
+      let metadata = null;
+      if (scoped && tabId != null) {
+        try {
+          initialContent = await scoped.getScoped(tabId, 'md_content', currentUrl);
+          const storedNotes = await scoped.getScoped(tabId, 'md_notes', currentUrl);
+          if (storedNotes != null) initialNotes = storedNotes;
+          const storedArticle = await scoped.getScoped(tabId, 'md_article', currentUrl);
+          if (storedArticle != null) initialArticle = storedArticle;
+        } catch (e) {}
+      }
+
+      // 如果当前没有缓存的正文内容，则向 background 抓取
+      if (!initialArticle) {
+        try {
+            const response = await sendRuntimeMessage({ action: 'dev1SnapshotHelperGetArticleContent' }, 30000);
+            if (response && response.success) {
+                initialArticle = response.article;
+                metadata = response.metadata;
+            } else {
+                initialArticle = '[正文提取失败]';
+            }
+        } catch (e) {
+            initialArticle = '[正文提取超时或出错]';
+        }
+      }
+
+      if (initialContent == null) {
+        const titleVal = (metadata && metadata.title) || this.config.title || '';
+        const urlVal = this.config.url || '';
+        const authorVal = (metadata && metadata.author) || '';
+        const publishedVal = (metadata && metadata.published) || '';
+        const createdVal = new Date().toISOString().split('T')[0];
+        const descVal = (metadata && metadata.description) || '';
+
+        initialContent = defaultTemplate
+            .replace(/\{\{title\}\}/g, titleVal)
+            .replace(/\{\{url\}\}/g, urlVal)
+            .replace(/\{\{author\}\}/g, authorVal)
+            .replace(/\{\{published\}\}/g, publishedVal)
+            .replace(/\{\{created\}\}/g, createdVal)
+            .replace(/\{\{description\}\}/g, descVal);
+      }
+
+      const header = document.createElement('div');
+      header.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        background: ${isDark ? '#374151' : '#e2e8f0'};
+        font-size: 13px;
+        font-weight: 600;
+        cursor: move;
+        user-select: none;
+        flex-shrink: 0;
+      `;
+      header.innerHTML = `
+        <span>Markdown 模板设置</span>
+        <div style="display: flex; gap: 4px; align-items: center;">
+          <button type="button" class="md-settings-pin" style="
+            width: 24px; height: 24px; border: 0; background: transparent;
+            color: inherit; cursor: pointer; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+          " title="取消置顶">
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="currentColor" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 11V7a4 4 0 0 0-8 0v4L5 14h14l-3-3z"></path><path d="M12 14v7"></path>
+            </svg>
+          </button>
+          <button type="button" class="md-settings-close" style="
+            width: 24px; height: 24px; border: 0; background: transparent;
+            color: inherit; cursor: pointer; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; line-height: 1;
+          ">×</button>
+        </div>
+      `;
+
+      // --- 选项卡切换栏 ---
+      const tabContainer = document.createElement('div');
+      tabContainer.style.cssText = `
+        display: flex;
+        border-bottom: 1px solid ${isDark ? '#3b3b3b' : '#cbd5e1'};
+        background: ${isDark ? '#242424' : '#f1f5f9'};
+        flex-shrink: 0;
+      `;
+
+      const tab1 = document.createElement('button');
+      tab1.type = 'button';
+      tab1.textContent = '模板与笔记';
+      tab1.style.cssText = `
+        flex: 1; padding: 10px 0; border: 0; background: transparent;
+        color: ${isDark ? '#e5e7eb' : '#1e293b'}; font-size: 13px; font-weight: 500;
+        cursor: pointer; border-bottom: 2px solid #3b82f6; transition: all 0.2s;
+        outline: none;
+      `;
+
+      const tab2 = document.createElement('button');
+      tab2.type = 'button';
+      tab2.textContent = '正文';
+      tab2.style.cssText = `
+        flex: 1; padding: 10px 0; border: 0; background: transparent;
+        color: ${isDark ? '#9ca3af' : '#64748b'}; font-size: 13px; font-weight: 500;
+        cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
+        outline: none;
+      `;
+
+      tabContainer.appendChild(tab1);
+      tabContainer.appendChild(tab2);
+
+      // --- Body 和 选项卡内容容器 ---
+      const body = document.createElement('div');
+      body.style.cssText = `
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        flex: 1;
+        overflow: hidden;
+      `;
+
+      const tab1Content = document.createElement('div');
+      tab1Content.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        flex: 1;
+        overflow: hidden;
+      `;
+
+      const tab2Content = document.createElement('div');
+      tab2Content.style.cssText = `
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        flex: 1;
+        overflow: hidden;
+      `;
+
+      // 1. 导出模板
+      const templateLabel = document.createElement('div');
+      templateLabel.style.cssText = `font-size: 11px; font-weight: 600; color: ${isDark ? '#9ca3af' : '#64748b'}; margin-bottom: -6px; flex-shrink: 0;`;
+      templateLabel.textContent = '1. 导出模板（可自定义）';
+
+      const textarea = document.createElement('textarea');
+      textarea.style.cssText = `
+        width: 100%;
+        flex: 2;
+        min-height: 150px;
+        box-sizing: border-box;
+        padding: 10px;
+        border: 1px solid ${isDark ? '#4b5563' : '#cbd5e1'};
+        border-radius: 6px;
+        background: ${isDark ? '#1f2937' : '#ffffff'};
+        color: ${isDark ? '#f3f4f6' : '#0f172a'};
+        font-family: monospace;
+        font-size: 12px;
+        resize: none;
+        text-align: left;
+        line-height: 1.5;
+      `;
+      textarea.value = initialContent;
+
+      // 2. 你的笔记
+      const notesLabel = document.createElement('div');
+      notesLabel.style.cssText = `font-size: 11px; font-weight: 600; color: ${isDark ? '#9ca3af' : '#64748b'}; margin-bottom: -6px; margin-top: 4px; flex-shrink: 0;`;
+      notesLabel.textContent = '2. 你的笔记（自由输入，插入到正文前）';
+
+      const notesArea = document.createElement('textarea');
+      notesArea.style.cssText = `
+        width: 100%;
+        flex: 1;
+        min-height: 80px;
+        box-sizing: border-box;
+        padding: 10px;
+        border: 1px solid ${isDark ? '#4b5563' : '#cbd5e1'};
+        border-radius: 6px;
+        background: ${isDark ? '#1f2937' : '#ffffff'};
+        color: ${isDark ? '#f3f4f6' : '#0f172a'};
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 12px;
+        resize: none;
+        text-align: left;
+        line-height: 1.5;
+      `;
+      notesArea.value = initialNotes;
+      notesArea.placeholder = '在这里写你的笔记、想法、摘要…';
+
+      tab1Content.appendChild(templateLabel);
+      tab1Content.appendChild(textarea);
+      tab1Content.appendChild(notesLabel);
+      tab1Content.appendChild(notesArea);
+
+      // 3. 正文 (No label appended here)
+      const articleArea = document.createElement('textarea');
+      articleArea.style.cssText = `
+        width: 100%;
+        flex: 1;
+        box-sizing: border-box;
+        padding: 10px;
+        border: 1px solid ${isDark ? '#4b5563' : '#cbd5e1'};
+        border-radius: 6px;
+        background: ${isDark ? '#1f2937' : '#ffffff'};
+        color: ${isDark ? '#f3f4f6' : '#0f172a'};
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 12px;
+        resize: none;
+        text-align: left;
+        line-height: 1.5;
+      `;
+      articleArea.value = initialArticle;
+      articleArea.placeholder = '提取的正文内容...';
+
+      tab2Content.appendChild(articleArea);
+
+      // Tab switching logic
+      const switchTab = (activeTab) => {
+        if (activeTab === 1) {
+          tab1.style.borderBottomColor = '#3b82f6';
+          tab1.style.color = isDark ? '#e5e7eb' : '#1e293b';
+          tab2.style.borderBottomColor = 'transparent';
+          tab2.style.color = isDark ? '#9ca3af' : '#64748b';
+          tab1Content.style.display = 'flex';
+          tab2Content.style.display = 'none';
+        } else {
+          tab1.style.borderBottomColor = 'transparent';
+          tab1.style.color = isDark ? '#9ca3af' : '#64748b';
+          tab2.style.borderBottomColor = '#3b82f6';
+          tab2.style.color = isDark ? '#e5e7eb' : '#1e293b';
+          tab1Content.style.display = 'none';
+          tab2Content.style.display = 'flex';
+        }
+      };
+
+      tab1.addEventListener('click', () => switchTab(1));
+      tab2.addEventListener('click', () => switchTab(2));
+
+      // 4. 底部按钮
+      const btnGroup = document.createElement('div');
+      btnGroup.style.cssText = `display: flex; gap: 8px; margin-top: auto; flex-shrink: 0;`;
+
+      const refreshBtn = document.createElement('button');
+      refreshBtn.type = 'button';
+      refreshBtn.textContent = '重新获取';
+      refreshBtn.style.cssText = `
+        flex: 1; padding: 6px 0; border: 0; border-radius: 6px; cursor: pointer;
+        background: ${isDark ? '#4b5563' : '#cbd5e1'}; color: inherit; font-size: 12px; font-weight: 500;
+        outline: none;
+      `;
+
+      const downloadBtn = document.createElement('button');
+      downloadBtn.type = 'button';
+      downloadBtn.textContent = '导出';
+      downloadBtn.style.cssText = `
+        flex: 1; padding: 6px 0; border: 0; border-radius: 6px; cursor: pointer;
+        background: ${isDark ? '#2563eb' : '#3b82f6'}; color: #fff; font-size: 12px; font-weight: 500;
+        outline: none;
+      `;
+
+      btnGroup.appendChild(refreshBtn);
+      btnGroup.appendChild(downloadBtn);
+
+      body.appendChild(tab1Content);
+      body.appendChild(tab2Content);
+      body.appendChild(btnGroup);
+
+      panel.appendChild(header);
+      panel.appendChild(tabContainer);
+      panel.appendChild(body);
+
+      this._bindDrag(panel, header, { skipInteractive: true, useLeftTop: true });
+
+      const closeBtn = header.querySelector('.md-settings-close');
+      closeBtn.addEventListener('click', () => this._removeMdSettingsPanel());
+      closeBtn.addEventListener('mouseover', () => closeBtn.style.background = isDark ? '#4b5563' : '#cbd5e1');
+      closeBtn.addEventListener('mouseout', () => closeBtn.style.background = 'transparent');
+
+      // --- 置顶按钮 ---
+      let isPinned = true;
+      const pinBtn = header.querySelector('.md-settings-pin');
+      const updatePinUI = () => {
+        pinBtn.title = isPinned ? '取消置顶' : '置顶';
+        const svg = pinBtn.querySelector('svg');
+        if (svg) {
+          svg.style.fill = isPinned ? 'currentColor' : 'none';
+          svg.style.opacity = isPinned ? '1' : '0.6';
+        }
+      };
+      pinBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        isPinned = !isPinned;
+        updatePinUI();
+      });
+      pinBtn.addEventListener('mouseover', () => pinBtn.style.background = isDark ? '#4b5563' : '#cbd5e1');
+      pinBtn.addEventListener('mouseout', () => pinBtn.style.background = 'transparent');
+
+      // 点击外部关闭（仅在非置顶时生效）
+      const outsideHandler = (e) => {
+        if (isPinned) return;
+        const target = (e.composedPath && e.composedPath()[0]) || e.target;
+        if (!panel.contains(target) && (!anchor || !anchor.contains(target))) {
+          this._removeMdSettingsPanel();
+          document.removeEventListener('click', outsideHandler, true);
+        }
+      };
+      setTimeout(() => document.addEventListener('click', outsideHandler, true), 0);
+
+      const saveContent = async () => {
+        try {
+          if (scoped && tabId != null) {
+            await scoped.setScoped(tabId, 'md_content', currentUrl, textarea.value);
+            await scoped.setScoped(tabId, 'md_notes', currentUrl, notesArea.value);
+            await scoped.setScoped(tabId, 'md_article', currentUrl, articleArea.value);
+          }
+        } catch(e) { console.error(e); }
+      };
+
+      // Auto-save event listeners with 300ms debounce
+      let saveTimer = null;
+      const autoSave = () => {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          saveContent().catch(console.error);
+        }, 300);
+      };
+      textarea.addEventListener('input', autoSave);
+      notesArea.addEventListener('input', autoSave);
+      articleArea.addEventListener('input', autoSave);
+
+      refreshBtn.addEventListener('click', async () => {
+        refreshBtn.textContent = '提取中...';
+        refreshBtn.disabled = true;
+        try {
+            const response = await sendRuntimeMessage({ action: 'dev1SnapshotHelperGetArticleContent' }, 30000);
+            if (response && response.success) {
+                articleArea.value = response.article;
+                await saveContent();
+                refreshBtn.textContent = '重新获取';
+            } else {
+                refreshBtn.textContent = '获取失败';
+                setTimeout(() => refreshBtn.textContent = '重新获取', 2000);
+            }
+        } catch (e) {
+            refreshBtn.textContent = '获取失败';
+            setTimeout(() => refreshBtn.textContent = '重新获取', 2000);
+        } finally {
+            refreshBtn.disabled = false;
+        }
+      });
+
+      downloadBtn.addEventListener('click', async () => {
+        await saveContent();
+        this._removeMdSettingsPanel();
+        this._saveCurrentMd(anchor);
+      });
+
+      // Listen to resize and scroll to reposition the panel dynamically
+      const onResizeOrScroll = () => {
+        this._repositionMdSettingsPanel();
+      };
+      panel._resizeHandler = onResizeOrScroll;
+      window.addEventListener('resize', onResizeOrScroll);
+      window.addEventListener('scroll', onResizeOrScroll, { passive: true });
+
+      const rootLayer = (this.shadow && this.shadow.querySelector('.dev1-helper-root')) || document.body;
+      rootLayer.appendChild(panel);
+    }
+
     // 显示录屏设置面板
     _showRecordingSettings(anchor) {
       console.log('_showRecordingSettings called');
@@ -898,23 +1473,23 @@
       const isDark = this.darkModeEnabled;
 
       const rect = anchor.getBoundingClientRect();
-      console.log('Anchor rect:', rect);
+      const PANEL_WIDTH = 280;
+      const PANEL_HEIGHT = 300;
 
-      // 计算面板位置，确保在视口内
-      let top = rect.bottom + 8;
-      let left = rect.left - 120;
-
-      // 确保不超出右边界
-      if (left + 280 > window.innerWidth) {
-        left = window.innerWidth - 290;
-      }
-      // 确保不超出左边界
+      // 计算面板位置，与 launcher 居中对齐
+      let left = rect.left - (PANEL_WIDTH / 2) + (rect.width / 2);
+      if (left + PANEL_WIDTH > window.innerWidth) left = window.innerWidth - PANEL_WIDTH - 10;
       if (left < 10) left = 10;
 
-      // 如果下方空间不够，显示在上方
-      if (top + 300 > window.innerHeight) {
-        top = rect.top - 300 - 8;
-        if (top < 10) top = 10;
+      // 默认尝试在下方显示
+      let top = rect.bottom + 10;
+      if (top + PANEL_HEIGHT > window.innerHeight) {
+        // 如果下方空间不够，尝试在上方显示
+        top = rect.top - PANEL_HEIGHT - 10;
+        if (top < 10) {
+          // 如果上方和下方都不够，那就限制在视口内
+          top = Math.max(10, window.innerHeight - PANEL_HEIGHT - 10);
+        }
       }
 
       const panel = document.createElement('div');
@@ -1073,12 +1648,12 @@
 
       // 点击外部关闭
       closeHandler = (e) => {
-        const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
-        if (!panel.contains(e.target) && e.target !== anchor && !path.includes(panel) && !path.includes(anchor)) {
+        const target = (e.composedPath && e.composedPath()[0]) || e.target;
+        if (!panel.contains(target) && (!anchor || !anchor.contains(target))) {
           closePanel();
         }
       };
-      setTimeout(() => document.addEventListener('click', closeHandler), 0);
+      setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
 
       (this.shadow || document.body).appendChild(panel);
       console.log('Settings panel appended', panel);

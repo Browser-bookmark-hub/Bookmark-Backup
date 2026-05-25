@@ -18,7 +18,7 @@
 - **备份历史时间线**：记录备份历史、备注、数据能力和可恢复状态，方便回溯与导出。
 - **安全恢复体系**：支持覆盖恢复、补丁式恢复/撤销、合并导入，并在高风险操作前生成临时安全快照。
 - **手动备份提醒**：在手动模式下结合书签变化状态、循环提醒、准点提醒和浏览器焦点状态提醒用户备份。
-- **网页快照辅助**：提供基于 Chrome 官方 `pageCapture.saveAsMHTML` 的网页快照能力，并配合截图/录屏辅助工具用于页面留存。
+- **网页快照辅助**：支持 MHTML 与 MD（Markdown）两种网页快照导出；MD 基于 Obsidian Clipper 的 MIT 开源核心算法（defuddle.createMarkdownContent）移植。
 - **升级兼容**：对 v2.1 旧历史记录和旧备份产物做兼容处理；没有快照数据的旧记录会作为可读日志保留。
 - **中英文 + 主题切换**：支持中英文界面、明暗主题和浏览器主题跟随。
 
@@ -33,7 +33,7 @@ Bookmark-Backup-main/
 |-- history_html/                     [UI] 备份历史、当前变化、书签树、搜索、恢复与安全快照页面。
 |-- backup_reminder/                  [UI] 手动备份提醒窗口、提醒设置、通知生命周期与计时器。
 |-- auto_backup_timer/                [CORE] 自动备份定时与相关设置存储。
-|-- dev_1/                            [TOOLS] 网页快照、MHTML、截图、录屏和队列辅助能力。
+|-- dev_1/                            [TOOLS] 网页快照、MHTML/MD、截图、录屏和队列辅助能力。
 |-- github/                           [SYNC] GitHub 仓库备份目标的 API 封装。
 |-- _locales/                         [I18N] 中英文扩展名称、描述和工具栏标题。
 |-- docs/PROJECT_STRUCTURE.md         [DOC] 更完整的项目结构说明。
@@ -45,7 +45,7 @@ Bookmark-Backup-main/
 - **当前变化**：查看当前书签树相对备份基线的数量、结构和内容变化。
 - **备份历史**：按时间线查看备份记录、备注、可恢复能力、导出与搜索。
 - **恢复与安全快照**：从历史记录或安全快照执行恢复、撤销、合并导入等高风险操作。
-- **网页快照**：将网页保存为 MHTML，并提供截图/录屏等辅助留存能力。
+- **网页快照**：将网页保存为 MHTML / MD（Markdown），并提供截图/录屏等辅助留存能力。
 
 ### 安装入口
 - **GitHub Releases**：[下载发布包](https://github.com/kwenxu/Bookmark-Backup/releases)，适合手动安装或保留指定版本。
@@ -73,6 +73,10 @@ Bookmark-Backup-main/
 - favicon、网页快照和导出文件会根据用户操作生成或缓存，请按自己的隐私需求管理备份目标和下载目录。
 - 详细的隐私处理原则与权限说明请参阅 [隐私政策](PRIVACY_POLICY.md)。
 
+### 第三方开源与许可（网页快照 MD）
+- 本项目网页快照 MD 导出能力移植自 **Obsidian Clipper**（MIT License）：https://github.com/obsidianmd/obsidian-clipper
+- 核心依赖的转换算法来自其使用的 **defuddle**（同为 MIT 生态）并以兼容方式内置于扩展中。
+
 ### 相关文档
 - [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md)：项目结构与主要模块说明。
 - [`docs/LIMITATIONS_AND_COMPROMISES.md`](docs/LIMITATIONS_AND_COMPROMISES.md)：浏览器限制、功能妥协与防干扰说明。
@@ -97,7 +101,7 @@ It treats the browser bookmark tree as a versioned asset. Each backup creates a 
 - **Backup history timeline**: review backup records, notes, restore capability, export options, and searchable history.
 - **Safety recovery system**: overwrite restore, patch restore/revert, import merge, and temporary safety snapshots before high-risk writes.
 - **Manual backup reminders**: cyclic and fixed-time reminders that react to actual bookmark changes and browser focus state.
-- **Web snapshot helper**: MHTML snapshots through Chrome’s official `pageCapture.saveAsMHTML` API, with screenshot/recording helper tools.
+- **Web snapshot helper**: supports both MHTML and MD (Markdown) snapshot export; MD is migrated from Obsidian Clipper’s MIT-licensed core algorithm (`defuddle.createMarkdownContent`), with screenshot/recording helper tools.
 - **Upgrade compatibility**: legacy v2.1 history and backup artifacts are handled where possible; record-only entries remain readable as logs.
 - **Bilingual UI + themes**: Chinese/English UI, light/dark themes, and browser theme following.
 
@@ -119,7 +123,7 @@ Bookmark-Backup-main/
 |-- history_html/                     [UI] Backup history, current changes, bookmark tree, search, restore, and safety snapshots.
 |-- backup_reminder/                  [UI] Manual backup reminders, reminder settings, notification lifecycle, and timers.
 |-- auto_backup_timer/                [CORE] Automatic backup timing and related setting storage.
-|-- dev_1/                            [TOOLS] Web snapshot, MHTML, screenshot, recording, and queue helper tools.
+|-- dev_1/                            [TOOLS] Web snapshot, MHTML/MD, screenshot, recording, and queue helper tools.
 |-- github/                           [SYNC] GitHub repository backup API wrapper.
 |-- _locales/                         [I18N] Chinese/English extension name, description, and action title.
 |-- docs/PROJECT_STRUCTURE.md         [DOC] More complete project structure notes.
@@ -131,7 +135,7 @@ Bookmark-Backup-main/
 - **Current changes**: inspect changes between the current bookmark tree and the backup baseline.
 - **Backup history**: browse timeline records, notes, restore capability, exports, and search.
 - **Recovery and safety snapshots**: restore, revert, merge, or recover from safety snapshots.
-- **Web snapshot**: save pages as MHTML and use screenshot/recording helpers when needed.
+- **Web snapshot**: save pages as MHTML / MD (Markdown) and use screenshot/recording helpers when needed.
 
 ### Install Links
 - **GitHub Releases**: [download release packages](https://github.com/kwenxu/Bookmark-Backup/releases) for manual installation or version pinning.
@@ -158,6 +162,10 @@ Bookmark-Backup-main/
 - Permissions include bookmarks, storage, downloads, tabs, windows, page capture, and related APIs to support backup, restore, snapshot, and helper features.
 - Favicons, web snapshots, and exported files may be generated or cached according to user actions; manage backup targets and download folders according to your privacy needs.
 - Please refer to the [Privacy Policy](PRIVACY_POLICY.md) for detailed principles and permission justifications.
+
+### Third-party Open Source & License (Web Snapshot MD)
+- The Web Snapshot MD export in this project is migrated from **Obsidian Clipper** (MIT License): https://github.com/obsidianmd/obsidian-clipper
+- The conversion core comes from its **defuddle**-based MIT ecosystem and is embedded in a compatible form inside this extension.
 
 ### Docs
 - [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md): project structure and main module notes.

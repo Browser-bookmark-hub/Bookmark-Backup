@@ -1765,6 +1765,7 @@ async function openQuickSnapshotHelperForCurrentPage() {
     const lang = await getCurrentLang();
     const targetFolder = dev1BuildSnapshotHelperTargetFolder(lang);
     await dev1ExecuteScriptFile(tabId, 'dev_1/mp4-muxer.js');
+    await dev1ExecuteScriptFile(tabId, 'dev_1/tab_scoped_storage.js');
     await dev1ExecuteScriptFile(tabId, 'dev_1/snapshot_helper_content.js');
     const result = await dev1ExecuteScript(tabId, (config) => {
         if (!window.__dev1SnapshotHelper || typeof window.__dev1SnapshotHelper.show !== 'function') {
@@ -5473,7 +5474,7 @@ if (browserAPI?.tabs?.onUpdated && typeof browserAPI.tabs.onUpdated.addListener 
 }
 
 if (browserAPI?.tabs?.onRemoved && typeof browserAPI.tabs.onRemoved.addListener === 'function') {
-    browserAPI.tabs.onRemoved.addListener((tabId, removeInfo = {}) => {
+    browserAPI.tabs.onRemoved.addListener(async (tabId, removeInfo = {}) => {
         const reviewWindowId = dev1NormalizeWindowId(removeInfo?.windowId);
         if (reviewWindowId == null) return;
         dev1BroadcastReviewWindowChanged(reviewWindowId, {
@@ -5481,6 +5482,14 @@ if (browserAPI?.tabs?.onRemoved && typeof browserAPI.tabs.onRemoved.addListener 
             reason: 'tab-removed',
             isWindowClosing: removeInfo?.isWindowClosing === true
         });
+        const scopedPrefix = `dev1_scoped_${tabId}_`;
+        try {
+            const all = await browserAPI.storage.local.get(null);
+            const keysToRemove = Object.keys(all || {}).filter(k => k.startsWith(scopedPrefix));
+            if (keysToRemove.length > 0) {
+                browserAPI.storage.local.remove(keysToRemove).catch(() => {});
+            }
+        } catch (_) {}
     });
 }
 
@@ -5892,7 +5901,8 @@ function dev1NormalizeCaptureItems(rawItems = []) {
 function dev1NormalizeFormats(rawFormats = {}) {
     const formats = rawFormats && typeof rawFormats === 'object' ? rawFormats : {};
     return {
-        mhtml: formats.mhtml === true
+        mhtml: formats.mhtml === true,
+        md: formats.md === true
     };
 }
 
@@ -5947,7 +5957,8 @@ async function dev1ExecuteScript(tabId, func, args = []) {
             browserAPI.scripting.executeScript({
                 target: { tabId: Number(tabId) },
                 func,
-                args
+                args,
+                injectImmediately: true
             }, (results) => {
                 if (browserAPI.runtime.lastError) {
                     reject(new Error(browserAPI.runtime.lastError.message || 'executeScript failed'));
@@ -5998,6 +6009,236 @@ async function dev1CaptureMhtmlBlob(tabId) {
         }
     });
 }
+
+const DEV1_DEFUDDLE_FULL_SCRIPT_PATH = 'dev_1/third_party/defuddle.index.full.js';
+const DEV1_FLATTEN_SHADOW_DOM_SCRIPT_PATH = 'dev_1/third_party/flatten-shadow-dom.js';
+
+async function dev1ExtractMarkdownArticle(tabId) {
+    const id = Number(tabId);
+    if (!Number.isFinite(id)) throw new Error('Invalid tab id');
+
+    await dev1ExecuteScriptFile(id, DEV1_DEFUDDLE_FULL_SCRIPT_PATH);
+    try {
+        await dev1ExecuteScriptFile(id, DEV1_FLATTEN_SHADOW_DOM_SCRIPT_PATH, 'MAIN');
+    } catch (e) {
+        console.warn('Flatten shadow DOM failed, continuing extraction:', e);
+    }
+
+    const result = await dev1ExecuteScript(id, () => {
+        try {
+            const Defuddle = window.__DEV1_DEFUDDLE_FULL;
+            const createMarkdownContent = Defuddle && typeof Defuddle.createMarkdownContent === 'function'
+                ? Defuddle.createMarkdownContent
+                : null;
+            if (typeof Defuddle !== 'function' || !createMarkdownContent) {
+                return { success: false, error: 'Markdown core unavailable' };
+            }
+
+            const doc = document;
+            const baseUrl = String(location.href || 'about:blank');
+
+            const setElementHTML = (element, html) => {
+                const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
+                element.replaceChildren(...Array.from(parsed.body.childNodes));
+            };
+
+            const parseForClip = (inputDoc) => {
+                const readerArticle = inputDoc.querySelector('.obsidian-reader-active .obsidian-reader-content article');
+                if (readerArticle) {
+                    const readerDoc = inputDoc.implementation.createHTMLDocument();
+                    const originalHtml = readerArticle.getAttribute('data-original-html');
+                    if (originalHtml) {
+                        setElementHTML(readerDoc.body, originalHtml);
+                    } else {
+                        readerDoc.body.replaceChildren(
+                            ...Array.from(readerArticle.childNodes).map((node) => readerDoc.importNode(node, true))
+                        );
+                    }
+                    return new Defuddle(readerDoc, { url: '' }).parse();
+                }
+                const clonedDoc = inputDoc.cloneNode(true);
+                return new Defuddle(clonedDoc, { url: inputDoc.URL }).parse();
+            };
+
+            const defuddled = parseForClip(doc);
+            const markdown = createMarkdownContent(String(defuddled?.content || ''), baseUrl);
+            const title = String((doc && doc.title) || '').trim();
+            const cleanTitle = (defuddled?.title || title || '').trim();
+            const cleanAuthor = (defuddled?.author || '').trim();
+            const cleanPublished = (defuddled?.published || '').split(',')[0].trim();
+            const cleanDesc = (defuddled?.description || '').trim();
+            return {
+                success: true,
+                markdown: typeof markdown === 'string' ? markdown : String(markdown || ''),
+                metadata: {
+                    title: cleanTitle,
+                    author: cleanAuthor,
+                    published: cleanPublished,
+                    description: cleanDesc
+                }
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error && error.message ? error.message : String(error || 'markdown extract failed')
+            };
+        }
+    });
+
+    if (!result || result.success !== true) {
+        throw new Error(result?.error || 'Article extract failed');
+    }
+    return {
+        markdown: String(result.markdown || ''),
+        metadata: result.metadata || {}
+    };
+}
+
+async function dev1CaptureMarkdownContent(tabId, urlText = '') {
+    const id = Number(tabId);
+    if (!Number.isFinite(id)) throw new Error('Invalid tab id');
+
+    await dev1ExecuteScriptFile(id, DEV1_DEFUDDLE_FULL_SCRIPT_PATH);
+
+    // Match Obsidian Clipper's approach: flatten shadow DOM first in page context.
+    try {
+        await dev1ExecuteScriptFile(id, DEV1_FLATTEN_SHADOW_DOM_SCRIPT_PATH, 'MAIN');
+    } catch (e) {
+        console.warn('Flatten shadow DOM failed, continuing capture:', e);
+    }
+
+    const contentKey = `dev1_scoped_${id}_md_content`;
+    const notesKey = `dev1_scoped_${id}_md_notes`;
+    const articleKey = `dev1_scoped_${id}_md_article`;
+    let userContent = null;
+    let userNotes = null;
+    let userArticle = null;
+    try {
+        if (browserAPI && browserAPI.storage && browserAPI.storage.local) {
+            const res = await browserAPI.storage.local.get([contentKey, notesKey, articleKey]);
+            const entry = res && res[contentKey];
+            if (entry && typeof entry === 'object' && String(entry.u || '') === String(urlText || '')) {
+                userContent = entry.v;
+            }
+            const notesEntry = res && res[notesKey];
+            if (notesEntry && typeof notesEntry === 'object' && String(notesEntry.u || '') === String(urlText || '')) {
+                userNotes = notesEntry.v;
+            }
+            const articleEntry = res && res[articleKey];
+            if (articleEntry && typeof articleEntry === 'object' && String(articleEntry.u || '') === String(urlText || '')) {
+                userArticle = articleEntry.v;
+            }
+        }
+    } catch(e) {}
+
+    const result = await dev1ExecuteScript(id, (pageUrl, customTemplate, userNotes, userArticle) => {
+        try {
+            const Defuddle = window.__DEV1_DEFUDDLE_FULL;
+            const createMarkdownContent = Defuddle && typeof Defuddle.createMarkdownContent === 'function'
+                ? Defuddle.createMarkdownContent
+                : null;
+            if (typeof Defuddle !== 'function' || !createMarkdownContent) {
+                return { success: false, error: 'Markdown core unavailable' };
+            }
+
+            const doc = document;
+            const baseUrl = String(pageUrl || location.href || 'about:blank');
+
+            // Directly ported from Obsidian Clipper core flow:
+            // parseForClip(document) -> createMarkdownContent(defuddled.content, url)
+            const setElementHTML = (element, html) => {
+                const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
+                element.replaceChildren(...Array.from(parsed.body.childNodes));
+            };
+
+            const parseForClip = (inputDoc) => {
+                const readerArticle = inputDoc.querySelector('.obsidian-reader-active .obsidian-reader-content article');
+                if (readerArticle) {
+                    const readerDoc = inputDoc.implementation.createHTMLDocument();
+                    const originalHtml = readerArticle.getAttribute('data-original-html');
+                    if (originalHtml) {
+                        setElementHTML(readerDoc.body, originalHtml);
+                    } else {
+                        readerDoc.body.replaceChildren(
+                            ...Array.from(readerArticle.childNodes).map((node) => readerDoc.importNode(node, true))
+                        );
+                    }
+                    return new Defuddle(readerDoc, { url: '' }).parse();
+                }
+                const clonedDoc = inputDoc.cloneNode(true);
+                return new Defuddle(clonedDoc, { url: inputDoc.URL }).parse();
+            };
+
+            const defuddled = parseForClip(doc);
+            const markdown = createMarkdownContent(String(defuddled?.content || ''), baseUrl);
+            const title = String((doc && doc.title) || '').trim();
+
+            const escapeDoubleQuotes = (str) => String(str || '').replace(/"/g, '\\"');
+            const created = new Date().toISOString();
+            const cleanTitle = (defuddled?.title || title || '').trim();
+            const cleanAuthor = (defuddled?.author || '').trim();
+            const cleanPublished = (defuddled?.published || '').split(',')[0].trim();
+            const cleanDesc = (defuddled?.description || '').trim();
+            let cleanContent = typeof markdown === 'string' ? markdown : String(markdown || '');
+            if (userArticle && typeof userArticle === 'string') {
+                cleanContent = userArticle;
+            }
+
+            let finalMarkdown = '';
+            
+            if (customTemplate && typeof customTemplate === 'string' && customTemplate.trim().length > 0) {
+                const notesBlock = (userNotes && typeof userNotes === 'string' && userNotes.trim())
+                    ? userNotes.trim() + '\n\n'
+                    : '';
+                finalMarkdown = customTemplate
+                    .replace(/\{\{title\}\}/g, cleanTitle)
+                    .replace(/\{\{url\}\}/g, baseUrl)
+                    .replace(/\{\{author\}\}/g, cleanAuthor)
+                    .replace(/\{\{published\}\}/g, cleanPublished)
+                    .replace(/\{\{created\}\}/g, created)
+                    .replace(/\{\{description\}\}/g, cleanDesc)
+                    .replace(/\{\{content\}\}/g, notesBlock + cleanContent);
+            } else {
+                let frontmatter = '---\n';
+                frontmatter += `title: "${escapeDoubleQuotes(cleanTitle)}"\n`;
+                frontmatter += `source: "${escapeDoubleQuotes(baseUrl)}"\n`;
+                frontmatter += `author: "${escapeDoubleQuotes(cleanAuthor)}"\n`;
+                frontmatter += `published: "${escapeDoubleQuotes(cleanPublished)}"\n`;
+                frontmatter += `created: ${created}\n`;
+                frontmatter += `description: "${escapeDoubleQuotes(cleanDesc)}"\n`;
+                frontmatter += `tags:\n  - clippings\n`;
+                frontmatter += '---\n\n';
+
+                const notesBlock = (userNotes && typeof userNotes === 'string' && userNotes.trim())
+                    ? userNotes.trim() + '\n\n'
+                    : '';
+                finalMarkdown = frontmatter + notesBlock + cleanContent;
+            }
+
+            return {
+                success: true,
+                markdown: finalMarkdown,
+                title: cleanTitle,
+                url: baseUrl
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error && error.message ? error.message : String(error || 'markdown failed')
+            };
+        }
+    }, [String(urlText || ''), userContent, userNotes, userArticle]);
+
+    if (!result || result.success !== true) {
+        throw new Error(result?.error || 'Markdown capture failed');
+    }
+    return {
+        markdown: String(result.markdown || ''),
+        title: String(result.title || '').trim(),
+        url: String(result.url || '').trim()
+    };
+}
+
 
 function dev1BuildDownloadTerminalError(state, filePath = '') {
     const normalizedState = String(state || '').trim().toLowerCase();
@@ -6182,6 +6423,15 @@ function dev1BuildSnapshotHelperMhtmlLeafName(item = {}, tab = {}) {
     return dev1BuildCaptureLeafName(rawIndex, item, item?.url || tab?.url, item?.title || tab?.title);
 }
 
+function dev1BuildSnapshotHelperMdLeafName(item = {}, tab = {}) {
+    const source = String(item?.source || '').trim();
+    const rawIndex = dev1NormalizeQueueMetadataIndex(item?.queueDisplayIndex ?? item?.index);
+    if (source === 'quick_snapshot' || rawIndex == null) {
+        return dev1BuildQuickSnapshotLeafName('md', item, tab);
+    }
+    return dev1BuildCaptureLeafName(rawIndex, item, item?.url || tab?.url, item?.title || tab?.title);
+}
+
 function dev1BuildSnapshotHelperTargetFolder(lang = 'zh_CN') {
     const exportRootFolder = getExportRootFolderByLang(lang);
     const snapshotFolder = getWebSnapshotExportFolderByLang(lang);
@@ -6256,12 +6506,35 @@ async function dev1SaveSnapshotHelperCurrentMhtml(message = {}, sender = {}) {
     return { success: true, downloadId, filename };
 }
 
-async function dev1ExecuteScriptFile(tabId, filePath) {
+async function dev1SaveSnapshotHelperCurrentMd(message = {}, sender = {}) {
+    const tab = sender?.tab || {};
+    const tabId = dev1NormalizeTabId(tab?.id);
+    if (tabId == null) throw new Error('Missing current tab id');
+    const lang = message.lang === 'en' || message.lang === 'zh_CN'
+        ? message.lang
+        : await getCurrentLang();
+    const item = message?.item && typeof message.item === 'object' ? message.item : {};
+    const targetFolder = String(item?.snapshotHelperTargetFolder || item?.targetFolder || '').trim()
+        || dev1BuildSnapshotHelperTargetFolder(lang);
+    const leafName = dev1BuildSnapshotHelperMdLeafName(item, tab);
+    const filename = `${targetFolder}/${leafName}.md`;
+    const captured = await dev1CaptureMarkdownContent(tabId, item?.url || tab?.url || '');
+    const markdownBlob = new Blob([captured.markdown || ''], { type: 'text/markdown;charset=utf-8' });
+    const downloadId = await dev1DownloadBlobToLocal(filename, markdownBlob, 'text/markdown;charset=utf-8', {
+        tabId,
+        preferTabDownload: true
+    });
+    return { success: true, downloadId, filename };
+}
+
+async function dev1ExecuteScriptFile(tabId, filePath, world = 'ISOLATED') {
     return await new Promise((resolve, reject) => {
         try {
             browserAPI.scripting.executeScript({
                 target: { tabId: Number(tabId) },
-                files: [String(filePath || '').trim()]
+                files: [String(filePath || '').trim()],
+                world: world,
+                injectImmediately: true
             }, (results) => {
                 if (browserAPI.runtime.lastError) {
                     reject(new Error(browserAPI.runtime.lastError.message || 'executeScript file failed'));
@@ -6345,6 +6618,7 @@ async function dev1EnableSnapshotHelperForItems(rawItems = [], lang = 'zh_CN', o
         }
         try {
             await dev1ExecuteScriptFile(tabId, 'dev_1/mp4-muxer.js');
+            await dev1ExecuteScriptFile(tabId, 'dev_1/tab_scoped_storage.js');
             await dev1ExecuteScriptFile(tabId, 'dev_1/snapshot_helper_content.js');
             const showResult = await dev1ExecuteScript(tabId, (config) => {
                 if (!window.__dev1SnapshotHelper || typeof window.__dev1SnapshotHelper.show !== 'function') {
@@ -6490,9 +6764,10 @@ async function runDev1CaptureAndExport(message = {}) {
             }
 
             const mergedFormats = dev1NormalizeFormats({
-                mhtml: requestedFormats.mhtml || previousState.formats?.mhtml === true
+                mhtml: requestedFormats.mhtml || previousState.formats?.mhtml === true,
+                md: requestedFormats.md || previousState.formats?.md === true
             });
-            if (!mergedFormats.mhtml) {
+            if (!mergedFormats.mhtml && !mergedFormats.md) {
                 throw new Error('No export format enabled');
             }
 
@@ -6565,7 +6840,7 @@ async function runDev1CaptureAndExport(message = {}) {
                 throw new Error('No valid URL items to capture');
             }
 
-            if (!requestedFormats.mhtml) {
+            if (!requestedFormats.mhtml && !requestedFormats.md) {
                 throw new Error('No export format enabled');
             }
 
@@ -6925,6 +7200,8 @@ async function runDev1CaptureAndExport(message = {}) {
                     const rowBatchArtifacts = [];
                     const mhtmlRelativePath = `${leafBase}.mhtml`;
                     const mhtmlZipEntryName = `mhtml/${leafBase}.mhtml`;
+                    const mdRelativePath = `${leafBase}.md`;
+                    const mdZipEntryName = `md/${leafBase}.md`;
 
                     if (formats.mhtml) {
                         try {
@@ -6968,6 +7245,49 @@ async function runDev1CaptureAndExport(message = {}) {
                         }
                     }
 
+
+                    if (formats.md) {
+                        try {
+                            const capturedMd = await dev1CaptureMarkdownContent(tabId, effectiveUrl);
+                            const mdBlob = new Blob([capturedMd.markdown || ''], { type: 'text/markdown;charset=utf-8' });
+                            if (batchZipEnabled) {
+                                const queuedArtifact = dev1AppendRunArtifact(runState, {
+                                    id: dev1BuildArtifactId(`md_r${rowIndex + 1}`),
+                                    kind: 'entry',
+                                    format: 'md',
+                                    entryName: mdZipEntryName,
+                                    rowIndex,
+                                    terminalState: 'queued',
+                                    createdAt: dev1NowIso()
+                                });
+                                rowBatchArtifacts.push({
+                                    name: mdZipEntryName,
+                                    data: await dev1BlobToZipBytes(mdBlob),
+                                    artifactId: String(queuedArtifact?.id || '').trim(),
+                                    format: 'md'
+                                });
+                            } else {
+                                const mdPath = `${runState.targetFolder}/${mdRelativePath}`;
+                                const mdDownloadId = await dev1DownloadBlobToLocal(mdPath, mdBlob, 'text/markdown;charset=utf-8', {
+                                    tabId: Number(tabId),
+                                    preferTabDownload: true
+                                });
+                                baseRow.files.push(mdPath);
+                                dev1AppendRunArtifact(runState, {
+                                    id: dev1BuildArtifactId(`md_r${rowIndex + 1}`),
+                                    kind: 'file',
+                                    format: 'md',
+                                    filePath: mdPath,
+                                    rowIndex,
+                                    downloadId: mdDownloadId,
+                                    terminalState: 'complete',
+                                    createdAt: dev1NowIso()
+                                });
+                            }
+                        } catch (error) {
+                            baseRow.errors.push(`Markdown: ${error?.message || 'failed'}`);
+                        }
+                    }
                     baseRow.files = Array.from(new Set(baseRow.files.map(v => String(v || '').trim()).filter(Boolean)));
                     if (batchZipEnabled) {
                         pendingBatchArtifacts = Array.isArray(rowBatchArtifacts) ? rowBatchArtifacts.slice() : [];
@@ -9471,6 +9791,32 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({
                         success: false,
                         error: error?.message || 'dev_1 helper MHTML save failed'
+                    });
+                }
+            })();
+            return true;
+        } else if (message.action === 'dev1SnapshotHelperGetArticleContent') {
+            (async () => {
+                try {
+                    const tab = sender?.tab || {};
+                    const tabId = dev1NormalizeTabId(tab?.id);
+                    if (tabId == null) throw new Error('Missing current tab id');
+                    const { markdown, metadata } = await dev1ExtractMarkdownArticle(tabId);
+                    sendResponse({ success: true, article: markdown, metadata });
+                } catch (error) {
+                    sendResponse({ success: false, error: error?.message || 'Article extract failed' });
+                }
+            })();
+            return true;
+        } else if (message.action === 'dev1SnapshotHelperSaveCurrentMd') {
+            (async () => {
+                try {
+                    const result = await dev1SaveSnapshotHelperCurrentMd(message, sender);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 helper Markdown save failed'
                     });
                 }
             })();

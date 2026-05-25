@@ -12,6 +12,8 @@
     const DEV1_QUEUE_COLUMN_WIDTHS_STORAGE_KEY = 'dev1_experiment_queue_column_widths_v1';
     const DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY = 'dev1_experiment_review_auto_review_ms_v1';
     const DEV1_SNAPSHOT_HELPER_STORAGE_KEY = 'dev1_experiment_snapshot_helper_enabled_v1';
+    const DEV1_SNAPSHOT_MHTML_FORMAT_STORAGE_KEY = 'dev1_experiment_snapshot_mhtml_format_enabled_v1';
+    const DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY = 'dev1_experiment_snapshot_md_format_enabled_v1';
     const DEV1_REVIEW_WINDOW_EVENT_KEY = 'dev1ReviewWindowEventV1';
 
     const runtimeApi = (typeof chrome !== 'undefined' && chrome.runtime)
@@ -196,6 +198,8 @@
             }
         })(),
         snapshotHelperTargetFolder: '',
+        snapshotMhtmlFormatEnabled: true,
+        snapshotMdFormatEnabled: true,
         queueBatchSize: QUEUE_BATCH_SIZE_DEFAULT,
         queueColumnWidths: null,
         queueBatchIndex: 0,
@@ -253,8 +257,8 @@
     const i18n = {
         zh_CN: {
             navTitle: '网页快照',
-            navDesc: '来源：当前变化 / 书签树 / 所有窗口Tab → 选取范围点“完成”更新队列 → 点“在新窗口打开”复核并提交后执行抓取导出 MHTML',
-            navHelp: '先点“选取范围”勾选并点“完成”更新队列，再点“在新窗口打开”人工确认页面，提交复核后执行抓取导出 MHTML；白名单项可免复核直接抓取。',
+            navDesc: '来源：当前变化 / 书签树 / 所有窗口Tab → 选取范围点“完成”更新队列 → 点“在新窗口打开”复核并提交后执行抓取导出 MHTML / MD',
+            navHelp: '先点“选取范围”勾选并点“完成”更新队列，再点“在新窗口打开”人工确认页面，提交复核后执行抓取导出 MHTML / MD；白名单项可免复核直接抓取。',
             refreshSource: '刷新书签数据',
             runCapture: '执行抓取并导出',
             runStartBtn: '开始',
@@ -299,7 +303,8 @@
             exportFormats: '导出格式',
             exportTypesLabel: '导出类型',
             mhtmlLoadedHint: 'MHTML 使用 Chrome 官方 pageCapture.saveAsMHTML API，仅保存抓取时已加载内容；未渲染或懒加载区域可能缺失。',
-            exportHelp: '导出配置：固定导出 MHTML 文件到网页快照文件夹；不再生成 ZIP。复核列表由队列批大小控制。',
+            mdLoadedHint: 'MD 基于 Obsidian Clipper 的开源算法，转换当前页面为 Markdown。',
+            exportHelp: '导出配置：固定导出 MHTML / MD 文件到网页快照文件夹；不再生成 ZIP。复核列表由队列批大小控制。',
             exportModeSingleFile: '文件夹直出',
             exportModeBatchZip: '文件夹直出',
             queueBatchSizeLabel: '每批',
@@ -410,10 +415,11 @@
             scopeWhitelistCleared: '白名单已清空。',
             scopeWhitelistBadge: '白名单',
             fmtMhtml: 'MHTML',
+            fmtMd: 'MD',
             fmtMhtmlOfficial: '官方 MHTML API',
             snapshotHelperLabel: '辅助工具',
             snapshotHelperTip: '勾选后，会按当前队列已打开页面的 Tab ID 注入悬浮工具：区域截图、长截图、屏幕录制。（仅通过“在新窗口打开”的页面可用，原有 Tab 页面不会注入。）',
-            snapshotHelperHint: '辅助工具产生的区域截图、长截图、屏幕录制会和 MHTML 一起保存到当次网页快照时间戳目录根目录，便于按文件名排序查看。（仅通过“在新窗口打开”的页面可用，原有 Tab 页面不会注入。）',
+            snapshotHelperHint: '辅助工具产生的区域截图、长截图、屏幕录制会和 MHTML / MD 一起保存到当次网页快照时间戳目录根目录，便于按文件名排序查看。（仅通过“在新窗口打开”的页面可用，原有 Tab 页面不会注入。）',
             snapshotHelperEnabledStatus: '辅助工具已启用',
             snapshotHelperDisabledStatus: '辅助工具已关闭',
             snapshotHelperPartialStatus: '部分页面未能启用辅助工具',
@@ -465,8 +471,8 @@
         },
         en: {
             navTitle: 'Web Snapshot',
-            navDesc: 'Source: Current Changes / Bookmark Tree / All Window Tabs -> pick scope and click Done to update queue -> click Open in New Window for review, then submit before MHTML capture/export',
-            navHelp: 'Pick scope and click Done to update the queue, then click Open in New Window to manually verify pages before MHTML capture/export; whitelisted URLs can bypass review.',
+            navDesc: 'Source: Current Changes / Bookmark Tree / All Window Tabs -> pick scope and click Done to update queue -> click Open in New Window for review, then submit before MHTML/MD capture/export',
+            navHelp: 'Pick scope and click Done to update the queue, then click Open in New Window to manually verify pages before MHTML/MD capture/export; whitelisted URLs can bypass review.',
             refreshSource: 'Refresh Bookmark Source',
             runCapture: 'Run Capture & Export',
             runStartBtn: 'Start',
@@ -511,7 +517,8 @@
             exportFormats: 'Export Formats',
             exportTypesLabel: 'Format Types',
             mhtmlLoadedHint: 'MHTML uses Chrome\'s official pageCapture.saveAsMHTML API and saves only content loaded at capture time; unloaded or lazy-loaded regions may be missing.',
-            exportHelp: 'Export setup: MHTML files are written directly to the Web Snapshot folder; ZIP output is no longer generated. Review lists still follow the queue batch size.',
+            mdLoadedHint: 'MD uses the open-source algorithm from Obsidian Clipper to convert the current page to Markdown.',
+            exportHelp: 'Export setup: MHTML/MD files are written directly to the Web Snapshot folder; ZIP output is no longer generated. Review lists still follow the queue batch size.',
             exportModeSingleFile: 'Folder Files',
             exportModeBatchZip: 'Folder Files',
             queueBatchSizeLabel: 'Batch',
@@ -622,10 +629,11 @@
             scopeWhitelistCleared: 'Whitelist cleared.',
             scopeWhitelistBadge: 'Whitelisted',
             fmtMhtml: 'MHTML',
+            fmtMd: 'MD',
             fmtMhtmlOfficial: 'Official MHTML API',
             snapshotHelperLabel: 'Helper Tools',
             snapshotHelperTip: 'When checked, floating tools are injected by the opened queue tab IDs: area screenshot, long screenshot, and screen recording. (Only pages opened via "Open in New Window" support this; existing tabs are not injected.)',
-            snapshotHelperHint: 'Area screenshots, long screenshots, screen recordings, and MHTML files are saved directly in the current web-snapshot timestamp folder root for easy filename sorting. (Only pages opened via "Open in New Window" support this; existing tabs are not injected.)',
+            snapshotHelperHint: 'Area screenshots, long screenshots, screen recordings, and MHTML/MD files are saved directly in the current web-snapshot timestamp folder root for easy filename sorting. (Only pages opened via "Open in New Window" support this; existing tabs are not injected.)',
             snapshotHelperEnabledStatus: 'Helper tools enabled',
             snapshotHelperDisabledStatus: 'Helper tools disabled',
             snapshotHelperPartialStatus: 'Some pages could not enable helper tools',
@@ -693,6 +701,22 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    function renderExportFormatHintHtml() {
+        const lang = getLangKey();
+        const pageCaptureLink = '<a class="dev1-export-note-link" href="https://developer.chrome.com/docs/extensions/reference/api/pageCapture" target="_blank" rel="noopener noreferrer">pageCapture.saveAsMHTML</a>';
+        const obsidianClipperLink = '<a class="dev1-export-note-link" href="https://github.com/obsidianmd/obsidian-clipper" target="_blank" rel="noopener noreferrer">Obsidian Clipper</a>';
+        if (lang === 'en') {
+            return [
+                `MHTML uses Chrome's official ${pageCaptureLink} API and saves only content loaded at capture time; unloaded or lazy-loaded regions may be missing.`,
+                `MD uses the open-source algorithm from ${obsidianClipperLink} to convert the current page to Markdown.`
+            ].map(line => `<span class="dev1-export-note-line">${line}</span>`).join('');
+        }
+        return [
+            `MHTML 使用 Chrome 官方 ${pageCaptureLink} API，仅保存抓取时已加载内容；未渲染或懒加载区域可能缺失。`,
+            `MD 基于 ${obsidianClipperLink} 的开源算法（v1.6.2），转换当前页面为 Markdown。`
+        ].map(line => `<span class="dev1-export-note-line">${line}</span>`).join('');
     }
 
     function getCurrentViewSafe() {
@@ -1384,6 +1408,56 @@
         try {
             localStorage.setItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY, state.snapshotHelperEnabled === true ? 'true' : 'false');
         } catch (_) { }
+    }
+
+    function loadSavedSnapshotMhtmlFormatEnabled() {
+        try {
+            state.snapshotMhtmlFormatEnabled = localStorage.getItem(DEV1_SNAPSHOT_MHTML_FORMAT_STORAGE_KEY) !== 'false';
+        } catch (_) {
+            state.snapshotMhtmlFormatEnabled = true;
+        }
+    }
+
+    function persistSnapshotMhtmlFormatEnabled() {
+        try {
+            localStorage.setItem(DEV1_SNAPSHOT_MHTML_FORMAT_STORAGE_KEY, state.snapshotMhtmlFormatEnabled === true ? 'true' : 'false');
+        } catch (_) { }
+    }
+
+    function isSnapshotMhtmlFormatEnabled() {
+        return state.snapshotMhtmlFormatEnabled === true;
+    }
+
+    function setSnapshotMhtmlFormatEnabled(enabled) {
+        state.snapshotMhtmlFormatEnabled = enabled === true;
+        persistSnapshotMhtmlFormatEnabled();
+        const input = document.getElementById('dev1FormatMhtmlCheckbox');
+        if (input instanceof HTMLInputElement) input.checked = state.snapshotMhtmlFormatEnabled === true;
+    }
+
+    function loadSavedSnapshotMdFormatEnabled() {
+        try {
+            state.snapshotMdFormatEnabled = localStorage.getItem(DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY) === 'true';
+        } catch (_) {
+            state.snapshotMdFormatEnabled = false;
+        }
+    }
+
+    function persistSnapshotMdFormatEnabled() {
+        try {
+            localStorage.setItem(DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY, state.snapshotMdFormatEnabled === true ? 'true' : 'false');
+        } catch (_) { }
+    }
+
+    function isSnapshotMdFormatEnabled() {
+        return state.snapshotMdFormatEnabled === true;
+    }
+
+    function setSnapshotMdFormatEnabled(enabled) {
+        state.snapshotMdFormatEnabled = enabled === true;
+        persistSnapshotMdFormatEnabled();
+        const input = document.getElementById('dev1FormatMdCheckbox');
+        if (input instanceof HTMLInputElement) input.checked = state.snapshotMdFormatEnabled === true;
     }
 
     function isSnapshotHelperEnabled() {
@@ -5339,6 +5413,24 @@
             });
         }
 
+        const formatMhtmlCheckbox = root.querySelector('#dev1FormatMhtmlCheckbox');
+        if (formatMhtmlCheckbox instanceof HTMLInputElement) {
+            formatMhtmlCheckbox.checked = isSnapshotMhtmlFormatEnabled();
+            formatMhtmlCheckbox.addEventListener('change', () => {
+                setSnapshotMhtmlFormatEnabled(formatMhtmlCheckbox.checked === true);
+                updateQueueBatchSizeControlState();
+            });
+        }
+
+        const formatMdCheckbox = root.querySelector('#dev1FormatMdCheckbox');
+        if (formatMdCheckbox instanceof HTMLInputElement) {
+            formatMdCheckbox.checked = isSnapshotMdFormatEnabled();
+            formatMdCheckbox.addEventListener('change', () => {
+                setSnapshotMdFormatEnabled(formatMdCheckbox.checked === true);
+                updateQueueBatchSizeControlState();
+            });
+        }
+
         const openReviewBtn = root.querySelector('#dev1OpenReviewBtn');
         if (openReviewBtn) {
             openReviewBtn.addEventListener('click', async () => {
@@ -5850,7 +5942,8 @@
 
     function getSelectedFormats() {
         return {
-            mhtml: true
+            mhtml: isSnapshotMhtmlFormatEnabled(),
+            md: isSnapshotMdFormatEnabled()
         };
     }
 
@@ -6465,11 +6558,9 @@
 
     function updateQueueBatchSizeControlState() {
         const runIsActive = state.running || String(state.captureRunState?.status || '').toLowerCase() === 'running';
-        const mhtmlHintRow = document.getElementById('dev1MhtmlHintRow');
+        const exportFormatHintRow = document.getElementById('dev1ExportFormatHintRow');
         const sizeEl = document.getElementById('dev1QueueBatchSizeInput');
-        if (mhtmlHintRow) {
-            mhtmlHintRow.hidden = false;
-        }
+        if (exportFormatHintRow) exportFormatHintRow.hidden = !isSnapshotMhtmlFormatEnabled() && !isSnapshotMdFormatEnabled();
         if (sizeEl instanceof HTMLInputElement) {
             if (document.activeElement !== sizeEl) {
                 sizeEl.value = String(getQueueBatchSize());
@@ -6624,7 +6715,7 @@
         if (state.running) return;
 
         const formats = getSelectedFormats();
-        if (!formats.mhtml) {
+        if (!formats.mhtml && !formats.md) {
             setStatus(t('runBlockedNoFormat'), 'error');
             return;
         }
@@ -6834,6 +6925,8 @@
             loadSavedQueueSnapshot();
             loadSavedReviewSession();
             loadSavedWhitelist();
+            loadSavedSnapshotMhtmlFormatEnabled();
+            loadSavedSnapshotMdFormatEnabled();
             state.initialized = true;
         }
 
@@ -6887,6 +6980,8 @@
             loadSavedQueueSnapshot();
             loadSavedReviewSession();
             loadSavedWhitelist();
+            loadSavedSnapshotMhtmlFormatEnabled();
+            loadSavedSnapshotMdFormatEnabled();
             state.initialized = true;
         }
 
@@ -6934,6 +7029,8 @@
             loadSavedQueueSnapshot();
             loadSavedReviewSession();
             loadSavedWhitelist();
+            loadSavedSnapshotMhtmlFormatEnabled();
+            loadSavedSnapshotMdFormatEnabled();
             state.initialized = true;
         }
 
@@ -7090,18 +7187,27 @@
                     <div class="dev1-format-row dev1-export-inline-row">
                         <span class="dev1-export-inline-label">${escapeHtml(t('exportTypesLabel'))}</span>
                         <div class="dev1-format-fixed">
-                            <span class="dev1-format-pill">${escapeHtml(t('fmtMhtml'))}</span>
+                            <label class="dev1-check-inline dev1-mhtml-format-toggle" title="${escapeHtml(t('fmtMhtml'))}">
+                                <input id="dev1FormatMhtmlCheckbox" type="checkbox" ${isSnapshotMhtmlFormatEnabled() ? 'checked' : ''}>
+                                <span>${escapeHtml(t('fmtMhtml'))}</span>
+                            </label>
+                            <label class="dev1-check-inline dev1-md-format-toggle" title="${escapeHtml(t('fmtMd'))}">
+                                <input id="dev1FormatMdCheckbox" type="checkbox" ${isSnapshotMdFormatEnabled() ? 'checked' : ''}>
+                                <span>${escapeHtml(t('fmtMd'))}</span>
+                            </label>
                         </div>
+                    </div>
+                    <div class="dev1-format-row dev1-export-inline-row dev1-snapshot-helper-row">
                         <span class="dev1-export-inline-label">${escapeHtml(t('snapshotHelperLabel'))}</span>
                         <label class="dev1-check-inline dev1-snapshot-helper-toggle" title="${escapeHtml(t('snapshotHelperTip'))}">
                             <input id="dev1SnapshotHelperCheckbox" type="checkbox" ${isSnapshotHelperEnabled() ? 'checked' : ''}>
                             <span>${escapeHtml(t('snapshotHelperLabel'))}</span>
                         </label>
                     </div>
-                    <div id="dev1MhtmlHintRow" class="dev1-format-row dev1-export-note-row">
+                    <div id="dev1ExportFormatHintRow" class="dev1-format-row dev1-export-note-row" ${isSnapshotMhtmlFormatEnabled() || isSnapshotMdFormatEnabled() ? '' : 'hidden'}>
                         <div class="dev1-export-note">
                             <i class="fas fa-circle-info"></i>
-                            <span>${escapeHtml(t('mhtmlLoadedHint'))}</span>
+                            <span class="dev1-export-note-lines">${renderExportFormatHintHtml()}</span>
                         </div>
                     </div>
                     <div class="dev1-format-row dev1-export-note-row">
@@ -7245,6 +7351,8 @@
             loadSavedReviewAutoReviewMs();
             loadSavedQueueColumnWidths();
             loadSavedSnapshotHelperEnabled();
+            loadSavedSnapshotMhtmlFormatEnabled();
+            loadSavedSnapshotMdFormatEnabled();
         }
         renderLayout(root);
         bindRootEvents(root);

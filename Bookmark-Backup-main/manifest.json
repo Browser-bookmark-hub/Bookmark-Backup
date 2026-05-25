@@ -79,5 +79,16 @@
    ],
    "host_permissions": [
       "<all_urls>"
+   ],
+   "web_accessible_resources": [
+      {
+         "resources": [
+            "dev_1/third_party/defuddle.index.full.js",
+            "dev_1/third_party/flatten-shadow-dom.js"
+         ],
+         "matches": [
+            "<all_urls>"
+         ]
+      }
    ]
 }

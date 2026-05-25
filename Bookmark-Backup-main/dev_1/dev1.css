@@ -1492,6 +1492,22 @@
     color: var(--accent-primary);
 }
 
+.dev1-export-note-lines {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.dev1-export-note-line {
+    display: block;
+}
+
+.dev1-export-note-link {
+    color: #2563eb;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
 .dev1-field-row {
     display: grid;
     grid-template-columns: 132px minmax(0, 1fr);
@@ -1534,7 +1550,11 @@
 
 .dev1-export-inline-row .dev1-format-fixed,
 .dev1-export-inline-row .dev1-snapshot-helper-toggle,
-.dev1-export-inline-row .dev1-snapshot-helper-toggle span {
+.dev1-export-inline-row .dev1-snapshot-helper-toggle span,
+.dev1-export-inline-row .dev1-mhtml-format-toggle,
+.dev1-export-inline-row .dev1-mhtml-format-toggle span,
+.dev1-export-inline-row .dev1-md-format-toggle,
+.dev1-export-inline-row .dev1-md-format-toggle span {
     white-space: nowrap;
 }
 
@@ -1552,6 +1572,36 @@
 }
 
 .dev1-snapshot-helper-toggle input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent-primary);
+}
+
+.dev1-mhtml-format-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.dev1-mhtml-format-toggle input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent-primary);
+}
+
+.dev1-md-format-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.dev1-md-format-toggle input[type="checkbox"] {
     width: 15px;
     height: 15px;
     accent-color: var(--accent-primary);
