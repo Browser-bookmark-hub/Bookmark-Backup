@@ -2036,17 +2036,22 @@ async function initializeWebDAVConfigSection() {
                 showStatus('已自动去除密码首尾空格/换行', 'info', 2200);
             }
 
-            showStatus('正在测试WebDAV连接...', 'info', 3500);
+            const { preferredLang, currentLang } = await chrome.storage.local.get(['preferredLang', 'currentLang']);
+            const lang = currentLang || preferredLang || 'zh_CN';
+
+            showStatus(lang === 'en' ? 'Testing WebDAV connection and folder...' : '正在测试WebDAV连接与文件夹...', 'info', 3500);
             let testResult;
             try {
                 testResult = await testWebdavConnection({ serverAddress, username, password });
             } catch (error) {
-                showStatus(`WebDAV连接测试失败: ${error.message || '未知错误'}`, 'error', 4500);
+                const failPrefix = lang === 'en' ? 'Test failed: ' : '测试失败: ';
+                showStatus(`${failPrefix}${error.message || '未知错误'}`, 'error', 4500);
                 return;
             }
 
             if (!testResult || testResult.success !== true) {
-                showStatus(`WebDAV连接测试失败: ${testResult?.error || '未知错误'}`, 'error', 4500);
+                const failPrefix = lang === 'en' ? 'Test failed: ' : '测试失败: ';
+                showStatus(`${failPrefix}${testResult?.error || '未知错误'}`, 'error', 6000);
                 return;
             }
 
@@ -2101,17 +2106,40 @@ async function initializeWebDAVConfigSection() {
                 showStatus('已自动去除密码首尾空格/换行', 'info', 2200);
             }
 
-            showStatus('正在测试WebDAV连接...', 'info', 3500);
+            const { preferredLang, currentLang } = await chrome.storage.local.get(['preferredLang', 'currentLang']);
+            const lang = currentLang || preferredLang || 'zh_CN';
+
+            showStatus(lang === 'en' ? 'Testing WebDAV connection and folder...' : '正在测试WebDAV连接与文件夹...', 'info', 3500);
             try {
                 const result = await testWebdavConnection({ serverAddress, username, password });
                 if (result && result.success === true) {
-                    showStatus('WebDAV连接测试成功', 'success', 2400);
+                    let successMsg = '';
+                    if (lang === 'en') {
+                        if (result.folderCreated) {
+                            successMsg = 'WebDAV connected; backup folder created!';
+                        } else if (result.folderExisted) {
+                            successMsg = 'WebDAV connected; backup folder exists!';
+                        } else {
+                            successMsg = 'WebDAV connection and folder test succeeded!';
+                        }
+                    } else {
+                        if (result.folderCreated) {
+                            successMsg = 'WebDAV连接成功，已自动创建“书签备份”文件夹';
+                        } else if (result.folderExisted) {
+                            successMsg = 'WebDAV连接成功，检测到“书签备份”文件夹已存在';
+                        } else {
+                            successMsg = 'WebDAV连接与文件夹测试成功';
+                        }
+                    }
+                    showStatus(successMsg, 'success', 3000);
                     updateRestorePanelStatus({ type: 'manual-refresh' });
                 } else {
-                    showStatus(`WebDAV连接测试失败: ${result?.error || '未知错误'}`, 'error', 4500);
+                    const failPrefix = lang === 'en' ? 'Test failed: ' : '测试失败: ';
+                    showStatus(`${failPrefix}${result?.error || '未知错误'}`, 'error', 6000);
                 }
             } catch (error) {
-                showStatus(`WebDAV连接测试失败: ${error.message || '未知错误'}`, 'error', 4500);
+                const failPrefix = lang === 'en' ? 'Test failed: ' : '测试失败: ';
+                showStatus(`${failPrefix}${error.message || '未知错误'}`, 'error', 4500);
             }
         });
     }
@@ -7518,8 +7546,13 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const testWebdavButtonStrings = {
-        'zh_CN': "测试连接",
-        'en': "Test Connection"
+        'zh_CN': "测试：连接与创建文件夹",
+        'en': "Test: Connection & Folder Creation"
+    };
+
+    const webdavRootFolderNoticeStrings = {
+        'zh_CN': "⚠️ <b>提示</b>：部分 WebDAV 服务商可能限制第三方应用自动在根目录创建文件夹。可先点击下方的 <b>“测试：连接与创建文件夹”</b> 按钮进行检测。若提示创建失败，请手动登录网盘并在根目录创建一个名为 <b>“书签备份”</b> 的文件夹。",
+        'en': "⚠️ <b>Tip</b>: Some WebDAV providers restrict third-party apps from automatically creating folders in the root directory. You can click the <b>\"Test: Connection & Folder Creation\"</b> button below to diagnose. If it fails, please manually create a folder named <b>\"Bookmark Backup\"</b> in the root directory."
     };
 
     // 云端2：GitHub Repository 配置部分
@@ -8370,6 +8403,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const testWebdavBtn = document.getElementById('testWebdavBtn');
     if (testWebdavBtn) {
         testWebdavBtn.textContent = testWebdavButtonStrings[lang] || testWebdavButtonStrings['zh_CN'];
+    }
+
+    const webdavRootFolderNoticeElement = document.getElementById('webdavRootFolderNotice');
+    if (webdavRootFolderNoticeElement) {
+        webdavRootFolderNoticeElement.innerHTML = webdavRootFolderNoticeStrings[lang] || webdavRootFolderNoticeStrings['zh_CN'];
     }
 
     // 更新 GitHub Repository 配置部分

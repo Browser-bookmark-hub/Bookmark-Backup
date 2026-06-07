@@ -7591,7 +7591,83 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     }
 
-                    sendResponse({ success: true });
+                    // 检查或自动创建备份目录
+                    const lang = await getCurrentLang();
+                    const exportRootFolder = getExportRootFolderByLang(lang);
+                    const folderUrl = `${normalizedServerAddress}${exportRootFolder}/`;
+
+                    let checkFolderResponse;
+                    try {
+                        checkFolderResponse = await fetch(folderUrl, {
+                            method: 'PROPFIND',
+                            headers: {
+                                'Authorization': authHeader,
+                                'Depth': '0',
+                                'Content-Type': 'application/xml'
+                            },
+                            body: propfindBody
+                        });
+                    } catch (e) {
+                        // ignore network error
+                    }
+
+                    let folderCreated = false;
+                    let folderExisted = false;
+
+                    if (checkFolderResponse && (checkFolderResponse.status === 200 || checkFolderResponse.status === 207)) {
+                        folderExisted = true;
+                    } else if (checkFolderResponse && checkFolderResponse.status === 404) {
+                        // 尝试创建
+                        let mkcolResponse;
+                        try {
+                            mkcolResponse = await fetch(folderUrl, {
+                                method: 'MKCOL',
+                                headers: { 'Authorization': authHeader }
+                            });
+                        } catch (e) {
+                            // ignore network error
+                        }
+
+                        if (mkcolResponse && mkcolResponse.ok) {
+                            folderCreated = true;
+                        } else {
+                            // 文件夹创建失败
+                            const folderName = lang === 'zh_CN' ? '书签备份' : 'Bookmark Backup';
+                            const errChinese = `连接成功，但由于安全限制无法自动创建“${folderName}”文件夹。请手动登录网盘，在根目录下创建一个名为“${folderName}”的文件夹后再试。`;
+                            const errEnglish = `Connected successfully, but safety restrictions prevent creating "${folderName}" folder automatically. Please manually create a folder named "${folderName}" in your WebDAV root directory first.`;
+                            sendResponse({
+                                success: false,
+                                error: lang === 'zh_CN' ? errChinese : errEnglish,
+                                connectionOk: true
+                            });
+                            return;
+                        }
+                    } else {
+                        // 降级使用 ensureWebDAVCollectionExists
+                        try {
+                            await ensureWebDAVCollectionExists(folderUrl, authHeader, '检测备份目录时出错');
+                            folderExisted = true;
+                        } catch (folderError) {
+                            const errMsg = folderError.message || '';
+                            let friendlyError = errMsg;
+                            let connectionOk = false;
+                            if (errMsg.includes('403') || errMsg.includes('409') || errMsg.includes('拒绝访问') || errMsg.includes('Conflict') || errMsg.includes('Forbidden')) {
+                                connectionOk = true;
+                                const folderName = lang === 'zh_CN' ? '书签备份' : 'Bookmark Backup';
+                                friendlyError = lang === 'zh_CN'
+                                    ? `连接成功，但由于安全限制无法自动创建“${folderName}”文件夹。请手动登录网盘，在根目录下创建一个名为“${folderName}”的文件夹后再试。`
+                                    : `Connected successfully, but safety restrictions prevent creating "${folderName}" folder automatically. Please manually create a folder named "${folderName}" in your WebDAV root directory first.`;
+                            }
+                            sendResponse({ success: false, error: friendlyError, connectionOk });
+                            return;
+                        }
+                    }
+
+                    sendResponse({
+                        success: true,
+                        folderCreated,
+                        folderExisted
+                    });
                 } catch (error) {
                     sendResponse({ success: false, error: error?.message || '未知错误' });
                 }
