@@ -73,17 +73,17 @@ const manualBackupReminderDescStrings = {
     'zh_CN': `
         <div class="desc-line">循环提醒的计时：浏览器的<span style="color: #4CAF50;">实际使用时间</span>。</div>
         <div class="desc-line">手动备份下，进行操作（数量/结构变化）才会提醒，</div>
-        <div class="desc-line">示例：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)。</div>
+        <div class="desc-line">示例：(书签<span style="color: #4CAF50;">+1</span>、书签<span style="color: #F44336;">-1</span>、移动<span style="color: #2196F3;">1</span>修改<span style="color: #FF9800;">1</span>)。</div>
     `,
     'en': `
         <div class="desc-line">Cyclic Reminder timing: Browser's <span style="color: #4CAF50;">actual usage time</span>.</div>
         <div class="desc-line">Reminders only trigger after changes (quantity/structure),</div>
-        <div class="desc-line">example: (<span style="color: #4CAF50;">+12</span> bookmarks, <span style="color: #4CAF50;">+1</span> folder, <span style="color: orange;">Bookmark & Folder changed</span>).</div>
+        <div class="desc-line">example: (BKM<span style="color: #4CAF50;">+1</span>, BKM<span style="color: #F44336;">-1</span>, Moved<span style="color: #2196F3;">1</span>Modified<span style="color: #FF9800;">1</span>).</div>
     `
 };
 const reminderExampleStrings = {
-    'zh_CN': "示例：(<span style=\"color: #4CAF50;\">+12</span> 书签，<span style=\"color: #4CAF50;\">+1</span> 文件夹，<span style=\"color: orange;\">书签、文件夹变动</span>)。",
-    'en': "example: (<span style=\"color: #4CAF50;\">+12</span> bookmarks, <span style=\"color: #4CAF50;\">+1</span> folder, <span style=\"color: orange;\">Bookmark & Folder changed</span>)."
+    'zh_CN': "示例：(书签<span style=\"color: #4CAF50;\">+1</span>、书签<span style=\"color: #F44336;\">-1</span>、移动<span style=\"color: #2196F3;\">1</span>修改<span style=\"color: #FF9800;\">1</span>)。",
+    'en': "example: (BKM<span style=\"color: #4CAF50;\">+1</span>, BKM<span style=\"color: #F44336;\">-1</span>, Moved<span style=\"color: #2196F3;\">1</span>Modified<span style=\"color: #FF9800;\">1</span>)."
 };
 const restoreDefaultStrings = { 'zh_CN': "恢复默认", 'en': "Restore Default" };
 const saveSettingsStrings = { 'zh_CN': "保存设置", 'en': "Save Settings" };

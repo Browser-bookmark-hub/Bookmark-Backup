@@ -5503,11 +5503,11 @@ function calibrateDownloadPath() {
 
         // 国际化文本
         const cloudBackupGuide1Strings = {
-            'zh_CN': "修改浏览器默认下载路径至云盘处（频繁备份）",
+            'zh_CN': "点击下方的\"打开下载设置\"按钮",
             'en': "Change browser default download path to cloud storage (for frequent backups)"
         };
         const cloudBackupGuide2Strings = {
-            'zh_CN': "在默认下载路径，手动进行文件夹Bookmarks关联，挂载至其他网盘",
+            'zh_CN': "修改路径至云盘处",
             'en': "In the default download path, manually associate the Bookmarks folder to other cloud drives"
         };
         // 国际化文本
@@ -7475,8 +7475,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const reminderExampleStrings = {
-        'zh_CN': "示例：(<span style=\"color: #4CAF50;\">+12</span> 书签，<span style=\"color: #4CAF50;\">+1</span> 文件夹，<span style=\"color: orange;\">书签、文件夹变动</span>)。",
-        'en': "example: (<span style=\"color: #4CAF50;\">+12</span> BKM, <span style=\"color: #4CAF50;\">+1</span> FLD, <span style=\"color: orange;\">BKM & FLD changed</span>)." // Only text content changed, escaping matches original structure
+        'zh_CN': "示例：(书签<span style=\"color: #4CAF50;\">+1</span>、书签<span style=\"color: #F44336;\">-1</span>、移动<span style=\"color: #2196F3;\">1</span>、修改<span style=\"color: #FF9800;\">1</span>)。",
+        'en': "example: (BKM<span style=\"color: #4CAF50;\">+1</span>, BKM<span style=\"color: #F44336;\">-1</span>, Moved<span style=\"color: #2196F3;\">1</span>, Modified<span style=\"color: #FF9800;\">1</span>)."
     };
 
     const restoreDefaultStrings = {
@@ -7867,12 +7867,12 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const cloudBackupGuide1Strings = {
-        'zh_CN': "修改浏览器默认下载路径至云盘处（频繁备份）",
+        'zh_CN': "点击下方的\"打开下载设置\"按钮",
         'en': "Change browser default download path to cloud storage (for frequent backups)"
     };
 
     const cloudBackupGuide2Strings = {
-        'zh_CN': "在默认下载路径，手动进行文件夹Bookmarks关联，挂载至其他网盘",
+        'zh_CN': "修改路径至云盘处",
         'en': "In the default download path, manually associate the Bookmarks folder to other cloud drives"
     };
 
@@ -20780,13 +20780,13 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             if (realtimeBackupDesc2) {
                 realtimeBackupDesc2.innerHTML = isEN
-                    ? 'which may generate many versions in a short time, widen version gaps, and increase storage usage. You can disable snapshot backup output in Snapshot Backup settings.'
-                    : '在很短时间内可能连续生成多个版本，拉大版本跨度并增加存储占用；可在“快照备份”设置中关闭快照文件输出。';
+                    ? 'which may generate many versions in a short time, widen version gaps, and increase storage usage.'
+                    : '在很短时间内可能连续生成多个版本，拉大版本跨度并增加存储占用。';
             }
             if (realtimeBackupDesc3) {
                 realtimeBackupDesc3.innerHTML = isEN
-                    ? 'example of count/structure changes: (<span style="color: #4CAF50;">+12</span> BKM, <span style="color: #4CAF50;">+1</span> FLD, <span style="color: orange;">BKM & FLD changed</span>).'
-                    : '示例（数量/结构变化）：(<span style="color: #4CAF50;">+12</span> 书签，<span style="color: #4CAF50;">+1</span> 文件夹，<span style="color: orange;">书签、文件夹变动</span>)。';
+                    ? 'example of count/structure changes: (BKM<span style="color: #4CAF50;">+1</span>, BKM<span style="color: #F44336;">-1</span>, Moved<span style="color: #2196F3;">1</span>, Modified<span style="color: #FF9800;">1</span>).'
+                    : '示例（数量/结构变化）：(书签<span style="color: #4CAF50;">+1</span>、书签<span style="color: #F44336;">-1</span>、移动<span style="color: #2196F3;">1</span>、修改<span style="color: #FF9800;">1</span>)。';
             }
             if (restoreAutoBackupDefaultsBtn) {
                 restoreAutoBackupDefaultsBtn.textContent = isEN ? 'Restore Defaults' : '恢复默认';
