@@ -22606,7 +22606,7 @@ async function setBadge() { // 不再接收 status 参数
                     // 检查定时器是否真的在运行（通过检查alarm是否存在）
                     const alarms = await browserAPI.alarms.getAll();
                     const hasAlarm = alarms.some(alarm =>
-                        alarm.name.startsWith('autoBackup_')
+                        alarm.name.startsWith('autoBackup')
                     );
 
                     // 有变化但定时器未运行：启动自动备份定时器
@@ -22634,7 +22634,7 @@ async function setBadge() { // 不再接收 status 参数
                     // 检查是否有alarm在运行
                     const alarms = await browserAPI.alarms.getAll();
                     const hasAlarm = alarms.some(alarm =>
-                        alarm.name.startsWith('autoBackup_')
+                        alarm.name.startsWith('autoBackup')
                     );
 
                     // 无变化但定时器仍在运行：停止自动备份定时器

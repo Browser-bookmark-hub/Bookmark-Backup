@@ -507,6 +507,54 @@ function isTodayEnabled(weekDays) {
     return weekDays[today] === true;
 }
 
+function isSameLocalDate(a, b) {
+    return a.getFullYear() === b.getFullYear() &&
+        a.getMonth() === b.getMonth() &&
+        a.getDate() === b.getDate();
+}
+
+function getTodayDefaultTime(defaultTime, now = new Date()) {
+    const [hours, minutes] = String(defaultTime || '').split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+        return null;
+    }
+
+    const result = new Date(now);
+    result.setHours(hours, minutes, 0, 0);
+    return result;
+}
+
+async function hasSuccessfulBackupTodayAtOrAfter(defaultTime, now = new Date()) {
+    try {
+        const cutoff = getTodayDefaultTime(defaultTime, now);
+        if (!cutoff) {
+            return false;
+        }
+
+        const { syncHistory = [] } = await browserAPI.storage.local.get(['syncHistory']);
+        if (!Array.isArray(syncHistory) || syncHistory.length === 0) {
+            return false;
+        }
+
+        return syncHistory.some((record) => {
+            if (!record || record.status !== 'success') {
+                return false;
+            }
+
+            const recordTime = new Date(record.time);
+            if (Number.isNaN(recordTime.getTime())) {
+                return false;
+            }
+
+            return isSameLocalDate(recordTime, now) &&
+                recordTime.getTime() >= cutoff.getTime();
+        });
+    } catch (error) {
+        addLog(`检查当天备份历史失败: ${error.message}`);
+        return false;
+    }
+}
+
 /**
  * 检查遗漏的备份任务（浏览器休眠后恢复时或打开浏览器时）
  * @returns {Promise<void>}
@@ -549,20 +597,28 @@ async function checkMissedBackups() {
                         addLog(`今天(${getCurrentWeekDayText(lang)})未在周勾选范围内，跳过常规时间遗漏检查`);
                     } else {
                         // 检查默认时间是否已过
-                        const [hours, minutes] = settings.regularTime.defaultTime.split(':').map(Number);
-                        const defaultTime = new Date(now);
-                        defaultTime.setHours(hours, minutes, 0, 0);
+                        const defaultTime = getTodayDefaultTime(settings.regularTime.defaultTime, now);
                         
-                        if (now.getTime() > defaultTime.getTime()) {
-                            addLog(`已过默认时间 ${settings.regularTime.defaultTime}，执行补充备份`);
-                            const weekDay = getCurrentWeekDayText(lang);
-                            const note = generateBackupNote('weekly', weekDay, lang);
-                            const success = await triggerAutoBackup(note);
-                            
-                            // 补充备份成功后，记录今天已经补充过
-                            if (success) {
+                        if (defaultTime && now.getTime() > defaultTime.getTime()) {
+                            const hasBackupAfterDefaultTime = await hasSuccessfulBackupTodayAtOrAfter(
+                                settings.regularTime.defaultTime,
+                                now
+                            );
+
+                            if (hasBackupAfterDefaultTime) {
                                 await markMissedBackupExecuted();
-                                addLog(`已记录今天的补充备份，避免重复执行`);
+                                addLog(`今天默认时间 ${settings.regularTime.defaultTime} 之后已有成功备份记录，跳过遗漏补充`);
+                            } else {
+                                addLog(`已过默认时间 ${settings.regularTime.defaultTime}，执行补充备份`);
+                                const weekDay = getCurrentWeekDayText(lang);
+                                const note = generateBackupNote('weekly', weekDay, lang);
+                                const success = await triggerAutoBackup(note);
+
+                                // 补充备份成功后，记录今天已经补充过
+                                if (success) {
+                                    await markMissedBackupExecuted();
+                                    addLog(`已记录今天的补充备份，避免重复执行`);
+                                }
                             }
                         } else {
                             addLog(`未过默认时间 ${settings.regularTime.defaultTime}，无需补充备份`);
@@ -705,7 +761,11 @@ async function handleAlarmTrigger(alarm) {
             // 周定时触发
             const weekDay = getCurrentWeekDayText(lang);
             const note = generateBackupNote('weekly', weekDay, lang);
-            await triggerAutoBackup(note);
+            const success = await triggerAutoBackup(note);
+            if (success) {
+                await markMissedBackupExecuted();
+                addLog('已记录今天的默认时间备份，避免后续遗漏检查重复补充');
+            }
             
             // 重新设置下一个周定时器
             await setupRegularTimeAlarms(settings.regularTime);
