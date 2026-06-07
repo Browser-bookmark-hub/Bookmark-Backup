@@ -20780,9 +20780,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 Number(window.__popupHistoryTotalRecords) || 0,
                 newLang
             );
+            updatePendingRemarkUI();
         }
 
         if (area === 'local') {
+            if (Object.prototype.hasOwnProperty.call(changes, 'pendingRemark')) {
+                updatePendingRemarkUI();
+            }
+
             if (Object.prototype.hasOwnProperty.call(changes, 'initialized')
                 || Object.prototype.hasOwnProperty.call(changes, 'autoSync')
                 || Object.prototype.hasOwnProperty.call(changes, ACTIVE_BACKUP_PROGRESS_KEY)) {
@@ -20877,6 +20882,16 @@ document.addEventListener('DOMContentLoaded', function () {
     } else {
         initializeLanguageSwitcher();
     }
+
+    // 初始化 preBackupRemark 监听和渲染
+    const preBackupRemarkContainer = document.getElementById('preBackupRemarkContainer');
+    if (preBackupRemarkContainer) {
+        preBackupRemarkContainer.addEventListener('click', function (e) {
+            e.stopPropagation();
+            showEditPendingRemarkDialog();
+        });
+    }
+    updatePendingRemarkUI();
 
     // popup 打开时不再额外延迟二次刷新，避免“计算中”重复闪动
 });
@@ -21089,6 +21104,180 @@ function saveNoteForRecord(recordTime, noteText) {
                 'en': 'Note saved'
             };
             showStatus(noteSavedText[currentLang] || noteSavedText['zh_CN'], 'success');
+        });
+    });
+}
+
+// ==========================================
+// 预备份备注相关功能 (Pre-backup Remark)
+// ==========================================
+
+function updatePendingRemarkUI() {
+    chrome.storage.local.get(['pendingRemark', 'preferredLang'], (data) => {
+        const remarkTextEl = document.getElementById('preBackupRemarkText');
+        if (!remarkTextEl) return;
+        const remark = data.pendingRemark || '';
+        const lang = data.preferredLang || 'zh_CN';
+        if (remark.trim() === '') {
+            remarkTextEl.textContent = lang === 'en' ? 'Add Note' : '添加备注';
+            remarkTextEl.style.opacity = '0.6';
+        } else {
+            remarkTextEl.textContent = remark;
+            remarkTextEl.style.opacity = '1';
+        }
+    });
+}
+
+function showEditPendingRemarkDialog() {
+    // 先查找是否已有备注对话框，如果有则移除
+    const existingDialog = document.getElementById('noteDialog');
+    if (existingDialog) {
+        document.body.removeChild(existingDialog);
+    }
+
+    chrome.storage.local.get(['pendingRemark', 'preferredLang'], (data) => {
+        const pendingRemark = data.pendingRemark || '';
+        const currentLang = data.preferredLang || 'zh_CN';
+
+        // 创建对话框
+        const dialogOverlay = document.createElement('div');
+        dialogOverlay.id = 'noteDialog';
+        dialogOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        `;
+
+        // 创建对话框内容
+        const dialogContent = document.createElement('div');
+        dialogContent.style.cssText = `
+            background: var(--theme-bg-primary);
+            border-radius: 8px;
+            padding: 20px;
+            width: 300px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            position: relative;
+        `;
+
+        // 标题
+        const title = document.createElement('h3');
+        title.textContent = currentLang === 'en' ? 'Backup Note' : '备份备注';
+        title.style.cssText = 'margin-top: 0; margin-bottom: 10px; color: var(--theme-text-primary);';
+
+        // 提示信息
+        const info = document.createElement('div');
+        info.textContent = currentLang === 'en' ? 'This note will be attached to the next backup.' : '此备注将附加到下一次备份记录中。';
+        info.style.cssText = 'margin-bottom: 15px; font-size: 12px; color: var(--theme-text-secondary);';
+
+        // 文本区域
+        const textarea = document.createElement('textarea');
+        textarea.value = pendingRemark;
+        textarea.placeholder = currentLang === 'en' ? 'Enter note (suggested within 20 characters)' : '输入备注（建议20个字符以内）';
+        textarea.style.cssText = `
+            width: 100%;
+            height: 60px;
+            padding: 8px;
+            border: 1px solid var(--theme-border-primary);
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-primary);
+            border-radius: 4px;
+            resize: none;
+            box-sizing: border-box;
+            margin-bottom: 15px;
+            font-size: 14px;
+        `;
+
+        // 字数提示
+        const charCount = document.createElement('div');
+        const suggestedChars = 20;
+        const updateCharCount = () => {
+            const count = textarea.value.length;
+            const overLimit = count > suggestedChars;
+
+            if (currentLang === 'en') {
+                charCount.textContent = overLimit ?
+                    `${count} characters (suggested: ${suggestedChars})` :
+                    `${count} / ${suggestedChars} characters`;
+            } else {
+                charCount.textContent = overLimit ?
+                    `${count} 个字符（建议: ${suggestedChars}）` :
+                    `${count} / ${suggestedChars} 个字符`;
+            }
+            charCount.style.color = overLimit ? '#FF9800' : 'var(--theme-text-secondary)';
+        };
+        updateCharCount();
+        textarea.addEventListener('input', updateCharCount);
+        charCount.style.cssText = 'text-align: right; font-size: 12px; margin-bottom: 15px; color: var(--theme-text-secondary);';
+
+        // 按钮容器
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.cssText = 'display: flex; justify-content: space-between; gap: 10px;';
+
+        // 取消按钮
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = currentLang === 'en' ? 'Cancel' : '取消';
+        cancelButton.style.cssText = `
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--theme-bg-tertiary);
+            color: var(--theme-text-secondary);
+            cursor: pointer;
+            flex: 1;
+            font-size: 13px;
+        `;
+        cancelButton.onclick = () => {
+            document.body.removeChild(dialogOverlay);
+        };
+
+        // 保存按钮
+        const saveButton = document.createElement('button');
+        saveButton.textContent = currentLang === 'en' ? 'Save' : '保存';
+        saveButton.style.cssText = `
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            flex: 1;
+            font-size: 13px;
+        `;
+        saveButton.onclick = () => {
+            const remarkText = textarea.value.trim();
+            chrome.storage.local.set({ pendingRemark: remarkText }, () => {
+                updatePendingRemarkUI();
+                const saveSuccessText = currentLang === 'en' ? 'Backup note saved' : '备份备注已保存';
+                showStatus(saveSuccessText, 'success');
+            });
+            document.body.removeChild(dialogOverlay);
+        };
+
+        // 添加所有元素
+        buttonContainer.appendChild(cancelButton);
+        buttonContainer.appendChild(saveButton);
+        dialogContent.appendChild(title);
+        dialogContent.appendChild(info);
+        dialogContent.appendChild(textarea);
+        dialogContent.appendChild(charCount);
+        dialogContent.appendChild(buttonContainer);
+        dialogOverlay.appendChild(dialogContent);
+
+        document.body.appendChild(dialogOverlay);
+        textarea.focus();
+
+        // 点击空白区域关闭
+        dialogOverlay.addEventListener('click', (event) => {
+            if (event.target === dialogOverlay) {
+                document.body.removeChild(dialogOverlay);
+            }
         });
     });
 }

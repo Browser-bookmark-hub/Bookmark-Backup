@@ -21752,7 +21752,7 @@ async function updateBookmarks(bookmarksData) {
 async function updateSyncStatus(direction, time, status = 'success', errorMessage = '', syncType = 'auto', autoBackupReason = null, snapshotFingerprint = '', options = {}) {
     try {
         const postSyncWarnings = [];
-        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'overwrite', lastBookmarkChangeTime = 0, [BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]: rawBackupHistorySlimming = null, [BOOKMARK_COMPARISON_GENERATION_KEY]: storedComparisonGeneration = BOOKMARK_COMPARISON_INITIAL_GENERATION } = await browserAPI.storage.local.get([
+        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'overwrite', lastBookmarkChangeTime = 0, [BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]: rawBackupHistorySlimming = null, [BOOKMARK_COMPARISON_GENERATION_KEY]: storedComparisonGeneration = BOOKMARK_COMPARISON_INITIAL_GENERATION, pendingRemark = '' } = await browserAPI.storage.local.get([
             'syncHistory',
             'lastBookmarkData',
             'lastSyncOperations',
@@ -21764,7 +21764,8 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             'overwriteMode',
             'lastBookmarkChangeTime',
             BACKUP_HISTORY_SLIMMING_SETTINGS_KEY,
-            BOOKMARK_COMPARISON_GENERATION_KEY
+            BOOKMARK_COMPARISON_GENERATION_KEY,
+            'pendingRemark'
         ]);
 
         const activeLang = currentLang === 'en' || currentLang === 'zh_CN'
@@ -22099,10 +22100,12 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             // 仅在“真正的首次备份（没有任何历史 + 没有基准快照）”时标记为首次备份；
             // 这样用户清空备份历史后，再次备份不会被误判为“首次备份”
             isFirstBackup: (!syncHistory || syncHistory.length === 0) && (!lastBookmarkData || !lastBookmarkData.bookmarkTree),
-            // 如果有 autoBackupReason 则附加，否则使用默认备注（中英文）
-            note: (autoBackupReason && typeof autoBackupReason === 'string' && autoBackupReason.trim())
-                ? `${defaultNote}${preferredLang === 'en' ? ' - ' : ' - '}${autoBackupReason.trim()}`
-                : defaultNote,
+            // 如果有前置编辑的备注，则直接作为最终备注；否则使用原有默认备注（有变动原因则附加）
+            note: (pendingRemark && typeof pendingRemark === 'string' && pendingRemark.trim())
+                ? pendingRemark.trim()
+                : ((autoBackupReason && typeof autoBackupReason === 'string' && autoBackupReason.trim())
+                    ? `${defaultNote}${preferredLang === 'en' ? ' - ' : ' - '}${autoBackupReason.trim()}`
+                    : defaultNote),
             // bookmarkTree 不再存放在索引记录中
             hasData: shouldSaveTree,
             hasChangeData: !!recordChangeDataPayload,
@@ -22166,6 +22169,12 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         }
 
         await browserAPI.storage.local.set(updateData);
+
+        if (status === 'success') {
+            try {
+                await browserAPI.storage.local.remove('pendingRemark');
+            } catch (_) {}
+        }
 
         const isInitSync = (!syncHistory || syncHistory.length === 0) && newSyncRecord.isFirstBackup; // More precise check for initial sync completion effect
         if (isInitSync && status === 'success' && (direction === 'upload' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_github_local' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
