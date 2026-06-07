@@ -7309,6 +7309,35 @@
         </div>
     </div>
 
+    <!-- 覆盖策略二次确认模态框 -->
+    <div id="initOverwriteConfirmModal" class="modal">
+        <div class="modal-content"
+            style="position: relative; top: auto; right: auto; margin: 0; width: 400px; max-width: calc(100% - 24px); box-shadow: var(--shadow-lg); border-radius: 12px; padding: 0; overflow: hidden;">
+            <div class="modal-header compact"
+                style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--theme-border-primary); background: var(--theme-bg-secondary);">
+                <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+                    <h3 id="initOverwriteConfirmTitle" style="font-size: 15px; margin: 0; color: var(--theme-warning-color, #ff9800); font-weight: bold; display: flex; align-items: center; gap: 6px;">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span id="initOverwriteConfirmTitleText">初始化备份覆盖确认</span>
+                    </h3>
+                </div>
+                <button id="closeInitOverwriteConfirmModal" aria-label="Close"
+                    style="width: 32px; height: 32px; padding: 0; flex: 0 0 auto; border-radius: 50%; background: var(--theme-bg-tertiary); color: var(--theme-text-primary); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div style="padding: 16px 20px 18px;">
+                <div id="initOverwriteConfirmText"
+                    style="font-size: 13px; line-height: 1.6; color: var(--theme-text-secondary); margin-bottom: 18px; white-space: pre-wrap; word-break: break-all;">
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button id="initOverwriteConfirmCancelBtn" class="restore-modal-action-btn secondary">取消</button>
+                    <button id="initOverwriteConfirmBtn" class="restore-modal-action-btn primary danger" style="background-color: var(--theme-error-color, #ff3b30); color: white;">确认覆盖</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 导入合并：选择导入位置 -->
     <div id="importTargetModal" class="modal">
         <div class="modal-content"

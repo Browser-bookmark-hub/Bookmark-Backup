@@ -6243,17 +6243,141 @@ function maybeShowV2ToV3UpgradeNotice() {
     });
 }
 
+async function showInitOverwriteConfirmModal({ lang, webdavActive, githubActive, localActive }) {
+    const isEn = lang === 'en';
+    const modal = document.getElementById('initOverwriteConfirmModal');
+    const titleTextEl = document.getElementById('initOverwriteConfirmTitleText');
+    const textEl = document.getElementById('initOverwriteConfirmText');
+    const cancelBtn = document.getElementById('initOverwriteConfirmCancelBtn');
+    const confirmBtn = document.getElementById('initOverwriteConfirmBtn');
+    const closeBtn = document.getElementById('closeInitOverwriteConfirmModal');
+
+    const titleStr = isEn ? 'Overwrite Initialization Warning' : '初始化备份覆盖确认';
+    const cancelText = isEn ? 'Cancel' : '取消';
+    const confirmText = isEn ? 'Confirm Overwrite' : '确认覆盖';
+
+    const promptMessage = isEn
+        ? `⚠️ Current strategy is [Overwrite]. <span style="color: #ff9800; font-weight: bold;">Existing cloud/local backups (if any)</span> may be overwritten!\nTo restore bookmarks instead, please cancel and use the "Restore" panel on the right.`
+        : `⚠️ 当前备份策略为【覆盖】，<span style="color: #ff9800; font-weight: bold;">若云端/本地已有备份</span>，可能将会被覆写！\n如需从其他设备恢复书签，请取消并使用右侧的“恢复”面板。`;
+
+    if (!modal || !titleTextEl || !textEl || !cancelBtn || !confirmBtn || !closeBtn) {
+        try {
+            return window.confirm(promptMessage.replace(/<[^>]*>/g, ''));
+        } catch (_) {
+            return true;
+        }
+    }
+
+    titleTextEl.textContent = titleStr;
+    textEl.innerHTML = promptMessage.replace(/\n/g, '<br>');
+    cancelBtn.textContent = cancelText;
+    confirmBtn.textContent = confirmText;
+
+    const resetButton = (button) => {
+        if (!button || !button.parentNode) return button;
+        const next = button.cloneNode(true);
+        button.parentNode.replaceChild(next, button);
+        return next;
+    };
+
+    const nextCancelBtn = resetButton(cancelBtn);
+    const nextConfirmBtn = resetButton(confirmBtn);
+    const nextCloseBtn = resetButton(closeBtn);
+
+    modal.style.display = 'flex';
+
+    return await new Promise((resolve) => {
+        let settled = false;
+
+        const cleanup = () => {
+            modal.style.display = 'none';
+            document.removeEventListener('keydown', onKeyDown, true);
+            modal.removeEventListener('click', onOverlayClick);
+        };
+
+        const finish = (confirmed) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(confirmed);
+        };
+
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                finish(false);
+            }
+        };
+
+        const onOverlayClick = (event) => {
+            if (event.target === modal) {
+                finish(false);
+            }
+        };
+
+        nextCancelBtn.addEventListener('click', () => finish(false));
+        nextCloseBtn.addEventListener('click', () => finish(false));
+        nextConfirmBtn.addEventListener('click', () => finish(true));
+        modal.addEventListener('click', onOverlayClick);
+        document.addEventListener('keydown', onKeyDown, true);
+
+        setTimeout(() => {
+            try {
+                nextCancelBtn.focus();
+            } catch (_) {
+            }
+        }, 0);
+    });
+}
+
 /**
  * 处理初始化上传函数。
  * 优化：立即执行UI跳转，上传操作在后台异步执行，完成后通过系统通知告知结果。
  */
 function handleInitUpload() {
-    // 获取当前语言设置
-    chrome.storage.local.get(['preferredLang'], function (langResult) {
-        const lang = langResult.preferredLang || 'zh_CN';
-        const statusText = lang === 'en' ? 'Initializing backup in background...' : '正在后台初始化备份...';
-        showStatus(statusText, 'info');
+    chrome.storage.local.get([
+        'preferredLang', 'currentLang', 'overwriteMode',
+        'serverAddress', 'username', 'password', 'webDAVEnabled',
+        'githubRepoToken', 'githubRepoOwner', 'githubRepoName', 'githubRepoEnabled',
+        'defaultDownloadEnabled'
+    ], async function (data) {
+        const lang = data.currentLang || data.preferredLang || 'zh_CN';
+
+        const overwriteModeRaw = String(data.overwriteMode || '').trim().toLowerCase();
+        const overwriteMode = overwriteModeRaw === 'versioned' ? 'versioned' : 'overwrite';
+
+        const webdavConfigured = !!(data.serverAddress && data.username && data.password);
+        const webdavEnabled = data.webDAVEnabled !== false;
+
+        const githubConfigured = !!(data.githubRepoToken && data.githubRepoOwner && data.githubRepoName);
+        const githubEnabled = data.githubRepoEnabled !== false;
+
+        const localConfigured = data.defaultDownloadEnabled === true;
+        const localEnabled = data.defaultDownloadEnabled === true;
+
+        const isAnyTargetActive = (webdavConfigured && webdavEnabled) ||
+                                  (githubConfigured && githubEnabled) ||
+                                  (localConfigured && localEnabled);
+
+        if (overwriteMode === 'overwrite' && isAnyTargetActive) {
+            const confirmed = await showInitOverwriteConfirmModal({
+                lang,
+                webdavActive: webdavConfigured && webdavEnabled,
+                githubActive: githubConfigured && githubEnabled,
+                localActive: localConfigured && localEnabled
+            });
+            if (!confirmed) {
+                return;
+            }
+        }
+
+        executeInitUploadFlow(lang);
     });
+}
+
+function executeInitUploadFlow(lang) {
+    const statusText = lang === 'en' ? 'Initializing backup in background...' : '正在后台初始化备份...';
+    showStatus(statusText, 'info');
 
     // 获取上传按钮并禁用（防止重复点击）
     const uploadToCloud = document.getElementById('uploadToCloud');
