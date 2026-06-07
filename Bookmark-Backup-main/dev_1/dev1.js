@@ -190,13 +190,7 @@
         reviewAutoReviewMs: REVIEW_AUTO_REVIEW_DEFAULT_MS,
         reviewSettingsOpen: false,
         queueClearConfirmOpen: false,
-        snapshotHelperEnabled: (() => {
-            try {
-                return localStorage.getItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY) !== 'false';
-            } catch (_) {
-                return true;
-            }
-        })(),
+        snapshotHelperEnabled: true,
         snapshotHelperTargetFolder: '',
         snapshotMhtmlFormatEnabled: true,
         snapshotMdFormatEnabled: true,
@@ -985,30 +979,156 @@
         return set;
     }
 
-    function loadSavedWhitelist() {
+    async function loadAllSavedStates() {
+        if (state.initialized) return;
+
+        const keys = [
+            DEV1_QUEUE_STORAGE_KEY,
+            DEV1_REVIEW_STORAGE_KEY,
+            DEV1_WHITELIST_STORAGE_KEY,
+            DEV1_QUEUE_BATCH_SIZE_STORAGE_KEY,
+            DEV1_QUEUE_COLUMN_WIDTHS_STORAGE_KEY,
+            DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY,
+            DEV1_SNAPSHOT_HELPER_STORAGE_KEY,
+            DEV1_SNAPSHOT_MHTML_FORMAT_STORAGE_KEY,
+            DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY
+        ];
+
+        let results = {};
         try {
-            const raw = localStorage.getItem(DEV1_WHITELIST_STORAGE_KEY);
-            if (!raw) {
-                state.whitelistKeys = new Set();
+            if (runtimeApi?.storage?.local) {
+                results = await new Promise(resolve => {
+                    runtimeApi.storage.local.get(keys, resolve);
+                });
+            }
+        } catch (_) {}
+
+        function getStoredValue(key) {
+            if (results && results[key] !== undefined) {
+                return results[key];
+            }
+            try {
+                const localVal = localStorage.getItem(key);
+                if (localVal !== null) {
+                    try {
+                        if (runtimeApi?.storage?.local) {
+                            let parsedVal = localVal;
+                            try {
+                                parsedVal = JSON.parse(localVal);
+                            } catch (_) {}
+                            runtimeApi.storage.local.set({ [key]: parsedVal });
+                        }
+                        localStorage.removeItem(key);
+                    } catch (_) {}
+                    return localVal;
+                }
+            } catch (_) {}
+            return undefined;
+        }
+
+        // 1. Queue Snapshot
+        try {
+            const queueVal = getStoredValue(DEV1_QUEUE_STORAGE_KEY);
+            let parsedQueue = [];
+            if (queueVal) {
+                parsedQueue = typeof queueVal === 'string' ? JSON.parse(queueVal) : queueVal;
+            }
+            state.lockedQueueItems = assignQueueBatchMetadata(Array.isArray(parsedQueue) ? parsedQueue : []);
+        } catch (_) {
+            state.lockedQueueItems = [];
+        }
+
+        // 2. Review Auto Review Ms
+        try {
+            const autoReviewVal = getStoredValue(DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY);
+            state.reviewAutoReviewMs = normalizeReviewAutoReviewMs(autoReviewVal);
+        } catch (_) {
+            state.reviewAutoReviewMs = REVIEW_AUTO_REVIEW_DEFAULT_MS;
+        }
+
+        // 3. Queue Batch Size
+        try {
+            const batchSizeVal = getStoredValue(DEV1_QUEUE_BATCH_SIZE_STORAGE_KEY);
+            state.queueBatchSize = normalizeQueueBatchSize(batchSizeVal);
+        } catch (_) {
+            state.queueBatchSize = QUEUE_BATCH_SIZE_DEFAULT;
+        }
+
+        // 4. Queue Column Widths
+        try {
+            const columnWidthsVal = getStoredValue(DEV1_QUEUE_COLUMN_WIDTHS_STORAGE_KEY);
+            let parsedWidths = null;
+            if (columnWidthsVal) {
+                parsedWidths = typeof columnWidthsVal === 'string' ? JSON.parse(columnWidthsVal) : columnWidthsVal;
+            }
+            state.queueColumnWidths = normalizeQueueColumnWidths(parsedWidths);
+        } catch (_) {
+            state.queueColumnWidths = createDefaultQueueColumnWidths();
+        }
+
+        // 5. Snapshot Helper Enabled
+        try {
+            const helperVal = getStoredValue(DEV1_SNAPSHOT_HELPER_STORAGE_KEY);
+            state.snapshotHelperEnabled = helperVal !== 'false' && helperVal !== false;
+        } catch (_) {
+            state.snapshotHelperEnabled = true;
+        }
+
+        // 6. Snapshot MHTML Format Enabled
+        try {
+            const mhtmlVal = getStoredValue(DEV1_SNAPSHOT_MHTML_FORMAT_STORAGE_KEY);
+            state.snapshotMhtmlFormatEnabled = mhtmlVal !== 'false' && mhtmlVal !== false;
+        } catch (_) {
+            state.snapshotMhtmlFormatEnabled = true;
+        }
+
+        // 7. Snapshot MD Format Enabled
+        try {
+            const mdVal = getStoredValue(DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY);
+            state.snapshotMdFormatEnabled = mdVal === 'true' || mdVal === true;
+        } catch (_) {
+            state.snapshotMdFormatEnabled = false;
+        }
+
+        // 8. Review Session
+        try {
+            const reviewVal = getStoredValue(DEV1_REVIEW_STORAGE_KEY);
+            let parsedReview = null;
+            if (reviewVal) {
+                parsedReview = typeof reviewVal === 'string' ? JSON.parse(reviewVal) : reviewVal;
+            }
+            state.reviewSession = normalizeReviewSession(parsedReview || {});
+        } catch (_) {
+            state.reviewSession = createEmptyReviewSession();
+        }
+
+        // 9. Whitelist
+        try {
+            const whitelistVal = getStoredValue(DEV1_WHITELIST_STORAGE_KEY);
+            let parsedWhitelist = null;
+            if (whitelistVal) {
+                parsedWhitelist = typeof whitelistVal === 'string' ? JSON.parse(whitelistVal) : whitelistVal;
+            }
+            if (Array.isArray(parsedWhitelist)) {
+                state.whitelistKeys = normalizeWhitelistKeys(parsedWhitelist);
                 state.whitelistDomainKeys = new Set();
                 state.whitelistSubdomainKeys = new Set();
-                return;
+            } else {
+                state.whitelistKeys = normalizeWhitelistKeys(parsedWhitelist?.urls);
+                state.whitelistDomainKeys = normalizeWhitelistRuleKeys(parsedWhitelist?.domains, normalizeDomainWhitelistKey);
+                state.whitelistSubdomainKeys = normalizeWhitelistRuleKeys(parsedWhitelist?.subdomains, normalizeSubdomainWhitelistKey);
             }
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-                state.whitelistKeys = normalizeWhitelistKeys(parsed);
-                state.whitelistDomainKeys = new Set();
-                state.whitelistSubdomainKeys = new Set();
-                return;
-            }
-            state.whitelistKeys = normalizeWhitelistKeys(parsed?.urls);
-            state.whitelistDomainKeys = normalizeWhitelistRuleKeys(parsed?.domains, normalizeDomainWhitelistKey);
-            state.whitelistSubdomainKeys = normalizeWhitelistRuleKeys(parsed?.subdomains, normalizeSubdomainWhitelistKey);
         } catch (_) {
             state.whitelistKeys = new Set();
             state.whitelistDomainKeys = new Set();
             state.whitelistSubdomainKeys = new Set();
         }
+
+        state.initialized = true;
+    }
+
+    function loadSavedWhitelist() {
+        // Handled by loadAllSavedStates()
     }
 
     function persistWhitelist() {
@@ -1026,15 +1146,15 @@
                 .filter(Boolean)
                 .sort();
 
-            if (!urls.length && !domains.length && !subdomains.length) {
-                localStorage.removeItem(DEV1_WHITELIST_STORAGE_KEY);
-                return;
+            if (runtimeApi?.storage?.local) {
+                if (!urls.length && !domains.length && !subdomains.length) {
+                    runtimeApi.storage.local.remove(DEV1_WHITELIST_STORAGE_KEY);
+                } else {
+                    runtimeApi.storage.local.set({
+                        [DEV1_WHITELIST_STORAGE_KEY]: { urls, domains, subdomains }
+                    });
+                }
             }
-            localStorage.setItem(DEV1_WHITELIST_STORAGE_KEY, JSON.stringify({
-                urls,
-                domains,
-                subdomains
-            }));
         } catch (_) { }
     }
 
@@ -1245,17 +1365,14 @@
     }
 
     function loadSavedReviewAutoReviewMs() {
-        try {
-            const raw = localStorage.getItem(DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY);
-            state.reviewAutoReviewMs = normalizeReviewAutoReviewMs(raw);
-        } catch (_) {
-            state.reviewAutoReviewMs = REVIEW_AUTO_REVIEW_DEFAULT_MS;
-        }
+        // Handled by loadAllSavedStates()
     }
 
     function persistReviewAutoReviewMs() {
         try {
-            localStorage.setItem(DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY, String(getReviewAutoReviewMs()));
+            if (runtimeApi?.storage?.local) {
+                runtimeApi.storage.local.set({ [DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY]: getReviewAutoReviewMs() });
+            }
         } catch (_) { }
     }
 
@@ -1267,17 +1384,14 @@
     }
 
     function loadSavedQueueBatchSize() {
-        try {
-            const raw = localStorage.getItem(DEV1_QUEUE_BATCH_SIZE_STORAGE_KEY);
-            state.queueBatchSize = normalizeQueueBatchSize(raw);
-        } catch (_) {
-            state.queueBatchSize = QUEUE_BATCH_SIZE_DEFAULT;
-        }
+        // Handled by loadAllSavedStates()
     }
 
     function persistQueueBatchSize() {
         try {
-            localStorage.setItem(DEV1_QUEUE_BATCH_SIZE_STORAGE_KEY, String(normalizeQueueBatchSize(state.queueBatchSize)));
+            if (runtimeApi?.storage?.local) {
+                runtimeApi.storage.local.set({ [DEV1_QUEUE_BATCH_SIZE_STORAGE_KEY]: normalizeQueueBatchSize(state.queueBatchSize) });
+            }
         } catch (_) { }
     }
 
@@ -1336,22 +1450,14 @@
     }
 
     function loadSavedQueueColumnWidths() {
-        try {
-            const raw = localStorage.getItem(DEV1_QUEUE_COLUMN_WIDTHS_STORAGE_KEY);
-            if (!raw) {
-                state.queueColumnWidths = createDefaultQueueColumnWidths();
-                return;
-            }
-            const parsed = JSON.parse(raw);
-            state.queueColumnWidths = normalizeQueueColumnWidths(parsed);
-        } catch (_) {
-            state.queueColumnWidths = createDefaultQueueColumnWidths();
-        }
+        // Handled by loadAllSavedStates()
     }
 
     function persistQueueColumnWidths() {
         try {
-            localStorage.setItem(DEV1_QUEUE_COLUMN_WIDTHS_STORAGE_KEY, JSON.stringify(getQueueColumnWidths()));
+            if (runtimeApi?.storage?.local) {
+                runtimeApi.storage.local.set({ [DEV1_QUEUE_COLUMN_WIDTHS_STORAGE_KEY]: getQueueColumnWidths() });
+            }
         } catch (_) { }
     }
 
@@ -1397,30 +1503,26 @@
     }
 
     function loadSavedSnapshotHelperEnabled() {
-        try {
-            state.snapshotHelperEnabled = localStorage.getItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY) !== 'false';
-        } catch (_) {
-            state.snapshotHelperEnabled = true;
-        }
+        // Handled by loadAllSavedStates()
     }
 
     function persistSnapshotHelperEnabled() {
         try {
-            localStorage.setItem(DEV1_SNAPSHOT_HELPER_STORAGE_KEY, state.snapshotHelperEnabled === true ? 'true' : 'false');
+            if (runtimeApi?.storage?.local) {
+                runtimeApi.storage.local.set({ [DEV1_SNAPSHOT_HELPER_STORAGE_KEY]: state.snapshotHelperEnabled === true });
+            }
         } catch (_) { }
     }
 
     function loadSavedSnapshotMhtmlFormatEnabled() {
-        try {
-            state.snapshotMhtmlFormatEnabled = localStorage.getItem(DEV1_SNAPSHOT_MHTML_FORMAT_STORAGE_KEY) !== 'false';
-        } catch (_) {
-            state.snapshotMhtmlFormatEnabled = true;
-        }
+        // Handled by loadAllSavedStates()
     }
 
     function persistSnapshotMhtmlFormatEnabled() {
         try {
-            localStorage.setItem(DEV1_SNAPSHOT_MHTML_FORMAT_STORAGE_KEY, state.snapshotMhtmlFormatEnabled === true ? 'true' : 'false');
+            if (runtimeApi?.storage?.local) {
+                runtimeApi.storage.local.set({ [DEV1_SNAPSHOT_MHTML_FORMAT_STORAGE_KEY]: state.snapshotMhtmlFormatEnabled === true });
+            }
         } catch (_) { }
     }
 
@@ -1436,16 +1538,14 @@
     }
 
     function loadSavedSnapshotMdFormatEnabled() {
-        try {
-            state.snapshotMdFormatEnabled = localStorage.getItem(DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY) === 'true';
-        } catch (_) {
-            state.snapshotMdFormatEnabled = false;
-        }
+        // Handled by loadAllSavedStates()
     }
 
     function persistSnapshotMdFormatEnabled() {
         try {
-            localStorage.setItem(DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY, state.snapshotMdFormatEnabled === true ? 'true' : 'false');
+            if (runtimeApi?.storage?.local) {
+                runtimeApi.storage.local.set({ [DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY]: state.snapshotMdFormatEnabled === true });
+            }
         } catch (_) { }
     }
 
@@ -1473,27 +1573,19 @@
     }
 
     function loadSavedReviewSession() {
-        try {
-            const raw = localStorage.getItem(DEV1_REVIEW_STORAGE_KEY);
-            if (!raw) {
-                state.reviewSession = createEmptyReviewSession();
-                return;
-            }
-            const parsed = JSON.parse(raw);
-            state.reviewSession = normalizeReviewSession(parsed);
-        } catch (_) {
-            state.reviewSession = createEmptyReviewSession();
-        }
+        // Handled by loadAllSavedStates()
     }
 
     function persistReviewSession() {
         try {
             const session = normalizeReviewSession(state.reviewSession || {});
-            if (session.windowId == null) {
-                localStorage.removeItem(DEV1_REVIEW_STORAGE_KEY);
-                return;
+            if (runtimeApi?.storage?.local) {
+                if (session.windowId == null) {
+                    runtimeApi.storage.local.remove(DEV1_REVIEW_STORAGE_KEY);
+                } else {
+                    runtimeApi.storage.local.set({ [DEV1_REVIEW_STORAGE_KEY]: session });
+                }
             }
-            localStorage.setItem(DEV1_REVIEW_STORAGE_KEY, JSON.stringify(session));
         } catch (_) { }
     }
 
@@ -1612,28 +1704,19 @@
     }
 
     function loadSavedQueueSnapshot() {
-        try {
-            const raw = localStorage.getItem(DEV1_QUEUE_STORAGE_KEY);
-            if (!raw) {
-                state.lockedQueueItems = [];
-                return;
-            }
-            const parsed = JSON.parse(raw);
-            state.lockedQueueItems = assignQueueBatchMetadata(parsed);
-            persistQueueSnapshot();
-        } catch (_) {
-            state.lockedQueueItems = [];
-        }
+        // Handled by loadAllSavedStates()
     }
 
     function persistQueueSnapshot() {
         try {
             const payload = cloneQueueItems(state.lockedQueueItems);
-            if (!payload.length) {
-                localStorage.removeItem(DEV1_QUEUE_STORAGE_KEY);
-                return;
+            if (runtimeApi?.storage?.local) {
+                if (!payload.length) {
+                    runtimeApi.storage.local.remove(DEV1_QUEUE_STORAGE_KEY);
+                } else {
+                    runtimeApi.storage.local.set({ [DEV1_QUEUE_STORAGE_KEY]: payload });
+                }
             }
-            localStorage.setItem(DEV1_QUEUE_STORAGE_KEY, JSON.stringify(payload));
         } catch (_) { }
     }
 
@@ -6918,17 +7001,7 @@
         if (!silentStatus) {
             setStatus(t('scopeRefreshingCurrentChanges'));
         }
-        if (!state.initialized) {
-            loadSavedReviewAutoReviewMs();
-            loadSavedQueueBatchSize();
-            loadSavedQueueColumnWidths();
-            loadSavedQueueSnapshot();
-            loadSavedReviewSession();
-            loadSavedWhitelist();
-            loadSavedSnapshotMhtmlFormatEnabled();
-            loadSavedSnapshotMdFormatEnabled();
-            state.initialized = true;
-        }
+        await loadAllSavedStates();
 
         const changeSourceState = getSourceState(SOURCE_CHANGES);
         try {
@@ -6973,17 +7046,7 @@
         if (!silentStatus) {
             setStatus(t('scopeRefreshingAllTabs'));
         }
-        if (!state.initialized) {
-            loadSavedReviewAutoReviewMs();
-            loadSavedQueueBatchSize();
-            loadSavedQueueColumnWidths();
-            loadSavedQueueSnapshot();
-            loadSavedReviewSession();
-            loadSavedWhitelist();
-            loadSavedSnapshotMhtmlFormatEnabled();
-            loadSavedSnapshotMdFormatEnabled();
-            state.initialized = true;
-        }
+        await loadAllSavedStates();
 
         const allTabsSourceState = getSourceState(SOURCE_ALL_TABS);
         try {
@@ -7022,17 +7085,7 @@
         if (state.running) return;
 
         setStatus(t('loading'));
-        if (!state.initialized) {
-            loadSavedReviewAutoReviewMs();
-            loadSavedQueueBatchSize();
-            loadSavedQueueColumnWidths();
-            loadSavedQueueSnapshot();
-            loadSavedReviewSession();
-            loadSavedWhitelist();
-            loadSavedSnapshotMhtmlFormatEnabled();
-            loadSavedSnapshotMdFormatEnabled();
-            state.initialized = true;
-        }
+        await loadAllSavedStates();
 
         const [bookmarkResult, changesResult, allTabsResult] = await Promise.allSettled([
             fetchBookmarkSourcePayload(),
@@ -7347,13 +7400,7 @@
         const root = getActiveRoot();
         if (!root) return;
 
-        if (!state.initialized) {
-            loadSavedReviewAutoReviewMs();
-            loadSavedQueueColumnWidths();
-            loadSavedSnapshotHelperEnabled();
-            loadSavedSnapshotMhtmlFormatEnabled();
-            loadSavedSnapshotMdFormatEnabled();
-        }
+        await loadAllSavedStates();
         renderLayout(root);
         bindRootEvents(root);
         renderScopePanelVisibility();
