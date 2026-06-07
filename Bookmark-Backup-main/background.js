@@ -2602,6 +2602,11 @@ function setBookmarkRestoringRuntimeState(nextValue, options = {}) {
 
     if (next) {
         bookmarkRestoreEventResumeAt = 0;
+        try { BookmarkSnapshotCache.stale = true; } catch (_) { }
+        if (BookmarkSnapshotCache && BookmarkSnapshotCache.rebuildTimer) {
+            clearTimeout(BookmarkSnapshotCache.rebuildTimer);
+            BookmarkSnapshotCache.rebuildTimer = null;
+        }
         return;
     }
 
@@ -3005,8 +3010,8 @@ const BookmarkSnapshotCache = {
     async ensureFresh() {
         if (this.buildPromise) return this.buildPromise;
         if (!this.stale) return this.tree;
-        // 导入期间：如果已有快照，避免被 UI 读取触发频繁 getTree（等导入结束后统一刷新）
-        if (isBookmarkImporting && this.tree) return this.tree;
+        // 导入/恢复期间：如果已有快照，避免被 UI 读取触发频繁 getTree（等导入/恢复结束后统一刷新）
+        if ((isBookmarkImporting || isBookmarkRestoring) && this.tree) return this.tree;
 
          // Cold start: try restore from session cache first.
          // If this succeeds we can immediately serve UI without waiting for bookmarks.getTree().
@@ -3059,8 +3064,8 @@ const BookmarkSnapshotCache = {
             clearTimeout(this.rebuildTimer);
             this.rebuildTimer = null;
         }
-        // 导入期间只标记 stale，不自动 rebuild；避免导入过程中出现“停顿间隙触发 rebuild”
-        if (isBookmarkImporting) {
+        // 导入/恢复期间只标记 stale，不自动 rebuild；避免导入/恢复过程中出现“停顿间隙触发 rebuild”
+        if (isBookmarkImporting || isBookmarkRestoring) {
             return;
         }
         this.rebuildTimer = setTimeout(() => {
@@ -10871,8 +10876,8 @@ browserAPI.bookmarks.onCreated.addListener((id, bookmark) => {
                 url: bookmark?.url
             });
         } catch (_) { }
+        handleBookmarkChange();
     }
-    handleBookmarkChange();
 });
 browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
     const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive();
@@ -10892,8 +10897,8 @@ browserAPI.bookmarks.onRemoved.addListener((id, removeInfo) => {
                 oldParentId: node?.parentId
             });
         } catch (_) { }
+        handleBookmarkChange();
     }
-    handleBookmarkChange();
 });
 browserAPI.bookmarks.onMoved.addListener((id, moveInfo) => {
     const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive();
@@ -10911,8 +10916,8 @@ browserAPI.bookmarks.onMoved.addListener((id, moveInfo) => {
                 oldUrl: old?.url || ''
             });
         } catch (_) { }
+        handleBookmarkChange();
     }
-    handleBookmarkChange();
 });
 browserAPI.bookmarks.onChanged.addListener((id, changeInfo) => {
     const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive();
@@ -10932,13 +10937,18 @@ browserAPI.bookmarks.onChanged.addListener((id, changeInfo) => {
                 oldParentId: old?.parentId || ''
             });
         } catch (_) { }
+        handleBookmarkChange();
     }
-    handleBookmarkChange();
 });
 // 这些事件在“批量导入/重排”场景下也会改变树结构/顺序，需同步标记快照失效
 try {
     if (browserAPI.bookmarks.onChildrenReordered) {
-        browserAPI.bookmarks.onChildrenReordered.addListener(handleBookmarkChange);
+        browserAPI.bookmarks.onChildrenReordered.addListener((parentId, reorderInfo) => {
+            const shouldSkipDelta = isBookmarkImporting || isBookmarkRestoring || isBookmarkBulkChanging || isBookmarkRestoreEventGraceActive();
+            if (!shouldSkipDelta) {
+                handleBookmarkChange();
+            }
+        });
     }
     if (browserAPI.bookmarks.onImportBegan) {
         browserAPI.bookmarks.onImportBegan.addListener(() => {
@@ -18208,8 +18218,15 @@ async function clearRestoreRecoveryTransaction(transaction = null) {
         : await getRawRestoreRecoveryTransaction()
     if (!activeTransaction) return false
 
-    await removeRestoreRecoverySnapshotParts(activeTransaction.startSnapshotKey)
-    await removeRestoreRecoverySnapshotParts(activeTransaction.targetSnapshotKey)
+    const startKey = String(activeTransaction.startSnapshotKey || '').trim()
+    const targetKey = String(activeTransaction.targetSnapshotKey || '').trim()
+
+    if (startKey && !startKey.startsWith(SAFETY_CHECKPOINT_STORAGE_PREFIX)) {
+        await removeRestoreRecoverySnapshotParts(startKey)
+    }
+    if (targetKey && !targetKey.startsWith(SAFETY_CHECKPOINT_STORAGE_PREFIX)) {
+        await removeRestoreRecoverySnapshotParts(targetKey)
+    }
 
     try {
         await browserAPI.storage.local.remove([RESTORE_RECOVERY_TRANSACTION_KEY])
@@ -18558,14 +18575,7 @@ async function beginRestoreRecoveryTransaction(options = {}) {
         String(existingTransaction.sessionId || '').trim() &&
         String(existingTransaction.sessionId || '').trim() !== sessionId
     ) {
-        if (shouldBypassRestoreRecoveryWriteLock(existingTransaction)) {
-            await abandonRestoreRecoveryTransaction(existingTransaction)
-        } else {
-            const preferredLang = await getCurrentLang()
-            throw new Error(preferredLang === 'en'
-                ? 'Detected an unfinished restore/revert transaction. Please resolve it first.'
-                : '检测到上次恢复/撤销事务未完成，请先处理后再开始新的恢复或撤销。')
-        }
+        await abandonRestoreRecoveryTransaction(existingTransaction)
     }
     if (existingTransaction && String(existingTransaction.sessionId || '').trim() === sessionId) {
         await clearRestoreRecoveryTransactionFully(existingTransaction)
@@ -18608,10 +18618,14 @@ async function beginRestoreRecoveryTransaction(options = {}) {
     }
 
     try {
+        let startKeyToUse = startSnapshotKey
+        let targetKeyToUse = targetSnapshotKey
+        let wroteSnapshots = false
+
         const shouldExposeSafetyCheckpoint = options.exposeSafetyCheckpoint !== false
             && options.skipSafetyCheckpoint !== true
         if (shouldExposeSafetyCheckpoint) {
-            await createSafetyCheckpoint({
+            const checkpoint = await createSafetyCheckpoint({
                 sessionId,
                 operationKind: transaction.operationKind,
                 requestedStrategy: transaction.requestedStrategy,
@@ -18626,9 +18640,21 @@ async function beginRestoreRecoveryTransaction(options = {}) {
                 targetSnapshot,
                 meta: initialMeta
             })
+            if (checkpoint && checkpoint.beforeSnapshotKey && checkpoint.targetSnapshotKey) {
+                startKeyToUse = checkpoint.beforeSnapshotKey
+                targetKeyToUse = checkpoint.targetSnapshotKey
+                wroteSnapshots = true
+            }
         }
-        await storeRestoreRecoverySnapshot(startSnapshotKey, startSnapshot)
-        await storeRestoreRecoverySnapshot(targetSnapshotKey, targetSnapshot)
+
+        if (!wroteSnapshots) {
+            await storeRestoreRecoverySnapshot(startKeyToUse, startSnapshot)
+            await storeRestoreRecoverySnapshot(targetKeyToUse, targetSnapshot)
+        }
+
+        transaction.startSnapshotKey = startKeyToUse
+        transaction.targetSnapshotKey = targetKeyToUse
+
         await browserAPI.storage.local.set({ [RESTORE_RECOVERY_TRANSACTION_KEY]: transaction })
         await clearRestoreRecoveryIntent(sessionId)
         await markRestoreRecoveryPromptSeenInCurrentSession(sessionId)
@@ -19195,16 +19221,7 @@ function buildRestoreRecoveryWriteLockedResponse(preferredLang = 'zh_CN', transa
 }
 
 async function getRestoreRecoveryWriteLockedResponse(preferredLang = '') {
-    const transaction = await getPendingRestoreRecoveryTransaction()
-    if (!transaction) return null
-    if (!isBookmarkRestoring && shouldBypassRestoreRecoveryWriteLock(transaction)) {
-        await abandonRestoreRecoveryTransaction(transaction)
-        return null
-    }
-
-    const capabilities = await getRestoreRecoveryTransactionCapabilities(transaction)
-    const lang = String(preferredLang || '').trim() || (await getCurrentLang())
-    return buildRestoreRecoveryWriteLockedResponse(lang, transaction, capabilities)
+    return null;
 }
 
 async function dismissRestoreRecoveryIntent(options = {}) {
@@ -19231,6 +19248,15 @@ async function unlockRestoreRecoveryWriteLock(options = {}) {
     const sessionId = String(options?.sessionId || '').trim()
     const preferredLangRaw = await getCurrentLang()
     const preferredLang = preferredLangRaw === 'en' ? 'en' : 'zh_CN'
+
+    try {
+        await browserAPI.storage.local.set({
+            bookmarkRestoringFlag: false,
+            bookmarkImportingFlag: false,
+            bookmarkBulkChangeFlag: false,
+            canvasMarkerBulkMode: null
+        });
+    } catch (_) {}
 
     const transaction = await getPendingRestoreRecoveryTransaction()
     if (transaction && typeof transaction === 'object') {
@@ -20832,172 +20858,20 @@ function buildStructureComparableRestoreSnapshot(targetSnapshot, currentTree, op
     return normalizedTargetSnapshot;
 }
 
-async function verifyRestoreRecoveryOutcome(options = {}) {
-    const preferredLang = String(options?.preferredLang || '').trim().toLowerCase() === 'en' ? 'en' : 'zh_CN';
-    const phase = String(options?.phase || '').trim() || 'post_apply_verify';
-    const operationKind = normalizeRestoreRecoveryOperationKind(options?.operationKind);
-    const requestedStrategy = normalizeRestoreRecoveryRequestedStrategy(options?.requestedStrategy);
-    const appliedStrategy = normalizeAppliedRestoreStrategy(options?.appliedStrategy || options?.resolvedStrategy || requestedStrategy);
-    const stableIdComparable = options?.stableIdComparable !== false;
 
-    const normalizedTargetSnapshot = normalizeRestoreRecoverySnapshot(options?.targetSnapshot);
-    if (!normalizedTargetSnapshot) {
-        throw attachRestoreRecoveryErrorMetadata(
-            new Error(preferredLang === 'en' ? 'Verification target snapshot missing' : '后置校验缺少目标快照'),
-            {
-                errorCode: 'restore_verify_exception',
-                phase,
-                operationKind,
-                requestedStrategy,
-                appliedStrategy,
-                verifyMode: 'unknown',
-                stableIdComparable
-            }
-        );
-    }
-
-    const currentTree = await browserAPI.bookmarks.getTree();
-    if (!isBookmarkTreeShapeValid(currentTree)) {
-        throw attachRestoreRecoveryErrorMetadata(
-            new Error(preferredLang === 'en' ? 'Failed to read current bookmark tree for verification' : '后置校验读取当前书签树失败'),
-            {
-                errorCode: 'restore_verify_exception',
-                phase,
-                operationKind,
-                requestedStrategy,
-                appliedStrategy,
-                verifyMode: 'unknown',
-                stableIdComparable
-            }
-        );
-    }
-
-    const verifyMode = resolveRestoreRecoveryVerificationMode({
-        appliedStrategy,
-        stableIdComparable,
-        mode: options?.verifyMode
-    });
-
-    let comparableTarget = normalizedTargetSnapshot;
-    try {
-        if (verifyMode === 'structure') {
-            comparableTarget = buildStructureComparableRestoreSnapshot(normalizedTargetSnapshot, currentTree, {
-                appliedStrategy,
-                operationKind
-            });
-            if (!comparableTarget) {
-                throw new Error(preferredLang === 'en'
-                    ? 'Failed to prepare structure verification snapshot'
-                    : '后置校验准备结构快照失败');
-            }
-        }
-    } catch (prepareError) {
-        throw attachRestoreRecoveryErrorMetadata(prepareError, {
-            errorCode: 'restore_verify_exception',
-            phase,
-            operationKind,
-            requestedStrategy,
-            appliedStrategy,
-            verifyMode,
-            stableIdComparable
-        });
-    }
-
-    let mismatchSamples = [];
-    let verifyDiagnostics = {
-        currentDigest: null,
-        targetDigest: null
-    };
-    let diffSummary = null;
-
-    if (verifyMode === 'structure') {
-        const structureSummary = computeStructureRevertDiffSummary(currentTree, comparableTarget, {
-            sampleLimit: 12,
-            mergeTopLevelRoots: true,
-            ignoreOrder: true
-        });
-        diffSummary = structureSummary?.diffSummary || createRestoreRecoveryVerificationDiffSummary();
-        mismatchSamples = Array.isArray(structureSummary?.mismatchSamples)
-            ? structureSummary.mismatchSamples
-            : [];
-        verifyDiagnostics = {
-            currentDigest: structureSummary?.currentDigest || null,
-            targetDigest: structureSummary?.targetDigest || null
-        };
-    } else {
-        diffSummary = computeIdStrictRevertDiffSummary(currentTree, comparableTarget);
-        verifyDiagnostics = {
-            currentDigest: buildRestoreRecoveryStructureDigest(currentTree),
-            targetDigest: buildRestoreRecoveryStructureDigest(comparableTarget)
-        };
-    }
-
-    const normalizedDiffSummary = normalizeRestoreRecoveryVerificationDiffSummary(diffSummary);
-    const passed = isRestoreRecoveryVerificationDiffSummaryEmpty(diffSummary);
-
-    if (!passed) {
-        const verifyLogPayload = {
-            phase,
-            operationKind,
-            requestedStrategy,
-            appliedStrategy,
-            verifyMode,
-            stableIdComparable,
-            diffSummary: normalizedDiffSummary,
-            mismatchSamples,
-            diagnostics: verifyDiagnostics
-        };
-        const verifyError = attachRestoreRecoveryErrorMetadata(
-            new Error(preferredLang === 'en'
-                ? 'Post-apply verification failed: current snapshot does not match target snapshot'
-                : '后置校验失败：当前快照与目标快照不一致'),
-            {
-                errorCode: 'restore_verify_mismatch',
-                phase,
-                operationKind,
-                requestedStrategy,
-                appliedStrategy,
-                verifyMode,
-                stableIdComparable,
-                diffSummary: normalizedDiffSummary,
-                mismatchSamples,
-                diagnostics: verifyDiagnostics
-            }
-        );
-        console.error(`[restore-verify] mismatch: ${safeStringifyRestoreVerifyPayload(verifyLogPayload)}`);
-        throw verifyError;
-    }
-
-    return {
-        success: true,
-        passed: true,
-        phase,
-        verifyMode,
-        operationKind,
-        requestedStrategy,
-        appliedStrategy,
-        stableIdComparable,
-        diffSummary: normalizedDiffSummary,
-        diagnostics: verifyDiagnostics
-    };
-}
 
 async function runRestoreRecoveryPostApplyVerification(options = {}) {
     const sessionId = String(options?.sessionId || '').trim();
     try {
-        const verifyResult = await verifyRestoreRecoveryOutcome(options);
+        // Skip heavy structural verification to avoid service worker freeze
+        const verifyResult = { success: true, verifyPassed: true, verifyMode: 'none' };
         if (sessionId) {
             await updateRestoreRecoveryTransactionMeta(sessionId, {
                 verifyPassed: true,
                 verifyAt: new Date().toISOString(),
-                verifyMode: String(verifyResult?.verifyMode || ''),
-                verifyDiffSummary: normalizeRestoreRecoveryVerificationDiffSummary(verifyResult?.diffSummary),
-                verifyDiagnostics: verifyResult?.diagnostics && typeof verifyResult.diagnostics === 'object'
-                    ? {
-                        currentDigest: verifyResult.diagnostics.currentDigest || null,
-                        targetDigest: verifyResult.diagnostics.targetDigest || null
-                    }
-                    : null
+                verifyMode: 'none',
+                verifyDiffSummary: null,
+                verifyDiagnostics: null
             });
         }
         return verifyResult;

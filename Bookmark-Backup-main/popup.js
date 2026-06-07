@@ -98,6 +98,7 @@ let backupHistorySlimmingState = {
 };
 let backupHistorySlimmingStateLoaded = false;
 let latestSafetyCheckpointState = null;
+let openLatestSafetyCheckpointDialogRef = null;
 
 // =============================================================================
 // 辅助函数 (Helper Functions)
@@ -1259,879 +1260,6 @@ function formatRestoreRecoveryUiSourceLabel(value, lang) {
     return isEn ? 'Main UI' : '主 UI';
 }
 
-async function showRestoreRecoveryBlockingOverlay(initialStatus = null) {
-    if (restoreRecoveryBlockingOverlayState && restoreRecoveryBlockingOverlayState.overlay?.isConnected) {
-        return;
-    }
-
-    const lang = await getPopupPreferredLang();
-    const isEn = lang === 'en';
-
-    const overlay = document.createElement('div');
-    overlay.id = 'restoreRecoveryBlockingOverlay';
-    overlay.style.cssText = `
-        position: fixed;
-        inset: 0;
-        z-index: 2147483647;
-        background: rgba(15, 23, 42, 0.58);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 12px;
-        box-sizing: border-box;
-        backdrop-filter: blur(2px);
-    `;
-
-    const panel = document.createElement('div');
-    panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-modal', 'true');
-    panel.style.cssText = `
-        width: min(420px, calc(100vw - 24px));
-        max-height: calc(100vh - 24px);
-        overflow: auto;
-        background: var(--theme-bg-elevated);
-        color: var(--theme-text-primary);
-        border: 1px solid var(--theme-border-primary);
-        border-radius: 14px;
-        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
-        padding: 18px;
-        box-sizing: border-box;
-    `;
-
-    panel.innerHTML = `
-        <div style="display:flex;flex-direction:column;gap:12px;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-                <div style="display:flex;flex-direction:column;gap:6px;min-width:0;">
-                    <div style="font-size:18px;font-weight:700;color:var(--theme-text-primary);">${isEn ? 'Resolve Unfinished Restore/Revert' : '处理未完成的恢复/撤销事务'}</div>
-                    <div style="font-size:13px;line-height:1.6;color:var(--theme-text-secondary);">${isEn ? 'An unfinished restore/revert transaction was detected. You can resolve it now, or close and unlock it.' : '检测到一次未完成的恢复/撤销事务。你可以现在处理，或直接关闭并解锁。'}</div>
-                </div>
-                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-                    <button id="restoreRecoveryQuickExportBtn" style="min-width:128px;padding:6px 10px;border:1px solid var(--theme-border-primary);border-radius:999px;background:transparent;color:var(--theme-text-primary);font-size:12px;font-weight:600;cursor:pointer;">${isEn ? 'Export 2-HTML' : '导出2个HTML'}</button>
-                    <button id="restoreRecoveryUnlockBtn" style="min-width:132px;padding:6px 10px;border:1px dashed var(--theme-border-primary);border-radius:999px;background:transparent;color:var(--theme-text-secondary);font-size:12px;font-weight:600;cursor:pointer;">${isEn ? 'Unlock & Stop Prompt' : '不再弹出并解锁'}</button>
-                    <div id="restoreRecoveryPromptCountBadge" style="display:none;align-items:center;justify-content:center;min-width:44px;padding:4px 8px;border-radius:999px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border-primary);font-size:12px;font-weight:700;color:var(--theme-text-secondary);white-space:nowrap;flex-shrink:0;"></div>
-                </div>
-            </div>
-            <div id="restoreRecoveryBlockingSummary" style="display:grid;grid-template-columns:max-content 1fr;gap:8px 12px;padding:12px;border-radius:10px;background:var(--theme-bg-secondary);border:1px solid var(--theme-border-primary);font-size:13px;"></div>
-            <div id="restoreRecoveryBlockingMessage" style="padding:10px 12px;border-radius:10px;background:var(--theme-status-info-bg);color:var(--theme-status-info-text);border:1px solid var(--theme-status-info-border);font-size:13px;line-height:1.6;"></div>
-            <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
-                <button id="restoreRecoveryDismissBtn" style="display:none;min-width:148px;padding:10px 14px;border:1px dashed var(--theme-border-primary);border-radius:10px;background:transparent;color:var(--theme-text-secondary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Close & Unlock' : '关闭并解锁'}</button>
-                <button id="restoreRecoveryExportBackupBtn" style="min-width:148px;padding:10px 14px;border:1px solid var(--theme-border-primary);border-radius:10px;background:transparent;color:var(--theme-text-primary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Export Backup Package' : '导出备份包（2个HTML）'}</button>
-                <button id="restoreRecoveryRollbackBtn" style="min-width:148px;padding:10px 14px;border:1px solid var(--theme-border-primary);border-radius:10px;background:var(--theme-bg-primary);color:var(--theme-text-primary);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Rollback to Start' : '回滚到开始前状态'}</button>
-                <button id="restoreRecoveryContinueBtn" style="min-width:148px;padding:10px 14px;border:none;border-radius:10px;background:var(--theme-accent-color);color:var(--theme-text-on-accent);font-size:13px;font-weight:600;cursor:pointer;">${isEn ? 'Continue to Target' : '继续到目标状态'}</button>
-            </div>
-        </div>
-    `;
-
-    overlay.appendChild(panel);
-    document.body.appendChild(overlay);
-
-    const summary = panel.querySelector('#restoreRecoveryBlockingSummary');
-    const message = panel.querySelector('#restoreRecoveryBlockingMessage');
-    const promptCountBadge = panel.querySelector('#restoreRecoveryPromptCountBadge');
-    const quickExportBtn = panel.querySelector('#restoreRecoveryQuickExportBtn');
-    const unlockBtn = panel.querySelector('#restoreRecoveryUnlockBtn');
-    const dismissBtn = panel.querySelector('#restoreRecoveryDismissBtn');
-    const exportBackupBtn = panel.querySelector('#restoreRecoveryExportBackupBtn');
-    const continueBtn = panel.querySelector('#restoreRecoveryContinueBtn');
-    const rollbackBtn = panel.querySelector('#restoreRecoveryRollbackBtn');
-
-    const state = {
-        overlay,
-        panel,
-        summary,
-        message,
-        promptCountBadge,
-        quickExportBtn,
-        unlockBtn,
-        dismissBtn,
-        exportBackupBtn,
-        continueBtn,
-        rollbackBtn,
-        lang,
-        actionRunning: false,
-        actionType: '',
-        actionStartedAt: 0,
-        lastStatus: null,
-        timer: null,
-        actionHintTimer: null,
-        unlockConfirmOpen: false,
-        unlockConfirmCleanup: null,
-        thresholdUnlockPromptedSessionId: '',
-        thresholdUnlockPromptedAtCount: 0,
-        keydownHandler: null,
-        focusHandler: null
-    };
-    restoreRecoveryBlockingOverlayState = state;
-
-    const continueIdleText = isEn ? 'Continue to Target' : '继续到目标状态';
-    const rollbackIdleText = isEn ? 'Rollback to Start' : '回滚到开始前状态';
-    const exportIdleText = isEn ? 'Export Backup Package' : '导出备份包（2个HTML）';
-    const quickExportIdleText = isEn ? 'Export 2-HTML' : '导出2个HTML';
-    const unlockIdleText = isEn ? 'Unlock & Stop Prompt' : '不再弹出并解锁';
-    const buildPostUnlockFollowupHint = (transaction = null) => {
-        const hasSafetyCheckpoint = transaction && transaction.hasSafetyCheckpoint === true;
-        if (hasSafetyCheckpoint) {
-            return isEn
-                ? 'If rollback is needed later, open "Temporary Safety Snapshot" on the right side of the "Backup History" title.'
-                : '若后续需要回滚，请到“备份历史”标题右侧的「临时安全快照」。';
-        }
-        return isEn
-            ? 'If rollback is needed later, export the 2-HTML backup package before unlocking, or re-run restore/revert from the original entry.'
-            : '若后续需要回滚，请在解锁前先导出2个HTML备份包，或从原入口重新执行恢复/撤销。';
-    };
-
-    const applyActionButtonLabels = (actionType = '') => {
-        if (actionType === 'continue') {
-            continueBtn.textContent = isEn ? 'Continuing…' : '继续处理中…';
-            rollbackBtn.textContent = rollbackIdleText;
-            exportBackupBtn.textContent = exportIdleText;
-            if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
-            if (unlockBtn) unlockBtn.textContent = unlockIdleText;
-            return;
-        }
-        if (actionType === 'rollback') {
-            rollbackBtn.textContent = isEn ? 'Rolling back…' : '回滚处理中…';
-            continueBtn.textContent = continueIdleText;
-            exportBackupBtn.textContent = exportIdleText;
-            if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
-            if (unlockBtn) unlockBtn.textContent = unlockIdleText;
-            return;
-        }
-        if (actionType === 'export') {
-            exportBackupBtn.textContent = isEn ? 'Exporting…' : '导出中…';
-            if (quickExportBtn) quickExportBtn.textContent = isEn ? 'Exporting…' : '导出中…';
-            continueBtn.textContent = continueIdleText;
-            rollbackBtn.textContent = rollbackIdleText;
-            if (unlockBtn) unlockBtn.textContent = unlockIdleText;
-            return;
-        }
-        if (actionType === 'unlock') {
-            if (unlockBtn) unlockBtn.textContent = isEn ? 'Unlocking…' : '解锁中…';
-            continueBtn.textContent = continueIdleText;
-            rollbackBtn.textContent = rollbackIdleText;
-            exportBackupBtn.textContent = exportIdleText;
-            if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
-            return;
-        }
-        continueBtn.textContent = continueIdleText;
-        rollbackBtn.textContent = rollbackIdleText;
-        exportBackupBtn.textContent = exportIdleText;
-        if (quickExportBtn) quickExportBtn.textContent = quickExportIdleText;
-        if (unlockBtn) unlockBtn.textContent = unlockIdleText;
-    };
-
-    const setMessage = (textValue, tone = 'info') => {
-        const palette = tone === 'error'
-            ? {
-                background: 'var(--theme-status-error-bg)',
-                color: 'var(--theme-status-error-text)',
-                border: 'var(--theme-status-error-border)'
-            }
-            : {
-                background: 'var(--theme-status-info-bg)',
-                color: 'var(--theme-status-info-text)',
-                border: 'var(--theme-status-info-border)'
-            };
-        message.textContent = textValue;
-        message.style.background = palette.background;
-        message.style.color = palette.color;
-        message.style.border = `1px solid ${palette.border}`;
-    };
-
-    const showUnlockSecondaryConfirm = (options = {}) => {
-        if (state.unlockConfirmOpen) {
-            return Promise.resolve('cancel');
-        }
-
-        const thresholdReached = options && options.thresholdReached === true;
-        const titleText = thresholdReached
-            ? (isEn ? 'Reminder Threshold Reached' : '已达到提醒阈值')
-            : (isEn ? 'Confirm Unlock' : '确认解锁');
-        const detailText = thresholdReached
-            ? (isEn
-                ? 'This transaction has reached the reminder threshold. It is recommended to manually back up first (export 2 HTML files), then unlock to stop further prompts.'
-                : '该事务已达到提醒阈值。建议先手动备份（导出2个HTML），再解锁并停止后续提醒。')
-            : (isEn
-                ? 'Before unlocking, it is recommended to manually back up first (export 2 HTML files). Unlocking will clear this unfinished transaction.'
-                : '解锁前建议先手动备份（导出2个HTML）。解锁会清理当前未完成事务。');
-        const unlockButtonText = thresholdReached
-            ? (isEn ? 'Stop Prompt & Unlock' : '停止提醒并解锁')
-            : (isEn ? 'Unlock Now' : '直接解锁');
-
-        state.unlockConfirmOpen = true;
-        return new Promise((resolve) => {
-            const layer = document.createElement('div');
-            layer.style.cssText = `
-                position: fixed;
-                inset: 0;
-                z-index: 2147483647;
-                background: rgba(2, 6, 23, 0.36);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                padding: 12px;
-                box-sizing: border-box;
-            `;
-
-            const card = document.createElement('div');
-            card.setAttribute('role', 'dialog');
-            card.setAttribute('aria-modal', 'true');
-            card.style.cssText = `
-                width: min(360px, calc(100vw - 32px));
-                background: var(--theme-bg-elevated);
-                color: var(--theme-text-primary);
-                border: 1px solid var(--theme-border-primary);
-                border-radius: 12px;
-                box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
-                padding: 14px;
-                box-sizing: border-box;
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-            `;
-
-            card.innerHTML = `
-                <div style="font-size:15px;font-weight:700;">${titleText}</div>
-                <div style="font-size:12px;line-height:1.6;color:var(--theme-text-secondary);">${detailText}</div>
-                <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
-                    <button id="restoreRecoveryUnlockCancelBtn" style="min-width:92px;padding:8px 10px;border:1px dashed var(--theme-border-primary);border-radius:8px;background:transparent;color:var(--theme-text-secondary);font-size:12px;font-weight:600;cursor:pointer;">${isEn ? 'Cancel' : '取消'}</button>
-                    <button id="restoreRecoveryUnlockDirectBtn" style="min-width:118px;padding:8px 10px;border:1px solid var(--theme-border-primary);border-radius:8px;background:var(--theme-bg-primary);color:var(--theme-text-primary);font-size:12px;font-weight:600;cursor:pointer;">${unlockButtonText}</button>
-                    <button id="restoreRecoveryUnlockBackupBtn" style="min-width:132px;padding:8px 10px;border:none;border-radius:8px;background:var(--theme-accent-color);color:var(--theme-text-on-accent);font-size:12px;font-weight:700;cursor:pointer;">${isEn ? 'Manual Backup (2-HTML)' : '手动备份（2个HTML）'}</button>
-                </div>
-            `;
-
-            layer.appendChild(card);
-            document.body.appendChild(layer);
-
-            const backupBtn = card.querySelector('#restoreRecoveryUnlockBackupBtn');
-            const unlockDirectBtn = card.querySelector('#restoreRecoveryUnlockDirectBtn');
-            const cancelBtn = card.querySelector('#restoreRecoveryUnlockCancelBtn');
-
-            const cleanup = () => {
-                if (!state.unlockConfirmOpen) return;
-                state.unlockConfirmOpen = false;
-                if (state.unlockConfirmCleanup === cleanup) {
-                    state.unlockConfirmCleanup = null;
-                }
-                document.removeEventListener('keydown', onKeyDown, true);
-                if (layer.parentNode) {
-                    layer.parentNode.removeChild(layer);
-                }
-            };
-            state.unlockConfirmCleanup = cleanup;
-
-            const settle = (choice) => {
-                cleanup();
-                resolve(choice);
-            };
-
-            const onKeyDown = (event) => {
-                if (event.key === 'Escape') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    settle('cancel');
-                }
-            };
-
-            layer.addEventListener('click', (event) => {
-                if (event.target === layer) {
-                    settle('cancel');
-                }
-            });
-            if (cancelBtn) cancelBtn.addEventListener('click', () => settle('cancel'));
-            if (unlockDirectBtn) unlockDirectBtn.addEventListener('click', () => settle('unlock'));
-            if (backupBtn) backupBtn.addEventListener('click', () => settle('export'));
-            document.addEventListener('keydown', onKeyDown, true);
-        });
-    };
-
-    const formatFailureReason = (transaction = {}) => {
-        const action = String(transaction.lastFailureAction || '').trim().toLowerCase();
-        const stage = String(transaction.lastFailureStage || '').trim();
-        const category = String(transaction.lastFailureCategory || '').trim().toLowerCase();
-        const errorMessage = String(transaction.lastFailureMessage || '').trim();
-        const actionLabel = action === 'rollback'
-            ? (isEn ? 'Rollback' : '回滚')
-            : (action === 'continue' ? (isEn ? 'Continue' : '继续') : '');
-        const categoryLabel = category === 'algorithm_error'
-            ? (isEn ? 'Algorithm Error' : '算法错误')
-            : (category === 'browser_or_environment_error'
-                ? (isEn ? 'Browser/Environment Error' : '浏览器限制/环境错误')
-                : (category === 'other_error' ? (isEn ? 'Other Error' : '其他错误') : ''));
-        const parts = [];
-        if (actionLabel) {
-            parts.push(isEn ? `Action=${actionLabel}` : `动作=${actionLabel}`);
-        }
-        if (categoryLabel) {
-            parts.push(isEn ? `Type=${categoryLabel}` : `类型=${categoryLabel}`);
-        }
-        if (stage) {
-            parts.push(isEn ? `Stage=${stage}` : `阶段=${stage}`);
-        }
-        if (errorMessage) {
-            parts.push(errorMessage);
-        }
-        return parts.join(' | ');
-    };
-
-    const renderSummary = (status) => {
-        const transaction = status?.transaction || {};
-        const rows = [
-            [isEn ? 'Operation' : '操作类型', String(transaction.operationKind || '').toLowerCase() === 'revert' ? (isEn ? 'Revert' : '撤销') : (isEn ? 'Restore' : '恢复')],
-            [isEn ? 'Strategy' : '执行策略', String(transaction.resolvedStrategy || '').toLowerCase() === 'patch'
-                ? (isEn ? 'Patch' : '补丁')
-                : (String(transaction.resolvedStrategy || '').toLowerCase() === 'merge'
-                    ? (isEn ? 'Merge' : '导入合并')
-                    : (isEn ? 'Overwrite' : '覆盖'))],
-            [isEn ? 'Source' : '来源位置', formatRestoreRecoveryUiSourceLabel(transaction.uiSource, lang)],
-            [isEn ? 'Phase' : '当前阶段', formatRestoreRecoveryPhaseLabel(transaction.phase, lang)],
-            [isEn ? 'Started' : '开始时间', formatRestoreRecoveryTimeLabel(transaction.startedAt || transaction.updatedAt, lang)]
-        ];
-        const titleText = String(transaction.displayTitle || '').trim();
-        if (titleText) {
-            rows.push([isEn ? 'Title' : '标题备注', titleText]);
-        }
-        const failureReason = formatFailureReason(transaction);
-        if (failureReason) {
-            rows.push([isEn ? 'Last Failure' : '最近失败', failureReason]);
-        }
-        summary.innerHTML = '';
-        rows.forEach(([label, value]) => {
-            const labelEl = document.createElement('div');
-            labelEl.textContent = `${label}：`;
-            labelEl.style.color = 'var(--theme-text-secondary)';
-            labelEl.style.fontWeight = '600';
-            const valueEl = document.createElement('div');
-            valueEl.textContent = value || '-';
-            valueEl.style.color = 'var(--theme-text-primary)';
-            valueEl.style.wordBreak = 'break-word';
-            summary.appendChild(labelEl);
-            summary.appendChild(valueEl);
-        });
-    };
-
-    const applyStatus = (status) => {
-        state.lastStatus = status;
-        const transaction = status?.transaction || null;
-        if (!transaction) {
-            closeRestoreRecoveryBlockingOverlay();
-            window.location.reload();
-            return;
-        }
-        const canContinue = transaction.canContinue !== false;
-        const canRollback = transaction.canRollback !== false;
-        const isIntentOnly = transaction.intentOnly === true;
-        const isActive = status?.active === true;
-        const phase = String(transaction.phase || '').trim().toLowerCase();
-        const lockedIncident = transaction.lockedIncident === true || phase === 'locked_incident';
-        const promptCount = Math.max(0, Number(transaction.promptCount) || 0);
-        const promptThreshold = Math.max(1, Number(transaction.promptThreshold) || 3);
-        const canDismissPanel = transaction.canDismissPanel === true;
-        const canExportBackupPackage = transaction.canExportBackupPackage === true;
-        const canUnlockNow = true;
-        const allowDismiss = true;
-        const sessionId = String(transaction.sessionId || '').trim();
-        const failureReason = formatFailureReason(transaction);
-        if (state.thresholdUnlockPromptedSessionId !== sessionId) {
-            state.thresholdUnlockPromptedSessionId = sessionId;
-            state.thresholdUnlockPromptedAtCount = 0;
-        }
-        const shouldAutoPromptThresholdUnlock = canDismissPanel
-            && !isIntentOnly
-            && !isActive
-            && !state.actionRunning
-            && !state.unlockConfirmOpen
-            && promptCount === promptThreshold
-            && state.thresholdUnlockPromptedAtCount !== promptCount;
-        dismissBtn.textContent = isIntentOnly
-            ? (isEn ? 'Close Reminder' : '关闭提醒')
-            : (isEn ? 'Close & Unlock' : '关闭并解锁');
-        renderSummary(status);
-
-        if (promptCount > 0) {
-            promptCountBadge.style.display = 'inline-flex';
-            promptCountBadge.textContent = promptCount > promptThreshold
-                ? `${promptThreshold}/${promptThreshold}+`
-                : `${promptCount}/${promptThreshold}`;
-        } else {
-            promptCountBadge.style.display = 'none';
-            promptCountBadge.textContent = '';
-        }
-
-        continueBtn.disabled = state.actionRunning || isActive || !canContinue;
-        rollbackBtn.disabled = state.actionRunning || isActive || !canRollback;
-        exportBackupBtn.disabled = state.actionRunning || isActive || !canExportBackupPackage;
-        if (quickExportBtn) quickExportBtn.disabled = state.actionRunning || isActive || !canExportBackupPackage;
-        if (unlockBtn) unlockBtn.disabled = state.actionRunning || isActive || !canUnlockNow;
-        dismissBtn.disabled = state.actionRunning || isActive || !allowDismiss;
-        dismissBtn.style.display = allowDismiss ? 'inline-flex' : 'none';
-
-        continueBtn.style.opacity = continueBtn.disabled ? '0.55' : '1';
-        rollbackBtn.style.opacity = rollbackBtn.disabled ? '0.55' : '1';
-        exportBackupBtn.style.opacity = exportBackupBtn.disabled ? '0.55' : '1';
-        if (quickExportBtn) quickExportBtn.style.opacity = quickExportBtn.disabled ? '0.55' : '1';
-        if (unlockBtn) unlockBtn.style.opacity = unlockBtn.disabled ? '0.55' : '1';
-        dismissBtn.style.opacity = dismissBtn.disabled ? '0.55' : '1';
-        continueBtn.style.cursor = continueBtn.disabled ? 'not-allowed' : 'pointer';
-        rollbackBtn.style.cursor = rollbackBtn.disabled ? 'not-allowed' : 'pointer';
-        exportBackupBtn.style.cursor = exportBackupBtn.disabled ? 'not-allowed' : 'pointer';
-        if (quickExportBtn) quickExportBtn.style.cursor = quickExportBtn.disabled ? 'not-allowed' : 'pointer';
-        if (unlockBtn) unlockBtn.style.cursor = unlockBtn.disabled ? 'not-allowed' : 'pointer';
-        dismissBtn.style.cursor = dismissBtn.disabled ? 'not-allowed' : 'pointer';
-        if (!state.actionRunning) {
-            applyActionButtonLabels('');
-        }
-
-        if (state.actionRunning) {
-            return;
-        }
-        if (isActive) {
-            setMessage(isEn ? 'A restore/revert task is currently running in the background. Please wait…' : '后台正在执行恢复/撤销任务，请稍候……', 'info');
-            return;
-        }
-        if (isIntentOnly) {
-            setMessage(
-                isEn
-                    ? 'Detected interruption before target snapshot finished preparing. Continue/Rollback is unavailable now. Please re-run restore/revert from the original entry.'
-                    : '检测到在目标快照准备完成前发生中断。当前无法继续或回滚，请从原入口重新执行恢复/撤销。',
-                'error'
-            );
-            return;
-        }
-        if (lockedIncident) {
-            setMessage(
-                isEn
-                    ? `Continue and rollback both failed. Export the backup package first.${failureReason ? ` ${failureReason}` : ''}`
-                    : `继续和回滚都失败，当前已锁定为故障态。请先导出备份包。${failureReason ? ` ${failureReason}` : ''}`,
-                'error'
-            );
-            return;
-        }
-        if (phase === 'continue_failed') {
-            setMessage(
-                isEn
-                    ? `Continue failed. You can roll back, or export backup package first.${failureReason ? ` ${failureReason}` : ''}`
-                    : `继续失败。你可以先回滚，或先导出备份包。${failureReason ? ` ${failureReason}` : ''}`,
-                'error'
-            );
-            return;
-        }
-        if (phase === 'rollback_failed') {
-            setMessage(
-                isEn
-                    ? `Rollback failed. You can continue to target, or export backup package first.${failureReason ? ` ${failureReason}` : ''}`
-                    : `回滚失败。你可以继续到目标状态，或先导出备份包。${failureReason ? ` ${failureReason}` : ''}`,
-                'error'
-            );
-            return;
-        }
-        if (!canContinue && !canRollback) {
-            setMessage(
-                isEn
-                    ? `Transaction snapshots are temporarily unavailable.${failureReason ? ` ${failureReason}` : ''}`
-                    : `事务快照暂时不可用。${failureReason ? ` ${failureReason}` : ''}`,
-                'error'
-            );
-            return;
-        }
-        if (!canContinue) {
-            setMessage(isEn ? 'Continue is unavailable right now. You must roll back to the state before it started.' : '当前无法继续到目标状态，你必须执行回滚。', 'error');
-            return;
-        }
-        if (!canRollback) {
-            setMessage(isEn ? 'Rollback is unavailable right now. You must continue to the target state.' : '当前无法回滚到开始前状态，你必须继续到目标状态。', 'error');
-            return;
-        }
-        if (promptThreshold > 1 && promptCount === promptThreshold - 1) {
-            setMessage(
-                isEn
-                    ? `Final reminder (${promptCount}/${promptThreshold}): skip it again and, after the next browser restart, this panel will no longer appear; rollback to the pre-start snapshot will no longer be available.`
-                    : `最后一次提醒（${promptCount}/${promptThreshold}）：若这次仍不处理，在下次浏览器重启后将不再显示此面板，且无法再回滚到开始前快照。`,
-                'error'
-            );
-            return;
-        }
-        if (canDismissPanel) {
-            setMessage(
-                isEn
-                    ? `Reminder threshold reached (${promptCount}/${promptThreshold}). It is recommended to manually back up first (export 2 HTML files), then unlock to stop further prompts.`
-                    : `已达到提醒阈值（${promptCount}/${promptThreshold}）。建议先手动备份（导出2个HTML），再执行解锁并停止后续提醒。`,
-                'info'
-            );
-            if (shouldAutoPromptThresholdUnlock) {
-                state.thresholdUnlockPromptedAtCount = promptCount;
-                window.setTimeout(async () => {
-                    if (restoreRecoveryBlockingOverlayState !== state) return;
-                    if (state.actionRunning || state.unlockConfirmOpen) return;
-                    const decision = await showUnlockSecondaryConfirm({ thresholdReached: true });
-                    if (restoreRecoveryBlockingOverlayState !== state) return;
-                    handleUnlockDecision(decision, 'threshold');
-                }, 0);
-            }
-            return;
-        }
-        setMessage(isEn
-            ? 'Choose continue/rollback, or close and unlock this unfinished transaction now.'
-            : '你可以继续/回滚，也可以现在关闭并解锁这次未完成事务。', 'info');
-    };
-
-    const refreshStatus = async () => {
-        try {
-            const latest = await callBackgroundFunction('getRestoreRecoveryTransactionStatus');
-            if (!latest || latest.success !== true) {
-                setMessage(
-                    isEn ? `Status check failed: ${latest && latest.error ? latest.error : 'Unknown error'}` : `状态检测失败：${latest && latest.error ? latest.error : '未知错误'}`,
-                    'error'
-                );
-                return;
-            }
-            applyStatus(latest);
-        } catch (error) {
-            setMessage(isEn ? `Status check failed: ${error?.message || error}` : `状态检测失败：${error?.message || error}`, 'error');
-        }
-    };
-
-    const runAction = async (action) => {
-        const actionType = action === 'continueRestoreRecoveryTransaction'
-            ? 'continue'
-            : (action === 'rollbackRestoreRecoveryTransaction'
-                ? 'rollback'
-                : (action === 'unlockRestoreRecoveryWriteLock' ? 'unlock' : 'export'));
-        const actionLabel = actionType === 'continue'
-            ? (isEn ? 'Continue' : '继续')
-            : (actionType === 'rollback'
-                ? (isEn ? 'Rollback' : '回滚')
-                : (actionType === 'unlock' ? (isEn ? 'Unlock' : '解锁') : (isEn ? 'Export Backup Package' : '导出备份包')));
-        if (typeof state.unlockConfirmCleanup === 'function') {
-            state.unlockConfirmCleanup();
-        }
-        state.actionRunning = true;
-        state.actionType = actionType;
-        state.actionStartedAt = Date.now();
-        continueBtn.disabled = true;
-        rollbackBtn.disabled = true;
-        exportBackupBtn.disabled = true;
-        if (quickExportBtn) quickExportBtn.disabled = true;
-        if (unlockBtn) unlockBtn.disabled = true;
-        dismissBtn.disabled = true;
-        continueBtn.style.opacity = '0.55';
-        rollbackBtn.style.opacity = '0.55';
-        exportBackupBtn.style.opacity = '0.55';
-        if (quickExportBtn) quickExportBtn.style.opacity = '0.55';
-        if (unlockBtn) unlockBtn.style.opacity = '0.55';
-        dismissBtn.style.opacity = '0.55';
-        applyActionButtonLabels(actionType);
-
-        const renderActionProgressMessage = () => {
-            const elapsedSeconds = Math.max(0, Math.floor((Date.now() - state.actionStartedAt) / 1000));
-            if (actionType === 'continue') {
-                setMessage(
-                    isEn
-                        ? `Continuing to the target state… (${elapsedSeconds}s)`
-                        : `正在继续到目标状态……（${elapsedSeconds}秒）`,
-                    'info'
-                );
-                return;
-            }
-            if (actionType === 'rollback') {
-                setMessage(
-                    isEn
-                        ? `Rolling back to the state before it started… (${elapsedSeconds}s)`
-                        : `正在回滚到开始前状态……（${elapsedSeconds}秒）`,
-                    'info'
-                );
-                return;
-            }
-            if (actionType === 'unlock') {
-                setMessage(
-                    isEn
-                        ? `Unlocking and stopping further prompts… (${elapsedSeconds}s)`
-                        : `正在解锁并停止后续弹窗……（${elapsedSeconds}秒）`,
-                    'info'
-                );
-                return;
-            }
-            setMessage(
-                isEn
-                    ? `Exporting backup package… (${elapsedSeconds}s)`
-                    : `正在导出备份包……（${elapsedSeconds}秒）`,
-                'info'
-            );
-        };
-
-        renderActionProgressMessage();
-        if (state.actionHintTimer) {
-            window.clearInterval(state.actionHintTimer);
-        }
-        state.actionHintTimer = window.setInterval(() => {
-            if (!state.actionRunning) return;
-            renderActionProgressMessage();
-        }, 1000);
-
-        try {
-            const actionPayload = (actionType === 'export' || actionType === 'unlock')
-                ? { sessionId: state.lastStatus?.transaction?.sessionId || '' }
-                : {};
-            const result = await callBackgroundFunction(action, actionPayload);
-            if (!result || result.success !== true) {
-                state.actionRunning = false;
-                state.actionType = '';
-                if (state.actionHintTimer) {
-                    window.clearInterval(state.actionHintTimer);
-                    state.actionHintTimer = null;
-                }
-                applyActionButtonLabels('');
-                await refreshStatus();
-                setMessage(
-                    isEn
-                        ? `${actionLabel} failed: ${result && result.error ? result.error : 'Unknown error'}`
-                        : `${actionLabel}失败：${result && result.error ? result.error : '未知错误'}`,
-                    'error'
-                );
-                return;
-            }
-            state.actionRunning = false;
-            state.actionType = '';
-            if (state.actionHintTimer) {
-                window.clearInterval(state.actionHintTimer);
-                state.actionHintTimer = null;
-            }
-            applyActionButtonLabels('');
-            if (actionType === 'export') {
-                showStatus(isEn ? 'Backup package exported.' : '备份包已导出。', 'success', 2200);
-                if (Array.isArray(result?.files) && result.files.length > 0) {
-                    const previewText = result.files.slice(0, 2).join(' ; ');
-                    setMessage(
-                        isEn
-                            ? `Export completed: ${previewText}`
-                            : `导出完成：${previewText}`,
-                        'info'
-                    );
-                }
-                await refreshStatus();
-                return true;
-            }
-            if (actionType === 'unlock') {
-                const unlockFollowupHint = buildPostUnlockFollowupHint(state.lastStatus?.transaction);
-                closeRestoreRecoveryBlockingOverlay();
-                showStatus(
-                    isEn
-                        ? `Prompts disabled and lock cleared. ${unlockFollowupHint}`
-                        : `已停止弹出并解除写锁。${unlockFollowupHint}`,
-                    'info',
-                    3600
-                );
-                setTimeout(() => window.location.reload(), 120);
-                return true;
-            }
-            showStatus(actionType === 'continue'
-                ? (isEn ? 'Continue completed.' : '继续完成。')
-                : (isEn ? 'Rollback completed.' : '回滚完成。'), 'success', 1800);
-            if (action === 'continueRestoreRecoveryTransaction' && result?.restoreRecordWarning) {
-                showStatus(
-                    (isEn ? 'Restore history completed with warnings: ' : '恢复记录已写入，但有告警：')
-                    + result.restoreRecordWarning,
-                    'info',
-                    5200
-                );
-            }
-            setTimeout(() => window.location.reload(), 250);
-            return true;
-        } catch (error) {
-            state.actionRunning = false;
-            state.actionType = '';
-            if (state.actionHintTimer) {
-                window.clearInterval(state.actionHintTimer);
-                state.actionHintTimer = null;
-            }
-            applyActionButtonLabels('');
-            await refreshStatus();
-            setMessage(
-                isEn
-                    ? `${actionLabel} failed: ${error?.message || error}`
-                    : `${actionLabel}失败：${error?.message || error}`,
-                'error'
-            );
-            return false;
-        }
-    };
-
-    const handleUnlockDecision = (decision, source = 'manual') => {
-        if (decision === 'cancel') {
-            if (source === 'threshold') {
-                setMessage(
-                    isEn
-                        ? 'You can manually back up first, then unlock to stop future prompts.'
-                        : '你可以先手动备份，再解锁并停止后续提醒。',
-                    'info'
-                );
-            }
-            return;
-        }
-        if (decision === 'export') {
-            if (exportBackupBtn.disabled) {
-                setMessage(
-                    isEn
-                        ? 'Backup export is unavailable right now. Please retry after snapshots become available.'
-                        : '当前无法导出备份包，请在快照可用后重试。',
-                    'error'
-                );
-                return;
-            }
-            runAction('exportRestoreRecoveryBackupPackage').catch(() => { });
-            return;
-        }
-        runAction('unlockRestoreRecoveryWriteLock').catch(() => { });
-    };
-
-    continueBtn.addEventListener('click', () => {
-        if (continueBtn.disabled) return;
-        runAction('continueRestoreRecoveryTransaction').catch(() => { });
-    });
-    rollbackBtn.addEventListener('click', () => {
-        if (rollbackBtn.disabled) return;
-        runAction('rollbackRestoreRecoveryTransaction').catch(() => { });
-    });
-    exportBackupBtn.addEventListener('click', () => {
-        if (exportBackupBtn.disabled) return;
-        runAction('exportRestoreRecoveryBackupPackage').catch(() => { });
-    });
-    if (quickExportBtn) {
-        quickExportBtn.addEventListener('click', () => {
-            if (quickExportBtn.disabled) return;
-            runAction('exportRestoreRecoveryBackupPackage').catch(() => { });
-        });
-    }
-    if (unlockBtn) {
-        unlockBtn.addEventListener('click', async () => {
-            if (unlockBtn.disabled) return;
-            const decision = await showUnlockSecondaryConfirm();
-            handleUnlockDecision(decision, 'manual');
-        });
-    }
-    dismissBtn.addEventListener('click', async () => {
-        if (dismissBtn.disabled) return;
-        const isIntentOnly = state.lastStatus?.transaction?.intentOnly === true;
-        const activeSessionId = state.lastStatus?.transaction?.sessionId || '';
-        const unlockFollowupHint = buildPostUnlockFollowupHint(state.lastStatus?.transaction);
-        const confirmed = window.confirm(
-            isIntentOnly
-                ? (isEn
-                    ? 'This closes the current interruption reminder. Continue/Rollback is unavailable for this record and you should re-run restore/revert from the original entry. Close now?'
-                    : '这会关闭当前中断提醒。该记录无法继续/回滚，你需要从原入口重新执行恢复/撤销。确定现在关闭吗？')
-                : (isEn
-                    ? `This will close the panel and unlock by discarding the unfinished transaction. ${unlockFollowupHint} Continue?`
-                    : `这会关闭面板并解锁，同时丢弃当前未完成事务。${unlockFollowupHint}确认继续吗？`)
-        );
-        if (!confirmed) return;
-        try {
-            const dismissResult = isIntentOnly
-                ? await callBackgroundFunction('dismissRestoreRecoveryIntent', { sessionId: activeSessionId })
-                : await callBackgroundFunction('unlockRestoreRecoveryWriteLock', { sessionId: activeSessionId });
-            if (isIntentOnly) {
-                const dismissed = dismissResult && dismissResult.success === true && dismissResult.dismissed === true;
-                if (!dismissed) {
-                    showStatus(
-                        isEn
-                            ? `Unable to close reminder: ${dismissResult?.error || 'Session changed or reminder already cleared. Please refresh and retry.'}`
-                            : `关闭提醒失败：${dismissResult?.error || '会话已变化或提醒已被清理，请刷新后重试。'}`,
-                        'error',
-                        3600
-                    );
-                    return;
-                }
-            } else {
-                const unlocked = dismissResult && dismissResult.success === true && dismissResult.unlocked === true;
-                if (!unlocked) {
-                    showStatus(
-                        isEn
-                            ? `Unable to unlock: ${dismissResult?.error || 'Unknown error'}`
-                            : `解锁失败：${dismissResult?.error || '未知错误'}`,
-                        'error',
-                        3200
-                    );
-                    return;
-                }
-            }
-            closeRestoreRecoveryBlockingOverlay();
-            showStatus(
-                isIntentOnly
-                    ? (isEn
-                        ? 'Reminder closed. Please re-run restore/revert from the original entry if needed.'
-                        : '已关闭提醒。如需处理，请从原入口重新执行恢复/撤销。')
-                    : (isEn
-                        ? `Transaction unlocked and panel closed. ${unlockFollowupHint}`
-                        : `已解锁并关闭面板。${unlockFollowupHint}`),
-                'info',
-                3200
-            );
-        } catch (error) {
-            showStatus(
-                isEn
-                    ? `Close/unlock failed: ${error?.message || error}`
-                    : `关闭/解锁失败：${error?.message || error}`,
-                'error',
-                3200
-            );
-        }
-    });
-
-    state.keydownHandler = (event) => {
-        if (state.unlockConfirmOpen) return;
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            return;
-        }
-        if (event.key === 'Tab') {
-            const focusable = [rollbackBtn, continueBtn, exportBackupBtn, quickExportBtn, unlockBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
-            if (focusable.length === 0) {
-                event.preventDefault();
-                panel.focus();
-                return;
-            }
-            const currentIndex = focusable.indexOf(document.activeElement);
-            const nextIndex = event.shiftKey
-                ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
-                : (currentIndex === -1 || currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1);
-            event.preventDefault();
-            focusable[nextIndex].focus();
-        }
-    };
-    state.focusHandler = (event) => {
-        if (state.unlockConfirmOpen) return;
-        if (!overlay.contains(event.target)) {
-            event.stopPropagation();
-            const focusable = [rollbackBtn, continueBtn, exportBackupBtn, quickExportBtn, unlockBtn, dismissBtn].filter((button) => button && !button.disabled && button.style.display !== 'none');
-            if (focusable.length > 0) {
-                focusable[0].focus();
-            } else {
-                panel.focus();
-            }
-        }
-    };
-
-    document.addEventListener('keydown', state.keydownHandler, true);
-    document.addEventListener('focusin', state.focusHandler, true);
-    overlay.addEventListener('click', (event) => {
-        if (event.target !== overlay) {
-            return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-    }, true);
-    panel.tabIndex = -1;
-    panel.focus();
-
-    state.timer = window.setInterval(() => {
-        if (!state.actionRunning) {
-            refreshStatus().catch(() => { });
-        }
-    }, 1200);
-
-    applyStatus(initialStatus);
-}
-
 async function maybePromptRestoreRecoveryTransaction() {
     try {
         const status = await callBackgroundFunction('getRestoreRecoveryTransactionStatus', {
@@ -2141,14 +1269,8 @@ async function maybePromptRestoreRecoveryTransaction() {
         if (!status || status.success !== true || !status.transaction) {
             return;
         }
-        if (status.transaction.canDismissPanel === true && status.transaction.intentOnly !== true) {
-            const promptCount = Math.max(0, Number(status.transaction.promptCount) || 0);
-            const promptThreshold = Math.max(1, Number(status.transaction.promptThreshold) || 1);
-            if (promptCount > promptThreshold) {
-                return;
-            }
-        }
-        await showRestoreRecoveryBlockingOverlay(status);
+        // Instead of showing the top banner, we refresh the status card to render the warning and buttons there.
+        scheduleBookmarkCountDisplayRefresh({ delay: 0 });
     } catch (error) {
         
     }
@@ -5382,8 +4504,10 @@ function updateBookmarkCountDisplay(passedLang) {
     const mainItemStyle = "word-break: break-all; color: var(--theme-text-primary); text-align: center;";
     const secondaryItemStyle = "margin-top: 5px; font-size: 12px; color: var(--theme-text-secondary); text-align: center;";
 
-    Promise.all([getLangPromise, getAutoSyncStatePromise, getActiveBackupProgressPromise])
-        .then(([currentLang, isAutoSyncEnabled, activeBackupProgress]) => {
+    const getTransactionStatusPromise = callBackgroundFunction('getRestoreRecoveryTransactionStatus').catch(() => null);
+
+    Promise.all([getLangPromise, getAutoSyncStatePromise, getActiveBackupProgressPromise, getTransactionStatusPromise])
+        .then(([currentLang, isAutoSyncEnabled, activeBackupProgress, txStatus]) => {
             if (!isCurrentRequest()) {
                 return;
             }
@@ -5506,6 +4630,138 @@ function updateBookmarkCountDisplay(passedLang) {
                     hasChanges: false,
                     forceHide: true
                 });
+                return;
+            }
+
+            const hasPendingTransaction = txStatus && txStatus.success === true && txStatus.transaction;
+            if (hasPendingTransaction && !txStatus.active) {
+                const warningMsg = currentLang === 'en'
+                    ? '⚠️ Unfinished restore detected. A temporary safety snapshot was auto-saved.'
+                    : '⚠️ 检测到上一次恢复未完成。为了安全已自动保存临时快照。';
+                
+                if (bookmarkCountSpan) {
+                    bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-status-error-bg, #dc3545); font-weight: bold;">${currentLang === 'en' ? 'Restore Interrupted' : '恢复未完成'}</span>`;
+                }
+
+                applyStatusCardDisplay({
+                    html: `
+                        <style>
+                            .status-recovery-btn {
+                                display: inline-flex;
+                                align-items: center;
+                                justify-content: center;
+                                gap: 4px;
+                                padding: 4px 10px;
+                                border-radius: 8px;
+                                border: 1px solid var(--theme-glass-action-border) !important;
+                                background: var(--theme-glass-action-bg) !important;
+                                color: var(--theme-glass-action-text-color) !important;
+                                -webkit-text-fill-color: var(--theme-glass-action-text-color) !important;
+                                cursor: pointer;
+                                user-select: none;
+                                font-size: 12px;
+                                font-weight: 700;
+                                line-height: 1;
+                                min-height: 28px;
+                                letter-spacing: 0.2px;
+                                white-space: nowrap;
+                                transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+                                outline: none;
+                                text-shadow: none;
+                                box-shadow: none;
+                            }
+                            .status-recovery-btn:disabled {
+                                opacity: 0.65;
+                                cursor: default;
+                            }
+                            .status-recovery-btn:hover:not(:disabled) {
+                                background: var(--theme-glass-action-bg-hover) !important;
+                                border-color: var(--theme-glass-action-border-hover) !important;
+                                transform: translateY(-1px);
+                            }
+                            .status-recovery-btn:active:not(:disabled) {
+                                transform: translateY(0);
+                            }
+                            .status-recovery-btn i {
+                                color: var(--theme-glass-action-icon-color) !important;
+                                font-size: 12px;
+                            }
+                            #statusCardUnlockBtn {
+                                color: var(--theme-error-color, #FF3B30) !important;
+                                -webkit-text-fill-color: var(--theme-error-color, #FF3B30) !important;
+                            }
+                            #statusCardUnlockBtn i {
+                                color: var(--theme-error-color, #FF3B30) !important;
+                            }
+                        </style>
+                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; box-sizing: border-box; padding: 4px 10px;">
+                            <div style="font-size: 12.5px; font-weight: 600; color: var(--theme-text-primary); line-height: 1.4; text-align: center; max-width: 100%; white-space: normal; word-break: break-word;">
+                                ${warningMsg}
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center; justify-content: center; width: 100%;">
+                                <button id="statusCardUnlockBtn" class="status-recovery-btn">
+                                    <i class="fas fa-ban"></i>
+                                    <span>${currentLang === 'en' ? 'Ignore' : '忽略'}</span>
+                                </button>
+                                <button id="statusCardSnapshotBtn" class="status-recovery-btn">
+                                    <i class="fas fa-file-export"></i>
+                                    <span>${currentLang === 'en' ? 'Export Snapshot' : '导出临时快照'}</span>
+                                </button>
+                            </div>
+                        </div>
+                    `,
+                    hasChanges: false,
+                    showChevron: false
+                });
+                updateStatusCardOverlayButtonsVisibility({
+                    isAutoSyncEnabled,
+                    hasChanges: false,
+                    forceHide: true
+                });
+
+                const snapBtn = document.getElementById('statusCardSnapshotBtn');
+                const unlBtn = document.getElementById('statusCardUnlockBtn');
+                if (snapBtn) {
+                    snapBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (typeof openLatestSafetyCheckpointDialogRef === 'function') {
+                            openLatestSafetyCheckpointDialogRef();
+                        }
+                    });
+                }
+                if (unlBtn) {
+                    unlBtn.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        const confirmed = window.confirm(
+                            currentLang === 'en'
+                                ? 'This will unlock the transaction and discard the unfinished backup state. If you need to save the safety snapshot, please export it before unlocking. Confirm ignore?'
+                                : '这会解锁该事务并丢弃未完成的备份状态。若需要保留安全快照，请在解锁前执行导出。确认忽略吗？'
+                        );
+                        if (!confirmed) return;
+
+                        if (snapBtn) snapBtn.disabled = true;
+                        unlBtn.disabled = true;
+                        unlBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${currentLang === 'en' ? 'Ignoring...' : '正在忽略...'}</span>`;
+
+                        try {
+                            const result = await callBackgroundFunction('unlockRestoreRecoveryWriteLock', { sessionId: txStatus.transaction.sessionId });
+                            if (result && result.success === true) {
+                                showStatus(currentLang === 'en' ? 'Lock cleared.' : '已解除锁定。', 'info', 1800);
+                                setTimeout(() => window.location.reload(), 250);
+                            } else {
+                                throw new Error(result?.error || (currentLang === 'en' ? 'Unlock failed' : '解锁失败'));
+                            }
+                        } catch (error) {
+                            if (snapBtn) snapBtn.disabled = false;
+                            unlBtn.disabled = false;
+                            unlBtn.innerHTML = `<i class="fas fa-ban"></i> <span>${currentLang === 'en' ? 'Ignore' : '忽略'}</span>`;
+                            showStatus(currentLang === 'en' ? `Unlock failed: ${error.message}` : `解锁失败：${error.message}`, 'error', 3200);
+                        }
+                    });
+                }
                 return;
             }
 
@@ -20503,6 +19759,16 @@ document.addEventListener('DOMContentLoaded', function () {
             selectOneText: isEn ? 'Select at least one snapshot to export.' : '请至少选择一个要导出的快照。'
         };
 
+        let hasActiveTransaction = false;
+        let pendingSessionId = null;
+        try {
+            const txStatus = await callBackgroundFunction('getRestoreRecoveryTransactionStatus');
+            if (txStatus && txStatus.success === true && txStatus.transaction) {
+                hasActiveTransaction = true;
+                pendingSessionId = txStatus.transaction.sessionId;
+            }
+        } catch (_) {}
+
         removeLatestSafetyCheckpointDialog();
         latestSafetyCheckpointDialog = buildHelpDialog({
             width: 560,
@@ -20553,6 +19819,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <button id="latestSafetyCheckpointExportBtn" type="button" class="restore-modal-action-btn primary" ${checkpoint ? '' : 'disabled'}>${escapeHtml(exportLabels.exportText)}</button>
             `
         });
+        latestSafetyCheckpointDialog.style.display = 'flex';
         document.body.appendChild(latestSafetyCheckpointDialog);
 
         const closeBtn = document.getElementById('latestSafetyCheckpointCloseBtn');
@@ -20640,6 +19907,19 @@ document.addEventListener('DOMContentLoaded', function () {
                             true
                         );
                         showStatus(isEn ? 'Selected safety snapshots exported.' : '已导出所选安全快照。', 'success', 2400);
+
+                        if (hasActiveTransaction && pendingSessionId) {
+                            try {
+                                const unlockResult = await callBackgroundFunction('unlockRestoreRecoveryWriteLock', { sessionId: pendingSessionId });
+                                if (unlockResult && unlockResult.success === true) {
+                                    showStatus(isEn ? 'Unlocked automatically.' : '已自动解除锁定。', 'info', 1800);
+                                    setTimeout(() => {
+                                        removeLatestSafetyCheckpointDialog();
+                                        window.location.reload();
+                                    }, 1200);
+                                }
+                            } catch (_) {}
+                        }
                     } else {
                         throw new Error(response?.error || (isEn ? 'Export failed' : '导出失败'));
                     }
@@ -20657,6 +19937,7 @@ document.addEventListener('DOMContentLoaded', function () {
             summaryEl.innerHTML = formatSafetyCheckpointSummary(checkpoint, lang);
         }
     };
+    openLatestSafetyCheckpointDialogRef = openLatestSafetyCheckpointDialog;
 
     if (backupHistorySlimmingSettingsBtn && !backupHistorySlimmingSettingsBtn.hasAttribute('data-listener-attached')) {
         backupHistorySlimmingSettingsBtn.addEventListener('click', (e) => {
