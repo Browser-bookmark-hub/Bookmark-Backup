@@ -69,6 +69,8 @@ const badgeTextMap = { // 添加角标文本的国际化映射对象 - 在文件
 };
 const BOOKMARK_CHANGES_DIRTY_KEY = 'bookmarkChangesDirty';
 const ACTIVE_BACKUP_PROGRESS_KEY = 'activeBackupProgress';
+const DEV1_SNAPSHOT_HIGHLIGHTER_STORAGE_PREFIX = 'snapshot_highlighter_page_';
+const DEV1_SNAPSHOT_HIGHLIGHTER_AUTORESTORE_PREFIX = 'dev1_snapshot_highlighter_autorestore_';
 const BACKUP_HISTORY_SLIMMING_SETTINGS_KEY = 'backupHistorySlimming';
 const DEFAULT_BACKUP_HISTORY_SLIMMING_SETTINGS = Object.freeze({
     saveSnapshotData: true,
@@ -83,6 +85,36 @@ const BACKUP_PROGRESS_TARGET_ORDER = Object.freeze({
     github_repo: 1,
     webdav: 2
 });
+
+function dev1HashUrl(value) {
+    const input = String(value == null ? '' : value);
+    let h1 = 0xdeadbeef ^ input.length;
+    let h2 = 0x41c6ce57 ^ input.length;
+    for (let i = 0; i < input.length; i += 1) {
+        const ch = input.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return ((h2 >>> 0).toString(36) + (h1 >>> 0).toString(36)).slice(0, 20);
+}
+
+function dev1BuildSnapshotHighlighterAutoRestorePrefix(tabId) {
+    const id = Number(tabId);
+    return Number.isFinite(id) ? `${DEV1_SNAPSHOT_HIGHLIGHTER_AUTORESTORE_PREFIX}${Math.floor(id)}_` : '';
+}
+
+function dev1BuildSnapshotHighlighterAutoRestoreKey(tabId, url) {
+    const prefix = dev1BuildSnapshotHighlighterAutoRestorePrefix(tabId);
+    return prefix ? `${prefix}${dev1HashUrl(url)}` : '';
+}
+
+function dev1BuildSnapshotHighlighterStateKey(tabId, url) {
+    const id = Number(tabId);
+    if (!Number.isFinite(id)) return '';
+    return `dev1_scoped_${Math.floor(id)}_${DEV1_SNAPSHOT_HIGHLIGHTER_STORAGE_PREFIX}${dev1HashUrl(url)}`;
+}
 
 // Unified Export Folder Paths - 统一的导出文件夹路径（根据语言动态选择）
 // const EXPORT_ROOT_FOLDER = 'Bookmark Backup';  // 父文件夹保持英文 - REMOVED
@@ -1804,7 +1836,15 @@ async function openQuickSnapshotHelperForCurrentPage() {
     if (!result || result.success !== true) {
         throw new Error(result?.error || 'Snapshot helper unavailable');
     }
-    return { success: true, tabId, targetFolder };
+    const highlighterRestored = await dev1TryAutoRestoreSnapshotHighlighterForTab(tabId, {
+        ...tab,
+        url: parsed.toString()
+    }, {
+        requireMarker: false,
+        lang,
+        source: 'quick_snapshot_existing_highlights'
+    }).catch(() => false);
+    return { success: true, tabId, targetFolder, highlighterRestored };
 }
 
 if (browserAPI.commands && browserAPI.commands.onCommand) {
@@ -5501,9 +5541,12 @@ if (browserAPI?.tabs?.onUpdated && typeof browserAPI.tabs.onUpdated.addListener 
 if (browserAPI?.tabs?.onRemoved && typeof browserAPI.tabs.onRemoved.addListener === 'function') {
     browserAPI.tabs.onRemoved.addListener(async (tabId, removeInfo = {}) => {
         const scopedPrefix = `dev1_scoped_${tabId}_`;
+        const autoRestorePrefix = dev1BuildSnapshotHighlighterAutoRestorePrefix(tabId);
         try {
             const all = await browserAPI.storage.local.get(null);
-            const keysToRemove = Object.keys(all || {}).filter(k => k.startsWith(scopedPrefix));
+            const keysToRemove = Object.keys(all || {}).filter(k => (
+                k.startsWith(scopedPrefix) || (autoRestorePrefix && k.startsWith(autoRestorePrefix))
+            ));
             if (keysToRemove.length > 0) {
                 await browserAPI.storage.local.remove(keysToRemove);
             }
@@ -6066,27 +6109,217 @@ async function dev1ExtractMarkdownArticle(tabId) {
                 const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
                 element.replaceChildren(...Array.from(parsed.body.childNodes));
             };
+            const normalizeMarkdownHtmlColor = (value, fallback = '#1976d2') => {
+                const raw = String(value || '').trim();
+                if (/^special:rainbow/i.test(raw)) return '#ff3b30';
+                if (/^special:/i.test(raw)) return fallback;
+                if (!raw || /^transparent$/i.test(raw)) return fallback;
+                const rgba = raw.match(/^rgba?\(([^)]+)\)$/i);
+                if (rgba) {
+                    const parts = rgba[1].split(',').map((part) => Number(String(part).trim()));
+                    if (parts.length >= 4 && Number.isFinite(parts[3]) && parts[3] <= 0) return fallback;
+                    if (parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite)) {
+                        const toHex = (part) => Math.max(0, Math.min(255, Math.round(part))).toString(16).padStart(2, '0');
+                        return `#${toHex(parts[0])}${toHex(parts[1])}${toHex(parts[2])}`;
+                    }
+                }
+                if (/^#[0-9a-f]{3}$/i.test(raw)) {
+                    return `#${raw.slice(1).split('').map((ch) => ch + ch).join('')}`.toLowerCase();
+                }
+                if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toLowerCase();
+                try {
+                    const probe = document.createElement('span');
+                    probe.style.color = raw;
+                    if (!probe.style.color) return fallback;
+                    document.body.appendChild(probe);
+                    const resolved = getComputedStyle(probe).color;
+                    probe.remove();
+                    return normalizeMarkdownHtmlColor(resolved, fallback);
+                } catch (_) {
+                    return fallback;
+                }
+            };
+            const renderMdColorHtmlFromRenderedNode = (node) => {
+                const source = String(node.getAttribute('data-md-source') || node.textContent || '');
+                const toolId = String(node.getAttribute('data-md-tool') || '');
+                const color = normalizeMarkdownHtmlColor(node.getAttribute('data-md-color') || '#1976d2');
+                const escapeHtml = (text) => String(text || '').replace(/[&<>"']/g, (ch) => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                }[ch]));
+                const plain = (() => {
+                    if (toolId === 'md-edit-bold') return source.replace(/^\*\*|\*\*$/g, '');
+                    if (toolId === 'md-edit-italic') return source.replace(/^\*|\*$/g, '');
+                    if (toolId === 'md-edit-bold-italic') return source.replace(/^\*\*\*|\*\*\*$/g, '');
+                    if (toolId === 'md-edit-strikethrough') return source.replace(/^~~|~~$/g, '');
+                    if (toolId === 'md-edit-mark') return source.replace(/^==|==$/g, '');
+                    if (toolId === 'md-edit-code-inline') return source.replace(/^`|`$/g, '');
+                    if (toolId === 'md-edit-sup') return source.replace(/^\^|\^$/g, '');
+                    if (toolId === 'md-edit-sub') return source.replace(/^~|~$/g, '');
+                    if (toolId === 'md-edit-h1') return source.replace(/^#\s+/, '');
+                    if (toolId === 'md-edit-h2') return source.replace(/^##\s+/, '');
+                    if (toolId === 'md-edit-h3') return source.replace(/^###\s+/, '');
+                    if (toolId === 'md-edit-ul') return source.replace(/^-\s+/, '');
+                    if (toolId === 'md-edit-ol') return source.replace(/^\d+\.\s+/, '');
+                    if (toolId === 'md-edit-task') return source.replace(/^-\s+\[[ x]\]\s+/i, '');
+                    if (toolId === 'md-edit-quote') return source.replace(/^>\s?/, '');
+                    if (toolId === 'md-edit-code') return source.replace(/^```\n?/, '').replace(/\n?```$/, '');
+                    if (toolId === 'md-edit-link') {
+                        const match = source.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+                        return match ? match[1] : (node.textContent || source);
+                    }
+                    return node.textContent || source;
+                })();
+                const wrapLines = (value, wrap) => String(value || '').split('\n').map((line) => (
+                    line.trim() ? wrap(escapeHtml(line)) : line
+                )).join('\n');
+                const font = (value) => wrapLines(value, (line) => `<font color="${color}">${line}</font>`);
+                const mark = (value) => wrapLines(value, (line) => `<mark style="background:${color}">${line}</mark>`);
+                if (toolId === 'md-edit-mark') return mark(plain);
+                if (toolId === 'md-edit-bold') return `**${font(plain)}**`;
+                if (toolId === 'md-edit-italic') return `*${font(plain)}*`;
+                if (toolId === 'md-edit-bold-italic') return `***${font(plain)}***`;
+                if (toolId === 'md-edit-strikethrough') return `~~${font(plain)}~~`;
+                if (toolId === 'md-edit-code-inline') return `<code style="color:${color}">${escapeHtml(plain)}</code>`;
+                if (toolId === 'md-edit-sup') return `<sup style="color:${color}">${escapeHtml(plain)}</sup>`;
+                if (toolId === 'md-edit-sub') return `<sub style="color:${color}">${escapeHtml(plain)}</sub>`;
+                if (toolId === 'md-edit-h1') return `# ${font(plain)}`;
+                if (toolId === 'md-edit-h2') return `## ${font(plain)}`;
+                if (toolId === 'md-edit-h3') return `### ${font(plain)}`;
+                if (toolId === 'md-edit-ul') return `- ${font(plain)}`;
+                if (toolId === 'md-edit-ol') {
+                    const match = source.match(/^(\d+)\.\s+/);
+                    return `${match ? match[1] : '1'}. ${font(plain)}`;
+                }
+                if (toolId === 'md-edit-task') {
+                    const match = source.match(/^-\s+\[([ x])\]\s+/i);
+                    return `- [${match && /^x$/i.test(match[1]) ? 'x' : ' '}] ${font(plain)}`;
+                }
+                if (toolId === 'md-edit-quote') return `> ${font(plain)}`;
+                if (toolId === 'md-edit-code') return source;
+                if (toolId === 'md-edit-hr') return '---';
+                if (toolId === 'md-edit-link') {
+                    const match = source.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+                    return match ? `[${font(match[1])}](${match[2]})` : font(plain || source);
+                }
+                if (toolId === 'md-edit-image' || toolId === 'md-edit-table') return source;
+                return font(plain || source);
+            };
+            const renderVisualMdHighlightHtml = (node) => {
+                const toolId = String(node.getAttribute('data-tool-style') || '').trim();
+                if (!/^md(?:-edit)?-/i.test(toolId) || toolId === 'md-edit-disable-highlight') return '';
+                const text = String(node.getAttribute('data-text') || node.textContent || '');
+                const color = normalizeMarkdownHtmlColor(
+                    node.getAttribute('data-color') || node.style.color || node.style.backgroundColor || '#1976d2'
+                );
+                const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (ch) => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                }[ch]));
+                const wrapLines = (value, wrap) => String(value || '').split('\n').map((line) => (
+                    line.trim() ? wrap(escapeHtml(line)) : line
+                )).join('\n');
+                const font = (value) => wrapLines(value, (line) => `<font color="${color}">${line}</font>`);
+                const mark = (value) => wrapLines(value, (line) => `<mark style="background:${color}">${line}</mark>`);
+                switch (toolId) {
+                    case 'md-mark':
+                    case 'md-edit-mark': return mark(text);
+                    case 'md-bold':
+                    case 'md-edit-bold': return `**${font(text)}**`;
+                    case 'md-italic':
+                    case 'md-edit-italic': return `*${font(text)}*`;
+                    case 'md-bold-italic':
+                    case 'md-edit-bold-italic': return `***${font(text)}***`;
+                    case 'md-strikethrough':
+                    case 'md-edit-strikethrough': return `~~${font(text)}~~`;
+                    case 'md-underline': return `<u>${font(text)}</u>`;
+                    case 'md-sup':
+                    case 'md-edit-sup': return `<sup style="color:${color}">${escapeHtml(text)}</sup>`;
+                    case 'md-sub':
+                    case 'md-edit-sub': return `<sub style="color:${color}">${escapeHtml(text)}</sub>`;
+                    case 'md-edit-code-inline': return `<code style="color:${color}">${escapeHtml(text)}</code>`;
+                    case 'md-edit-h1': return `# ${font(text)}`;
+                    case 'md-edit-h2': return `## ${font(text)}`;
+                    case 'md-edit-h3': return `### ${font(text)}`;
+                    case 'md-edit-ul': return `- ${font(text)}`;
+                    case 'md-edit-ol': return `1. ${font(text)}`;
+                    case 'md-edit-task': return `- [ ] ${font(text)}`;
+                    case 'md-edit-quote': return `> ${font(text)}`;
+                    case 'md-edit-code': return `\`\`\`\n${text}\n\`\`\``;
+                    case 'md-edit-hr': return '---';
+                    case 'md-edit-link': return `[${font(text)}](url)`;
+                    case 'md-edit-image': return /^!\[[^\]]*\]\([^)]+\)$/i.test(text) ? text : `![${escapeHtml(text || 'image')}](url)`;
+                    case 'md-edit-table': return text.includes('|') ? text : `| ${escapeHtml(text || 'A')} | B |\n| --- | --- |`;
+                    default: return font(text);
+                }
+            };
+            const markdownColorTokens = [];
+            const markdownColorTokenPrefix = `DEV1MDCOLORTOKEN${Math.random().toString(36).slice(2).toUpperCase()}X`;
+            const makeMarkdownColorToken = (value) => {
+                const token = `${markdownColorTokenPrefix}${markdownColorTokens.length}Z`;
+                markdownColorTokens.push([token, String(value || '')]);
+                return token;
+            };
+            const tokenizeDev1MarkdownNodes = (root) => {
+                if (!root || !root.querySelectorAll) return;
+                const selector = [
+                    '.md-rendered-content[data-md-source]',
+                    '[data-dev1-snapshot-highlighter-edit="true"][data-md-source]',
+                    '.custom-highlight.dev1-snapshot-highlight[data-tool-style]'
+                ].join(',');
+                root.querySelectorAll(selector).forEach((node) => {
+                    if (node.closest && node.closest('[data-dev1-snapshot-highlighter-ui="true"]')) return;
+                    const value = node.classList && node.classList.contains('md-rendered-content')
+                        ? renderMdColorHtmlFromRenderedNode(node)
+                        : renderVisualMdHighlightHtml(node);
+                    if (!value) return;
+                    node.replaceWith((node.ownerDocument || document).createTextNode(makeMarkdownColorToken(value)));
+                });
+            };
+            const hasDev1MarkdownNodes = (root) => !!(root && root.querySelector && root.querySelector([
+                '.md-rendered-content[data-md-source]',
+                '[data-dev1-snapshot-highlighter-edit="true"][data-md-source]',
+                '.custom-highlight.dev1-snapshot-highlight[data-tool-style^="md"]'
+            ].join(',')));
+            const preserveMarkdownColorHtml = (html) => {
+                const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
+                parsed.body.querySelectorAll('.custom-highlight.dev1-snapshot-highlight[data-tool-style]').forEach((node) => {
+                    const value = renderVisualMdHighlightHtml(node);
+                    if (value) node.replaceWith(parsed.createTextNode(makeMarkdownColorToken(value)));
+                });
+                parsed.body.querySelectorAll('.md-rendered-content[data-md-source]').forEach((node) => {
+                    node.replaceWith(parsed.createTextNode(makeMarkdownColorToken(renderMdColorHtmlFromRenderedNode(node))));
+                });
+                return parsed.body.innerHTML;
+            };
+            const restoreMarkdownColorTokens = (markdownText) => {
+                let output = String(markdownText || '');
+                markdownColorTokens.forEach(([token, value]) => {
+                    output = output.split(token).join(value);
+                });
+                return output;
+            };
 
             const parseForClip = (inputDoc) => {
                 const readerArticle = inputDoc.querySelector('.obsidian-reader-active .obsidian-reader-content article');
                 if (readerArticle) {
                     const readerDoc = inputDoc.implementation.createHTMLDocument();
                     const originalHtml = readerArticle.getAttribute('data-original-html');
-                    if (originalHtml) {
+                    if (originalHtml && !hasDev1MarkdownNodes(readerArticle)) {
                         setElementHTML(readerDoc.body, originalHtml);
                     } else {
                         readerDoc.body.replaceChildren(
                             ...Array.from(readerArticle.childNodes).map((node) => readerDoc.importNode(node, true))
                         );
                     }
+                    tokenizeDev1MarkdownNodes(readerDoc.body);
                     return new Defuddle(readerDoc, { url: '' }).parse();
                 }
                 const clonedDoc = inputDoc.cloneNode(true);
+                tokenizeDev1MarkdownNodes(clonedDoc.body || clonedDoc);
                 return new Defuddle(clonedDoc, { url: inputDoc.URL }).parse();
             };
 
             const defuddled = parseForClip(doc);
-            const markdown = createMarkdownContent(String(defuddled?.content || ''), baseUrl);
+            const markdown = restoreMarkdownColorTokens(createMarkdownContent(preserveMarkdownColorHtml(String(defuddled?.content || '')), baseUrl));
             const title = String((doc && doc.title) || '').trim();
             const cleanTitle = (defuddled?.title || title || '').trim();
             const cleanAuthor = (defuddled?.author || '').trim();
@@ -6193,27 +6426,217 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
                 const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
                 element.replaceChildren(...Array.from(parsed.body.childNodes));
             };
+            const normalizeMarkdownHtmlColor = (value, fallback = '#1976d2') => {
+                const raw = String(value || '').trim();
+                if (/^special:rainbow/i.test(raw)) return '#ff3b30';
+                if (/^special:/i.test(raw)) return fallback;
+                if (!raw || /^transparent$/i.test(raw)) return fallback;
+                const rgba = raw.match(/^rgba?\(([^)]+)\)$/i);
+                if (rgba) {
+                    const parts = rgba[1].split(',').map((part) => Number(String(part).trim()));
+                    if (parts.length >= 4 && Number.isFinite(parts[3]) && parts[3] <= 0) return fallback;
+                    if (parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite)) {
+                        const toHex = (part) => Math.max(0, Math.min(255, Math.round(part))).toString(16).padStart(2, '0');
+                        return `#${toHex(parts[0])}${toHex(parts[1])}${toHex(parts[2])}`;
+                    }
+                }
+                if (/^#[0-9a-f]{3}$/i.test(raw)) {
+                    return `#${raw.slice(1).split('').map((ch) => ch + ch).join('')}`.toLowerCase();
+                }
+                if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toLowerCase();
+                try {
+                    const probe = document.createElement('span');
+                    probe.style.color = raw;
+                    if (!probe.style.color) return fallback;
+                    document.body.appendChild(probe);
+                    const resolved = getComputedStyle(probe).color;
+                    probe.remove();
+                    return normalizeMarkdownHtmlColor(resolved, fallback);
+                } catch (_) {
+                    return fallback;
+                }
+            };
+            const renderMdColorHtmlFromRenderedNode = (node) => {
+                const source = String(node.getAttribute('data-md-source') || node.textContent || '');
+                const toolId = String(node.getAttribute('data-md-tool') || '');
+                const color = normalizeMarkdownHtmlColor(node.getAttribute('data-md-color') || '#1976d2');
+                const escapeHtml = (text) => String(text || '').replace(/[&<>"']/g, (ch) => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                }[ch]));
+                const plain = (() => {
+                    if (toolId === 'md-edit-bold') return source.replace(/^\*\*|\*\*$/g, '');
+                    if (toolId === 'md-edit-italic') return source.replace(/^\*|\*$/g, '');
+                    if (toolId === 'md-edit-bold-italic') return source.replace(/^\*\*\*|\*\*\*$/g, '');
+                    if (toolId === 'md-edit-strikethrough') return source.replace(/^~~|~~$/g, '');
+                    if (toolId === 'md-edit-mark') return source.replace(/^==|==$/g, '');
+                    if (toolId === 'md-edit-code-inline') return source.replace(/^`|`$/g, '');
+                    if (toolId === 'md-edit-sup') return source.replace(/^\^|\^$/g, '');
+                    if (toolId === 'md-edit-sub') return source.replace(/^~|~$/g, '');
+                    if (toolId === 'md-edit-h1') return source.replace(/^#\s+/, '');
+                    if (toolId === 'md-edit-h2') return source.replace(/^##\s+/, '');
+                    if (toolId === 'md-edit-h3') return source.replace(/^###\s+/, '');
+                    if (toolId === 'md-edit-ul') return source.replace(/^-\s+/, '');
+                    if (toolId === 'md-edit-ol') return source.replace(/^\d+\.\s+/, '');
+                    if (toolId === 'md-edit-task') return source.replace(/^-\s+\[[ x]\]\s+/i, '');
+                    if (toolId === 'md-edit-quote') return source.replace(/^>\s?/, '');
+                    if (toolId === 'md-edit-code') return source.replace(/^```\n?/, '').replace(/\n?```$/, '');
+                    if (toolId === 'md-edit-link') {
+                        const match = source.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+                        return match ? match[1] : (node.textContent || source);
+                    }
+                    return node.textContent || source;
+                })();
+                const wrapLines = (value, wrap) => String(value || '').split('\n').map((line) => (
+                    line.trim() ? wrap(escapeHtml(line)) : line
+                )).join('\n');
+                const font = (value) => wrapLines(value, (line) => `<font color="${color}">${line}</font>`);
+                const mark = (value) => wrapLines(value, (line) => `<mark style="background:${color}">${line}</mark>`);
+                if (toolId === 'md-edit-mark') return mark(plain);
+                if (toolId === 'md-edit-bold') return `**${font(plain)}**`;
+                if (toolId === 'md-edit-italic') return `*${font(plain)}*`;
+                if (toolId === 'md-edit-bold-italic') return `***${font(plain)}***`;
+                if (toolId === 'md-edit-strikethrough') return `~~${font(plain)}~~`;
+                if (toolId === 'md-edit-code-inline') return `<code style="color:${color}">${escapeHtml(plain)}</code>`;
+                if (toolId === 'md-edit-sup') return `<sup style="color:${color}">${escapeHtml(plain)}</sup>`;
+                if (toolId === 'md-edit-sub') return `<sub style="color:${color}">${escapeHtml(plain)}</sub>`;
+                if (toolId === 'md-edit-h1') return `# ${font(plain)}`;
+                if (toolId === 'md-edit-h2') return `## ${font(plain)}`;
+                if (toolId === 'md-edit-h3') return `### ${font(plain)}`;
+                if (toolId === 'md-edit-ul') return `- ${font(plain)}`;
+                if (toolId === 'md-edit-ol') {
+                    const match = source.match(/^(\d+)\.\s+/);
+                    return `${match ? match[1] : '1'}. ${font(plain)}`;
+                }
+                if (toolId === 'md-edit-task') {
+                    const match = source.match(/^-\s+\[([ x])\]\s+/i);
+                    return `- [${match && /^x$/i.test(match[1]) ? 'x' : ' '}] ${font(plain)}`;
+                }
+                if (toolId === 'md-edit-quote') return `> ${font(plain)}`;
+                if (toolId === 'md-edit-code') return source;
+                if (toolId === 'md-edit-hr') return '---';
+                if (toolId === 'md-edit-link') {
+                    const match = source.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+                    return match ? `[${font(match[1])}](${match[2]})` : font(plain || source);
+                }
+                if (toolId === 'md-edit-image' || toolId === 'md-edit-table') return source;
+                return font(plain || source);
+            };
+            const renderVisualMdHighlightHtml = (node) => {
+                const toolId = String(node.getAttribute('data-tool-style') || '').trim();
+                if (!/^md(?:-edit)?-/i.test(toolId) || toolId === 'md-edit-disable-highlight') return '';
+                const text = String(node.getAttribute('data-text') || node.textContent || '');
+                const color = normalizeMarkdownHtmlColor(
+                    node.getAttribute('data-color') || node.style.color || node.style.backgroundColor || '#1976d2'
+                );
+                const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (ch) => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                }[ch]));
+                const wrapLines = (value, wrap) => String(value || '').split('\n').map((line) => (
+                    line.trim() ? wrap(escapeHtml(line)) : line
+                )).join('\n');
+                const font = (value) => wrapLines(value, (line) => `<font color="${color}">${line}</font>`);
+                const mark = (value) => wrapLines(value, (line) => `<mark style="background:${color}">${line}</mark>`);
+                switch (toolId) {
+                    case 'md-mark':
+                    case 'md-edit-mark': return mark(text);
+                    case 'md-bold':
+                    case 'md-edit-bold': return `**${font(text)}**`;
+                    case 'md-italic':
+                    case 'md-edit-italic': return `*${font(text)}*`;
+                    case 'md-bold-italic':
+                    case 'md-edit-bold-italic': return `***${font(text)}***`;
+                    case 'md-strikethrough':
+                    case 'md-edit-strikethrough': return `~~${font(text)}~~`;
+                    case 'md-underline': return `<u>${font(text)}</u>`;
+                    case 'md-sup':
+                    case 'md-edit-sup': return `<sup style="color:${color}">${escapeHtml(text)}</sup>`;
+                    case 'md-sub':
+                    case 'md-edit-sub': return `<sub style="color:${color}">${escapeHtml(text)}</sub>`;
+                    case 'md-edit-code-inline': return `<code style="color:${color}">${escapeHtml(text)}</code>`;
+                    case 'md-edit-h1': return `# ${font(text)}`;
+                    case 'md-edit-h2': return `## ${font(text)}`;
+                    case 'md-edit-h3': return `### ${font(text)}`;
+                    case 'md-edit-ul': return `- ${font(text)}`;
+                    case 'md-edit-ol': return `1. ${font(text)}`;
+                    case 'md-edit-task': return `- [ ] ${font(text)}`;
+                    case 'md-edit-quote': return `> ${font(text)}`;
+                    case 'md-edit-code': return `\`\`\`\n${text}\n\`\`\``;
+                    case 'md-edit-hr': return '---';
+                    case 'md-edit-link': return `[${font(text)}](url)`;
+                    case 'md-edit-image': return /^!\[[^\]]*\]\([^)]+\)$/i.test(text) ? text : `![${escapeHtml(text || 'image')}](url)`;
+                    case 'md-edit-table': return text.includes('|') ? text : `| ${escapeHtml(text || 'A')} | B |\n| --- | --- |`;
+                    default: return font(text);
+                }
+            };
+            const markdownColorTokens = [];
+            const markdownColorTokenPrefix = `DEV1MDCOLORTOKEN${Math.random().toString(36).slice(2).toUpperCase()}X`;
+            const makeMarkdownColorToken = (value) => {
+                const token = `${markdownColorTokenPrefix}${markdownColorTokens.length}Z`;
+                markdownColorTokens.push([token, String(value || '')]);
+                return token;
+            };
+            const tokenizeDev1MarkdownNodes = (root) => {
+                if (!root || !root.querySelectorAll) return;
+                const selector = [
+                    '.md-rendered-content[data-md-source]',
+                    '[data-dev1-snapshot-highlighter-edit="true"][data-md-source]',
+                    '.custom-highlight.dev1-snapshot-highlight[data-tool-style]'
+                ].join(',');
+                root.querySelectorAll(selector).forEach((node) => {
+                    if (node.closest && node.closest('[data-dev1-snapshot-highlighter-ui="true"]')) return;
+                    const value = node.classList && node.classList.contains('md-rendered-content')
+                        ? renderMdColorHtmlFromRenderedNode(node)
+                        : renderVisualMdHighlightHtml(node);
+                    if (!value) return;
+                    node.replaceWith((node.ownerDocument || document).createTextNode(makeMarkdownColorToken(value)));
+                });
+            };
+            const hasDev1MarkdownNodes = (root) => !!(root && root.querySelector && root.querySelector([
+                '.md-rendered-content[data-md-source]',
+                '[data-dev1-snapshot-highlighter-edit="true"][data-md-source]',
+                '.custom-highlight.dev1-snapshot-highlight[data-tool-style^="md"]'
+            ].join(',')));
+            const preserveMarkdownColorHtml = (html) => {
+                const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
+                parsed.body.querySelectorAll('.custom-highlight.dev1-snapshot-highlight[data-tool-style]').forEach((node) => {
+                    const value = renderVisualMdHighlightHtml(node);
+                    if (value) node.replaceWith(parsed.createTextNode(makeMarkdownColorToken(value)));
+                });
+                parsed.body.querySelectorAll('.md-rendered-content[data-md-source]').forEach((node) => {
+                    node.replaceWith(parsed.createTextNode(makeMarkdownColorToken(renderMdColorHtmlFromRenderedNode(node))));
+                });
+                return parsed.body.innerHTML;
+            };
+            const restoreMarkdownColorTokens = (markdownText) => {
+                let output = String(markdownText || '');
+                markdownColorTokens.forEach(([token, value]) => {
+                    output = output.split(token).join(value);
+                });
+                return output;
+            };
 
             const parseForClip = (inputDoc) => {
                 const readerArticle = inputDoc.querySelector('.obsidian-reader-active .obsidian-reader-content article');
                 if (readerArticle) {
                     const readerDoc = inputDoc.implementation.createHTMLDocument();
                     const originalHtml = readerArticle.getAttribute('data-original-html');
-                    if (originalHtml) {
+                    if (originalHtml && !hasDev1MarkdownNodes(readerArticle)) {
                         setElementHTML(readerDoc.body, originalHtml);
                     } else {
                         readerDoc.body.replaceChildren(
                             ...Array.from(readerArticle.childNodes).map((node) => readerDoc.importNode(node, true))
                         );
                     }
+                    tokenizeDev1MarkdownNodes(readerDoc.body);
                     return new Defuddle(readerDoc, { url: '' }).parse();
                 }
                 const clonedDoc = inputDoc.cloneNode(true);
+                tokenizeDev1MarkdownNodes(clonedDoc.body || clonedDoc);
                 return new Defuddle(clonedDoc, { url: inputDoc.URL }).parse();
             };
 
             const defuddled = parseForClip(doc);
-            const markdown = createMarkdownContent(String(defuddled?.content || ''), baseUrl);
+            const markdown = restoreMarkdownColorTokens(createMarkdownContent(preserveMarkdownColorHtml(String(defuddled?.content || '')), baseUrl));
             const title = String((doc && doc.title) || '').trim();
 
             const escapeDoubleQuotes = (str) => String(str || '').replace(/"/g, '\\"');
@@ -6646,6 +7069,99 @@ async function dev1IsSnapshotHighlighterPdfPage(tabId) {
     }
 }
 
+async function dev1SetSnapshotHighlighterAutoRestoreMarker(tabId, url, lang = 'zh_CN') {
+    const id = dev1NormalizeTabId(tabId);
+    const normalizedUrl = String(url || '').trim();
+    const key = dev1BuildSnapshotHighlighterAutoRestoreKey(id, normalizedUrl);
+    if (id == null || !normalizedUrl || !key) return;
+    try {
+        await browserAPI.storage.local.set({
+            [key]: {
+                v: 1,
+                tabId: id,
+                url: normalizedUrl,
+                lang: lang === 'en' ? 'en' : 'zh_CN',
+                visible: true,
+                namespace: `${DEV1_SNAPSHOT_HIGHLIGHTER_STORAGE_PREFIX}${dev1HashUrl(normalizedUrl)}`,
+                updatedAt: Date.now()
+            }
+        });
+    } catch (_) { }
+}
+
+async function dev1ClearSnapshotHighlighterAutoRestoreMarkers(tabId) {
+    const prefix = dev1BuildSnapshotHighlighterAutoRestorePrefix(tabId);
+    if (!prefix) return;
+    try {
+        const all = await browserAPI.storage.local.get(null);
+        const keys = Object.keys(all || {}).filter(key => key.startsWith(prefix));
+        if (keys.length) await browserAPI.storage.local.remove(keys);
+    } catch (_) { }
+}
+
+function dev1SnapshotHighlighterStateHasVisibleData(state) {
+    if (!state || typeof state !== 'object') return false;
+    if (Array.isArray(state.entries) && state.entries.length > 0) return true;
+    if (Array.isArray(state.editFragments) && state.editFragments.length > 0) return true;
+    return false;
+}
+
+async function dev1TryAutoRestoreSnapshotHighlighterForTab(tabId, tab = {}, options = {}) {
+    const requireMarker = options?.requireMarker !== false;
+    const id = dev1NormalizeTabId(tabId);
+    if (id == null) return false;
+    let tabInfo = tab || {};
+    if (!tabInfo.url) {
+        try { tabInfo = await browserAPI.tabs.get(id); } catch (_) { tabInfo = tab || {}; }
+    }
+    const rawUrl = String(tabInfo?.url || '').trim();
+    let parsed = null;
+    try { parsed = new URL(rawUrl); } catch (_) { parsed = null; }
+    if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) return false;
+    const url = parsed.toString();
+    if (dev1IsSnapshotHighlighterPdfUrl(url)) return false;
+
+    const markerKey = dev1BuildSnapshotHighlighterAutoRestoreKey(id, url);
+    const stateKey = dev1BuildSnapshotHighlighterStateKey(id, url);
+    if (!markerKey || !stateKey) return false;
+    let marker = null;
+    let scopedEntry = null;
+    try {
+        const stored = await browserAPI.storage.local.get([markerKey, stateKey]);
+        marker = stored && stored[markerKey];
+        scopedEntry = stored && stored[stateKey];
+    } catch (_) {
+        return false;
+    }
+    if (requireMarker && (!marker || marker.visible !== true || String(marker.url || '') !== url)) return false;
+    if (!scopedEntry || typeof scopedEntry !== 'object' || String(scopedEntry.u || '') !== url) return false;
+    if (!dev1SnapshotHighlighterStateHasVisibleData(scopedEntry.v)) return false;
+    if (await dev1IsSnapshotHighlighterPdfPage(id)) return false;
+
+    await dev1ExecuteScriptFile(id, 'dev_1/tab_scoped_storage.js');
+    try {
+        await dev1ExecuteScriptFile(id, 'dev_1/snapshot_highlighter/history_hook.js', 'MAIN');
+    } catch (_) { }
+    await dev1InsertCssFile(id, 'dev_1/snapshot_highlighter/styles.css');
+    await dev1ExecuteScriptFile(id, 'dev_1/snapshot_highlighter/index.js');
+    const result = await dev1ExecuteScript(id, (highlighterConfig) => {
+        const api = window.__dev1SnapshotHighlighter;
+        if (!api || typeof api.show !== 'function') return { success: false };
+        return api.show(highlighterConfig);
+    }, [{
+        lang: marker?.lang === 'en' || options?.lang === 'en' ? 'en' : 'zh_CN',
+        source: options?.source || (requireMarker ? 'snapshot_highlighter_autorestore' : 'snapshot_helper_existing_highlights'),
+        title: String(tabInfo?.title || '').trim(),
+        url,
+        domain: parsed.hostname || '',
+        existingTabId: id,
+        tabId: id,
+        restoreOnly: options?.restoreOnly !== false,
+        suppressToolbar: options?.suppressToolbar !== false
+    }]);
+    return !!(result && result.success === true);
+}
+
 async function dev1ToggleSnapshotHighlighterForTab(message = {}, sender = {}) {
     const tab = sender?.tab || {};
     const tabId = dev1NormalizeTabId(tab?.id);
@@ -6695,6 +7211,11 @@ async function dev1ToggleSnapshotHighlighterForTab(message = {}, sender = {}) {
     }, [config]);
     if (!result || result.success !== true) {
         throw new Error(result?.error || 'Snapshot highlighter unavailable');
+    }
+    if (result.visible === false) {
+        await dev1ClearSnapshotHighlighterAutoRestoreMarkers(tabId);
+    } else {
+        await dev1SetSnapshotHighlighterAutoRestoreMarker(tabId, parsed.toString(), lang);
     }
     return {
         success: true,
@@ -6793,7 +7314,15 @@ async function dev1EnableSnapshotHelperForItems(rawItems = [], lang = 'zh_CN', o
             if (!showResult || showResult.success !== true) {
                 throw new Error(showResult?.error || 'Snapshot helper unavailable');
             }
-            results.push({ success: true, tabId, url: item.url });
+            const highlighterRestored = await dev1TryAutoRestoreSnapshotHighlighterForTab(tabId, {
+                url: item.url,
+                title: item.title
+            }, {
+                requireMarker: false,
+                lang: normalizedLang,
+                source: 'snapshot_helper_existing_highlights'
+            }).catch(() => false);
+            results.push({ success: true, tabId, url: item.url, highlighterRestored });
         } catch (error) {
             results.push({ success: false, tabId, url: item.url, error: error?.message || 'inject failed' });
         }

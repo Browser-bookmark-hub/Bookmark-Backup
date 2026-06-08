@@ -84,7 +84,9 @@
       {
          "resources": [
             "dev_1/third_party/defuddle.index.full.js",
-            "dev_1/third_party/flatten-shadow-dom.js"
+            "dev_1/third_party/flatten-shadow-dom.js",
+            "dev_1/snapshot_highlighter/assets/highlighter.svg",
+            "dev_1/snapshot_highlighter/assets/highlighter-red.svg"
          ],
          "matches": [
             "<all_urls>"

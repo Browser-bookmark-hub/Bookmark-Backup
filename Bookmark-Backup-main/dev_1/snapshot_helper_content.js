@@ -18,6 +18,20 @@
       return 1;
     };
 
+    function hashUrl(value) {
+      const input = String(value == null ? '' : value);
+      let h1 = 0xdeadbeef ^ input.length;
+      let h2 = 0x41c6ce57 ^ input.length;
+      for (let i = 0; i < input.length; i += 1) {
+        const ch = input.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+      }
+      h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+      h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+      return ((h2 >>> 0).toString(36) + (h1 >>> 0).toString(36)).slice(0, 20);
+    }
+
     const messages = {
       zh_CN: {
         title: '网页快照辅助工具',
@@ -31,12 +45,13 @@
         md_failed: 'MD 保存失败',
         mhtml_tooltip: '保存 MHTML 网页快照',
         md_tooltip: '保存 Markdown 网页快照',
-        highlight_tool: '高亮',
+        highlight_tool: '高亮工具',
         highlight_tooltip: '高亮工具',
         highlight_tool_ready: '高亮工具已打开',
         highlight_tool_hidden: '高亮工具已收起',
         highlight_tool_failed: '高亮工具失败',
         highlight_tool_unavailable_pdf: 'PDF 页面不启用高亮工具',
+        highlight_tool_launching: '正在打开高亮工具...',
         open_web_snapshot: '打开网页快照页',
         open_web_snapshot_tooltip: '打开网页快照页面',
         screenshot_area: '区域截图',
@@ -106,12 +121,13 @@
         md_failed: 'MD save failed',
         mhtml_tooltip: 'Save an MHTML web snapshot',
         md_tooltip: 'Save a Markdown web snapshot',
-        highlight_tool: 'HL',
+        highlight_tool: 'Highlight',
         highlight_tooltip: 'Highlight tool',
         highlight_tool_ready: 'Highlight tool opened',
         highlight_tool_hidden: 'Highlight tool hidden',
         highlight_tool_failed: 'Highlight tool failed',
         highlight_tool_unavailable_pdf: 'Highlight tool is disabled on PDFs',
+        highlight_tool_launching: 'Opening highlight tool...',
         open_web_snapshot: 'Open Web Snapshot page',
         open_web_snapshot_tooltip: 'Open the Web Snapshot page',
         screenshot_area: 'Area Screenshot',
@@ -237,6 +253,11 @@
         this._isScreenshotting = false;
         this.activeSessionCleanup = null;
         this._longShotStabilityCleanup = null;
+        this._highlighterVisibleGuess = false;
+        this._highlighterLaunchPanelTimer = null;
+        this._highlighterToolbarUiCache = null;
+        this._highlighterToolbarUiCacheUrl = '';
+        this._highlighterToolbarUiPrefetch = null;
         this.t = (key) => this.translate(key);
       }
 
@@ -404,11 +425,33 @@
             .dev1-helper-btn:hover { background:${this.darkModeEnabled ? '#4b5563' : '#cbd5e1'}; }
             .dev1-helper-mhtml { width:auto; min-width:48px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
             .dev1-helper-md { width:auto; min-width:34px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
-            .dev1-helper-highlight { width:auto; min-width:42px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
+            .dev1-helper-highlight { width:auto; min-width:64px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
             .dev1-helper-open-snapshot svg { transform:translateY(1px); }
             .dev1-helper-feedback { max-width:116px; font-size:11px; color:${this.darkModeEnabled ? '#93c5fd' : '#2563eb'}; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
             .dev1-helper-tip { position:fixed; z-index:2147483647; max-width:220px; height:24px; box-sizing:border-box; padding:0 8px; border-radius:7px; background:${this.darkModeEnabled ? '#111827' : '#0f172a'}; color:#fff; font-size:11px; line-height:1; display:flex; align-items:center; white-space:nowrap; box-shadow:0 8px 22px rgba(15,23,42,0.24); pointer-events:none; opacity:0; transform:translateY(-2px); transition:opacity 80ms ease, transform 80ms ease; }
             .dev1-helper-tip[data-show="true"] { opacity:1; transform:translateY(0); }
+            .dev1-highlighter-launch-panel, .dev1-highlighter-launch-panel * { box-sizing:border-box; letter-spacing:0; }
+            .dev1-highlighter-launch-panel { position:fixed; z-index:2147483647; min-height:64px; width:auto; max-width:calc(100vw - 16px); box-sizing:border-box; padding:12px 16px; border-radius:24px; border:1px solid ${this.darkModeEnabled ? '#444' : '#e0e6ed'}; background:${this.darkModeEnabled ? '#2a2a2a' : '#ffffff'}; color:${this.darkModeEnabled ? '#e0e0e0' : '#172033'}; box-shadow:0 8px 32px rgba(0,0,0,.15), 0 4px 16px rgba(0,0,0,.1); display:flex; align-items:center; gap:8px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; pointer-events:none; user-select:none; opacity:0; transition:opacity 80ms ease; }
+            .dev1-highlighter-launch-panel[data-show="true"] { opacity:.94; }
+            .dev1-highlighter-launch-btn { width:40px; height:40px; flex:0 0 40px; margin:0; padding:0; border:0; border-radius:12px; background:${this.darkModeEnabled ? '#333' : '#f8f9fa'}; color:inherit; display:inline-flex; align-items:center; justify-content:center; font-size:18px; line-height:1; box-shadow:0 2px 8px rgba(0,0,0,.1); opacity:.86; }
+            .dev1-highlighter-launch-btn svg { width:18px; height:18px; display:block; fill:none; stroke:currentColor; stroke-width:2.15; stroke-linecap:round; stroke-linejoin:round; }
+            .dev1-highlighter-launch-indicator { min-width:80px; height:40px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:6px 12px; margin:0 6px; border-radius:16px; background:${this.darkModeEnabled ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.05)'}; border:1px solid ${this.darkModeEnabled ? 'rgba(255,255,255,.2)' : 'rgba(0,0,0,.1)'}; box-shadow:0 2px 8px rgba(0,0,0,.1); animation:dev1HighlighterLaunchSoftPulse 900ms ease-in-out infinite; }
+            .dev1-highlighter-launch-swatch { width:20px; height:20px; border-radius:7px; border:1px solid rgba(0,0,0,.12); background:#fff8b3; box-shadow:inset 0 0 0 1px rgba(255,255,255,.52); }
+            .dev1-highlighter-launch-tool { width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; font-size:15px; }
+            .dev1-highlighter-launch-separator { width:1px; height:20px; background:${this.darkModeEnabled ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.12)'}; }
+            .dev1-highlighter-launch-panel.dev1-highlighter-launch-vertical { flex-direction:column; min-width:64px; min-height:auto; padding:16px 12px; }
+            .dev1-highlighter-launch-panel.dev1-highlighter-launch-vertical .dev1-highlighter-launch-btn { margin:4px 0; }
+            .dev1-highlighter-launch-panel.dev1-highlighter-launch-vertical .dev1-highlighter-launch-indicator { min-width:40px; min-height:80px; height:auto; flex-direction:column; margin:6px 0; }
+            .dev1-highlighter-launch-panel.dev1-highlighter-launch-vertical .dev1-highlighter-launch-separator { width:16px; height:1px; }
+            .dev1-highlighter-launch-panel.dev1-highlighter-launch-vertical .dev1-highlighter-launch-drag { top:4px; }
+            .dev1-highlighter-launch-dots { display:flex; gap:3px; margin-left:2px; }
+            .dev1-highlighter-launch-dots i { width:4px; height:4px; border-radius:999px; background:#64748b; opacity:.32; animation:dev1HighlighterLaunchPulse 900ms ease-in-out infinite; }
+            .dev1-highlighter-launch-dots i:nth-child(2) { animation-delay:120ms; }
+            .dev1-highlighter-launch-dots i:nth-child(3) { animation-delay:240ms; }
+            .dev1-highlighter-launch-drag { position:absolute; left:50%; top:2px; transform:translateX(-50%); width:56px; height:16px; border-radius:999px; opacity:.48; }
+            .dev1-highlighter-launch-drag::before { content:""; position:absolute; left:50%; top:2px; transform:translateX(-50%); width:40px; height:4px; border-radius:999px; background:currentColor; opacity:.34; }
+            @keyframes dev1HighlighterLaunchPulse { 0%, 80%, 100% { opacity:.22; transform:translateY(0); } 40% { opacity:.85; transform:translateY(-2px); } }
+            @keyframes dev1HighlighterLaunchSoftPulse { 0%, 100% { opacity:.72; } 50% { opacity:1; } }
             .dev1-helper-body { padding: 0 14px 16px; }
             .dev1-helper-body button { cursor:pointer; }
             .dev1-helper-root[data-open="false"] .dev1-helper-panel { display:none; }
@@ -482,9 +525,7 @@
         };
         shadow.querySelector('.dev1-helper-close').addEventListener('click', () => this.destroy());
         const setOpen = (open) => {
-          root.dataset.open = open ? 'true' : 'false';
-          launcher.setAttribute('aria-expanded', open ? 'true' : 'false');
-          if (open) this._updateQuadrant(true);
+          this._setPanelOpen(open);
         };
         launcher.addEventListener('click', () => {
           if (launcher.__dev1LastDragMoved) return;
@@ -507,6 +548,7 @@
         this._bindDrag(host, launcher, { skipInteractive: false });
         this._bindDrag(host, panel.querySelector('.dev1-helper-header'), { skipInteractive: true });
         this._renderScreenshotOptions(body);
+        this._prefetchHighlighterToolbarUi();
         requestAnimationFrame(() => this._updateQuadrant(true));
       }
 
@@ -520,6 +562,303 @@
             feedback.textContent = '';
           }, timeoutMs);
         }
+      }
+
+      _normalizeHighlighterToolbarUi(value = {}) {
+        const raw = value && typeof value === 'object' ? value : {};
+        const validPositions = new Set(['floating', 'left', 'right', 'top', 'bottom']);
+        const rawDock = raw.dockState && typeof raw.dockState === 'object' ? raw.dockState : {};
+        const position = validPositions.has(raw.position)
+          ? raw.position
+          : (validPositions.has(rawDock.position) ? rawDock.position : 'floating');
+        const left = Number(raw.left);
+        const top = Number(raw.top);
+        const dockAlongRaw = raw.dockAlong && typeof raw.dockAlong === 'object' ? raw.dockAlong : null;
+        const dockAlongCenter = Number(dockAlongRaw && dockAlongRaw.center);
+        const dockAlongSide = dockAlongRaw && validPositions.has(dockAlongRaw.side) && dockAlongRaw.side !== 'floating'
+          ? dockAlongRaw.side
+          : position;
+        return {
+          position,
+          left: Number.isFinite(left) ? left : null,
+          top: Number.isFinite(top) ? top : null,
+          userMoved: !!raw.userMoved,
+          dockState: { position, collapsed: position !== 'floating' && !!(raw.collapsed ?? rawDock.collapsed) },
+          dockAlong: Number.isFinite(dockAlongCenter) && dockAlongSide !== 'floating'
+            ? { side: dockAlongSide, center: dockAlongCenter }
+            : null
+        };
+      }
+
+      _getHighlighterStateStorageKey(url = window.location.href) {
+        const tabId = Number(this.config && this.config.existingTabId);
+        if (!Number.isFinite(tabId)) return '';
+        return `dev1_scoped_${Math.floor(tabId)}_snapshot_highlighter_page_${hashUrl(url)}`;
+      }
+
+      _normalizeHighlighterLaunchToolbar(value = {}) {
+        const raw = value && typeof value === 'object' ? value : {};
+        return {
+          color: String(raw.color || '#FFEB3B'),
+          colorNameKey: String(raw.colorNameKey || ''),
+          colorVariant: String(raw.colorVariant || ''),
+          tool: String(raw.tool || 'highlight'),
+          toolNameKey: String(raw.toolNameKey || raw.tool || '')
+        };
+      }
+
+      async _readStoredHighlighterToolbarUi(url = window.location.href) {
+        const normalizedUrl = String(url || window.location.href || '');
+        if (this._highlighterToolbarUiCacheUrl === normalizedUrl && this._highlighterToolbarUiCache) {
+          return this._highlighterToolbarUiCache;
+        }
+        const storage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local ? chrome.storage.local : null;
+        const key = this._getHighlighterStateStorageKey(normalizedUrl);
+        if (!storage || !key) return null;
+        try {
+          const result = await new Promise(resolve => storage.get([key], resolve));
+          const entry = result && result[key];
+          const state = entry && typeof entry === 'object' && String(entry.u || '') === normalizedUrl ? entry.v : null;
+          const toolbarUi = state && typeof state === 'object' ? state.toolbarUi : null;
+          const toolbar = state && typeof state === 'object' ? state.toolbar : null;
+          if ((!toolbarUi || typeof toolbarUi !== 'object') && (!toolbar || typeof toolbar !== 'object')) return null;
+          const normalized = {
+            ...this._normalizeHighlighterToolbarUi(toolbarUi || {}),
+            toolbar: this._normalizeHighlighterLaunchToolbar(toolbar)
+          };
+          this._highlighterToolbarUiCache = normalized;
+          this._highlighterToolbarUiCacheUrl = normalizedUrl;
+          return normalized;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      _prefetchHighlighterToolbarUi() {
+        const url = String(window.location.href || '');
+        if (this._highlighterToolbarUiPrefetch && this._highlighterToolbarUiCacheUrl === url) return this._highlighterToolbarUiPrefetch;
+        this._highlighterToolbarUiCacheUrl = url;
+        this._highlighterToolbarUiPrefetch = this._readStoredHighlighterToolbarUi(url).finally(() => {
+          this._highlighterToolbarUiPrefetch = null;
+        });
+        return this._highlighterToolbarUiPrefetch;
+      }
+
+      _getHighlighterLaunchDockCenter(toolbarUi, position) {
+        const center = Number(toolbarUi && toolbarUi.dockAlong && toolbarUi.dockAlong.side === position ? toolbarUi.dockAlong.center : NaN);
+        if (Number.isFinite(center)) return center;
+          return position === 'left' || position === 'right'
+          ? window.innerHeight / 2
+          : window.innerWidth / 2;
+      }
+
+      _getHighlighterLaunchToolIcon(toolId = 'highlight') {
+        const map = {
+          'md-bold': 'B',
+          'md-italic': 'I',
+          'md-bold-italic': 'BI',
+          'md-underline': 'U̲',
+          'md-strikethrough': 'S̶',
+          'md-mark': '==',
+          'md-sup': 'X²',
+          'md-sub': 'X₂',
+          'md-edit-disable-highlight': '🚫',
+          'md-edit-h1': 'H1',
+          'md-edit-h2': 'H2',
+          'md-edit-h3': 'H3',
+          'md-edit-ul': '•',
+          'md-edit-ol': '1.',
+          'md-edit-task': '☐',
+          'md-edit-quote': '>',
+          'md-edit-code': '```',
+          'md-edit-hr': '─',
+          'md-edit-link': '🔗',
+          'md-edit-image': '🖼',
+          'md-edit-table': '⊞',
+          'md-edit-bold': 'B',
+          'md-edit-italic': 'I',
+          'md-edit-bold-italic': 'BI',
+          'md-edit-strikethrough': 'S̶',
+          'md-edit-mark': '==',
+          'md-edit-code-inline': '`',
+          'md-edit-sup': 'X²',
+          'md-edit-sub': 'X₂',
+          underline: 'U̲',
+          'double-underline': '═',
+          wavy: '〰️',
+          dotted: '⋯',
+          dashed: '┅',
+          strikethrough: 'S̶',
+          'thick-underline': 'U̲̲̲',
+          box: '▢',
+          'filled-box': '▣',
+          'rounded-box': '▢',
+          'dashed-box': '⬚',
+          'double-box': '▣',
+          callout: '💬',
+          sticker: '🏷️',
+          'brackets-corner': '「」',
+          'brackets-round': '()',
+          'brackets-angle': '<>',
+          'brackets-book': '《》',
+          'brackets-cjk': '【】',
+          'brackets-curly': '{}',
+          'brackets-square': '[]',
+          pill: '💊',
+          highlight: '🖍️',
+          marker: '🖊️',
+          pastel: '🎨',
+          neon: '⚡',
+          transparent: '👻',
+          'highlighter-pen': '🖊️',
+          glow: '🌟',
+          blur: '🌫️',
+          liquidglass: '💎',
+          mosaic: '▦',
+          outline: 'A',
+          rainbow: '🌈',
+          spotlight: '🔦',
+          gradient: '🎚️',
+          'running-line': '⬚↻',
+          'neon-blink': '🌬',
+          'neon-flicker': '⚡',
+          ripple: '◎',
+          fluid: '🌊'
+        };
+        return map[String(toolId || 'highlight')] || '🖍️';
+      }
+
+      _applyHighlighterLaunchSwatch(element, colorValue = '#FFEB3B') {
+        if (!element) return;
+        const color = String(colorValue || '#FFEB3B').trim();
+        element.style.removeProperty('background');
+        element.style.removeProperty('background-image');
+        if (color === 'transparent') {
+          element.style.background = 'linear-gradient(45deg, rgba(148,163,184,.35) 25%, transparent 25% 50%, rgba(148,163,184,.35) 50% 75%, transparent 75%)';
+          element.style.backgroundSize = '8px 8px';
+          return;
+        }
+        if (color.startsWith('special:rainbow')) {
+          element.style.background = 'linear-gradient(90deg, #ff3b30, #ff9500, #ffcc00, #34c759, #00c7ff, #007aff, #af52de)';
+          return;
+        }
+        if (/^#[0-9a-f]{3,6}$/i.test(color) || /^rgba?\(/i.test(color)) {
+          element.style.background = color;
+          return;
+        }
+        element.style.background = '#FFEB3B';
+      }
+
+      _calculateHighlighterLaunchPanelPosition(anchorRect, panel, toolbarUi = null) {
+        const margin = 8;
+        const gap = 8;
+        const width = Math.max(300, Math.min(360, Number(panel && panel.offsetWidth) || 320));
+        const height = Math.max(64, Number(panel && panel.offsetHeight) || 64);
+        const remembered = toolbarUi ? this._normalizeHighlighterToolbarUi(toolbarUi) : null;
+        if (remembered) {
+          const dockPosition = remembered.dockState && remembered.dockState.position !== 'floating'
+            ? remembered.dockState.position
+            : remembered.position;
+          if (dockPosition && dockPosition !== 'floating') {
+            const offset = 12;
+            const center = this._getHighlighterLaunchDockCenter(remembered, dockPosition);
+            if (dockPosition === 'left') return { left: offset, top: Math.max(offset, Math.min(window.innerHeight - height - offset, center - height / 2)) };
+            if (dockPosition === 'right') return { left: Math.max(offset, window.innerWidth - width - offset), top: Math.max(offset, Math.min(window.innerHeight - height - offset, center - height / 2)) };
+            if (dockPosition === 'top') return { left: Math.max(offset, Math.min(window.innerWidth - width - offset, center - width / 2)), top: offset };
+            if (dockPosition === 'bottom') return { left: Math.max(offset, Math.min(window.innerWidth - width - offset, center - width / 2)), top: Math.max(offset, window.innerHeight - height - offset) };
+          }
+          const left = Number(remembered.left);
+          const top = Number(remembered.top);
+          if (Number.isFinite(left) && Number.isFinite(top)) {
+            return {
+              left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
+              top: Math.max(margin, Math.min(window.innerHeight - height - margin, top))
+            };
+          }
+        }
+        const fallbackRect = this._getHighlighterAnchorRect();
+        const rect = anchorRect || fallbackRect || {
+          left: window.innerWidth - 72,
+          right: window.innerWidth - 18,
+          top: window.innerHeight - 72,
+          bottom: window.innerHeight - 18,
+          width: 54,
+          height: 54
+        };
+        const anchorCenterX = rect.left + rect.width / 2;
+        const anchorCenterY = rect.top + rect.height / 2;
+        const alignRight = anchorCenterX > window.innerWidth / 2;
+        const preferAbove = anchorCenterY > window.innerHeight / 2;
+        let left = alignRight ? rect.right - width : rect.left;
+        let top = preferAbove ? rect.top - height - gap : rect.bottom + gap;
+        if (top < margin && preferAbove) top = rect.bottom + gap;
+        if (top + height > window.innerHeight - margin && !preferAbove) top = rect.top - height - gap;
+        left = Math.max(margin, Math.min(window.innerWidth - width - margin, left));
+        top = Math.max(margin, Math.min(window.innerHeight - height - margin, top));
+        return { left, top };
+      }
+
+      _showHighlighterLaunchPanel(anchorRect, toolbarUi = null) {
+        if (!this.shadow) return null;
+        this._hideHighlighterLaunchPanel();
+        const remembered = toolbarUi ? this._normalizeHighlighterToolbarUi(toolbarUi) : null;
+        const rememberedPosition = remembered && remembered.dockState && remembered.dockState.position !== 'floating'
+          ? remembered.dockState.position
+          : remembered && remembered.position;
+        const launchToolbar = this._normalizeHighlighterLaunchToolbar(toolbarUi && toolbarUi.toolbar);
+        const panel = document.createElement('div');
+        panel.className = 'dev1-highlighter-launch-panel';
+        if (rememberedPosition === 'left' || rememberedPosition === 'right') {
+          panel.classList.add('dev1-highlighter-launch-vertical');
+        }
+        panel.setAttribute('role', 'status');
+        panel.setAttribute('aria-live', 'polite');
+        panel.innerHTML = `
+          <button class="dev1-highlighter-launch-btn" type="button" aria-label="${this.translate('highlight_tool_launching')}">🎨</button>
+          <button class="dev1-highlighter-launch-btn" type="button" aria-label="${this.translate('highlight_tool_launching')}">🛠️</button>
+          <div class="dev1-highlighter-launch-indicator" aria-label="${this.translate('highlight_tool_launching')}">
+            <span class="dev1-highlighter-launch-swatch" aria-hidden="true"></span>
+            <span class="dev1-highlighter-launch-separator" aria-hidden="true"></span>
+            <span class="dev1-highlighter-launch-tool" aria-hidden="true">✍️</span>
+          </div>
+          <button class="dev1-highlighter-launch-btn" type="button" aria-label="${this.translate('highlight_tool_launching')}">🗑️</button>
+          <button class="dev1-highlighter-launch-btn" type="button" aria-label="${this.translate('highlight_tool_launching')}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
+          </button>
+          <div class="dev1-highlighter-launch-drag" aria-hidden="true"></div>
+        `;
+        this.shadow.appendChild(panel);
+        this._applyHighlighterLaunchSwatch(panel.querySelector('.dev1-highlighter-launch-swatch'), launchToolbar.color);
+        const toolEl = panel.querySelector('.dev1-highlighter-launch-tool');
+        if (toolEl) toolEl.textContent = this._getHighlighterLaunchToolIcon(launchToolbar.tool);
+        const pos = this._calculateHighlighterLaunchPanelPosition(anchorRect, panel, remembered);
+        panel.style.left = `${pos.left}px`;
+        panel.style.top = `${pos.top}px`;
+        requestAnimationFrame(() => {
+          if (panel.isConnected) panel.dataset.show = 'true';
+        });
+        return panel;
+      }
+
+      _hideHighlighterLaunchPanel(options = {}) {
+        if (this._highlighterLaunchPanelTimer) {
+          clearTimeout(this._highlighterLaunchPanelTimer);
+          this._highlighterLaunchPanelTimer = null;
+        }
+        const panel = this.shadow && this.shadow.querySelector('.dev1-highlighter-launch-panel');
+        if (!panel) return;
+        const remove = () => {
+          try { panel.remove(); } catch (_) { }
+        };
+        const delay = Math.max(0, Number(options.delay) || 0);
+        if (delay > 0) {
+          this._highlighterLaunchPanelTimer = setTimeout(() => {
+            this._highlighterLaunchPanelTimer = null;
+            remove();
+          }, delay);
+          return;
+        }
+        remove();
       }
 
       async _saveCurrentMhtml(button) {
@@ -599,6 +938,11 @@
       async _toggleHighlighter(button) {
         if (button && button.disabled) return;
         const previousText = button ? button.textContent : '';
+        const anchorRect = this._getHighlighterAnchorRect();
+        const toolbarUi = await (this._highlighterToolbarUiPrefetch || this._readStoredHighlighterToolbarUi());
+        const shouldCollapseOptimistically = !this._highlighterVisibleGuess;
+        this._showHighlighterLaunchPanel(anchorRect, toolbarUi);
+        if (shouldCollapseOptimistically) this._collapsePanel();
         if (button) {
           button.disabled = true;
           button.textContent = '...';
@@ -607,25 +951,58 @@
           const response = await sendRuntimeMessage({
             action: 'dev1SnapshotHelperToggleHighlighter',
             lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
-            item: this.config
+            item: {
+              ...this.config,
+              highlighterAnchorRect: anchorRect,
+              highlighterAnchorMode: 'snapshot-helper-launcher'
+            }
           }, 30000);
           if (!response || response.success !== true) {
+            this._hideHighlighterLaunchPanel();
             if (response && response.pdf === true) {
+              if (shouldCollapseOptimistically) this._setPanelOpen(true);
               this._setHeaderFeedback(this.translate('highlight_tool_unavailable_pdf'), 4200);
               return;
             }
             throw new Error(response?.error || this.translate('highlight_tool_failed'));
           }
+          this._highlighterVisibleGuess = response.visible !== false;
+          this._hideHighlighterLaunchPanel();
+          if (response.visible !== false) this._collapsePanel();
+          else if (shouldCollapseOptimistically) this._setPanelOpen(true);
           this._setHeaderFeedback(response.visible === false
             ? this.translate('highlight_tool_hidden')
             : this.translate('highlight_tool_ready'));
         } catch (error) {
+          this._hideHighlighterLaunchPanel();
+          if (shouldCollapseOptimistically) this._setPanelOpen(true);
           this._setHeaderFeedback(`${this.translate('highlight_tool_failed')}: ${error?.message || error}`, 5000);
         } finally {
           if (button) {
             button.disabled = false;
             button.textContent = previousText || this.translate('highlight_tool');
           }
+        }
+      }
+
+      _getHighlighterAnchorRect() {
+        const launcher = this.shadow && this.shadow.querySelector('.dev1-helper-launcher');
+        const anchor = launcher || this.host;
+        if (!anchor || typeof anchor.getBoundingClientRect !== 'function') return null;
+        try {
+          const rect = anchor.getBoundingClientRect();
+          return {
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight
+          };
+        } catch (_) {
+          return null;
         }
       }
 
@@ -667,6 +1044,12 @@
         return { success: true };
       }
 
+      openPanel(config) {
+        const response = this.show(config || this.config);
+        this._setPanelOpen(true);
+        return { ...(response || {}), open: true };
+      }
+
       isVisible() {
         const host = this.host || document.getElementById(HOST_ID);
         return !!(host && host.isConnected && host.style.display !== 'none');
@@ -677,6 +1060,7 @@
           try { this.activeSessionCleanup(); } catch (_) { }
           this.activeSessionCleanup = null;
         }
+        this._hideHighlighterLaunchPanel();
         this._removeRecordingSettingsPanel();
         if (this.host) this.host.style.display = 'none';
         return { success: true };
@@ -695,6 +1079,7 @@
           clearTimeout(this._headerFeedbackTimer);
           this._headerFeedbackTimer = null;
         }
+        this._hideHighlighterLaunchPanel();
         this._removeRecordingSettingsPanel();
         this._removeMdSettingsPanel();
         this._removeMarkdownSourceHighlight();
@@ -722,10 +1107,15 @@
       }
 
       _collapsePanel() {
+        this._setPanelOpen(false);
+      }
+
+      _setPanelOpen(open) {
         const root = this.shadow && this.shadow.querySelector('.dev1-helper-root');
         const launcher = this.shadow && this.shadow.querySelector('.dev1-helper-launcher');
-        if (root) root.dataset.open = 'false';
-        if (launcher) launcher.setAttribute('aria-expanded', 'false');
+        if (root) root.dataset.open = open ? 'true' : 'false';
+        if (launcher) launcher.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) this._updateQuadrant(true);
       }
 
     // ===== Zoom-Invariant Fixed Layer for Screenshot/Recording UI =====
@@ -6066,6 +6456,7 @@
     window[API_KEY] = {
       loaded: true,
       show: (config) => helper.show(config),
+      openPanel: (config) => helper.openPanel(config),
       hide: () => helper.hidePanel(),
       destroy: () => helper.destroy(),
       isVisible: () => helper.isVisible()
