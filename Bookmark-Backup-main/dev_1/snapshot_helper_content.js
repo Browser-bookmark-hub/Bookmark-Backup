@@ -31,6 +31,12 @@
         md_failed: 'MD 保存失败',
         mhtml_tooltip: '保存 MHTML 网页快照',
         md_tooltip: '保存 Markdown 网页快照',
+        highlight_tool: '高亮',
+        highlight_tooltip: '高亮工具',
+        highlight_tool_ready: '高亮工具已打开',
+        highlight_tool_hidden: '高亮工具已收起',
+        highlight_tool_failed: '高亮工具失败',
+        highlight_tool_unavailable_pdf: 'PDF 页面不启用高亮工具',
         open_web_snapshot: '打开网页快照页',
         open_web_snapshot_tooltip: '打开网页快照页面',
         screenshot_area: '区域截图',
@@ -100,6 +106,12 @@
         md_failed: 'MD save failed',
         mhtml_tooltip: 'Save an MHTML web snapshot',
         md_tooltip: 'Save a Markdown web snapshot',
+        highlight_tool: 'HL',
+        highlight_tooltip: 'Highlight tool',
+        highlight_tool_ready: 'Highlight tool opened',
+        highlight_tool_hidden: 'Highlight tool hidden',
+        highlight_tool_failed: 'Highlight tool failed',
+        highlight_tool_unavailable_pdf: 'Highlight tool is disabled on PDFs',
         open_web_snapshot: 'Open Web Snapshot page',
         open_web_snapshot_tooltip: 'Open the Web Snapshot page',
         screenshot_area: 'Area Screenshot',
@@ -392,6 +404,7 @@
             .dev1-helper-btn:hover { background:${this.darkModeEnabled ? '#4b5563' : '#cbd5e1'}; }
             .dev1-helper-mhtml { width:auto; min-width:48px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
             .dev1-helper-md { width:auto; min-width:34px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
+            .dev1-helper-highlight { width:auto; min-width:42px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
             .dev1-helper-open-snapshot svg { transform:translateY(1px); }
             .dev1-helper-feedback { max-width:116px; font-size:11px; color:${this.darkModeEnabled ? '#93c5fd' : '#2563eb'}; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
             .dev1-helper-tip { position:fixed; z-index:2147483647; max-width:220px; height:24px; box-sizing:border-box; padding:0 8px; border-radius:7px; background:${this.darkModeEnabled ? '#111827' : '#0f172a'}; color:#fff; font-size:11px; line-height:1; display:flex; align-items:center; white-space:nowrap; box-shadow:0 8px 22px rgba(15,23,42,0.24); pointer-events:none; opacity:0; transform:translateY(-2px); transition:opacity 80ms ease, transform 80ms ease; }
@@ -406,6 +419,7 @@
                 <div class="dev1-helper-title">${this.translate('title')}</div>
                 <div class="dev1-helper-feedback" aria-live="polite"></div>
                 <button class="dev1-helper-btn dev1-helper-md" type="button" aria-label="${this.translate('md_tooltip')}" data-tip="${this.translate('md_tooltip')}" data-no-drag="true">MD</button>
+                <button class="dev1-helper-btn dev1-helper-highlight" type="button" aria-label="${this.translate('highlight_tooltip')}" data-tip="${this.translate('highlight_tooltip')}" data-no-drag="true">${this.translate('highlight_tool')}</button>
                 <button class="dev1-helper-btn dev1-helper-mhtml" type="button" aria-label="${this.translate('mhtml_tooltip')}" data-tip="${this.translate('mhtml_tooltip')}" data-no-drag="true">MHTML</button>
                 <button class="dev1-helper-btn dev1-helper-open-snapshot" type="button" aria-label="${this.translate('open_web_snapshot_tooltip')}" data-tip="${this.translate('open_web_snapshot_tooltip')}" data-no-drag="true">
                   <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"></path><path d="M10 14L21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>
@@ -428,6 +442,7 @@
         const minBtn = shadow.querySelector('.dev1-helper-min');
         const mhtmlBtn = shadow.querySelector('.dev1-helper-mhtml');
         const mdBtn = shadow.querySelector('.dev1-helper-md');
+        const highlighterBtn = shadow.querySelector('.dev1-helper-highlight');
         const openSnapshotBtn = shadow.querySelector('.dev1-helper-open-snapshot');
         const bindTip = (button) => {
           if (!button) return;
@@ -483,9 +498,11 @@
         minBtn.addEventListener('click', () => setOpen(false));
         bindTip(mhtmlBtn);
         bindTip(mdBtn);
+        bindTip(highlighterBtn);
         bindTip(openSnapshotBtn);
         mhtmlBtn.addEventListener('click', () => this._saveCurrentMhtml(mhtmlBtn));
         mdBtn.addEventListener('click', () => { this._collapsePanel(); this._showMdSettingsPanel(launcher); });
+        highlighterBtn.addEventListener('click', () => this._toggleHighlighter(highlighterBtn));
         openSnapshotBtn.addEventListener('click', () => this._openWebSnapshotPage());
         this._bindDrag(host, launcher, { skipInteractive: false });
         this._bindDrag(host, panel.querySelector('.dev1-helper-header'), { skipInteractive: true });
@@ -576,6 +593,39 @@
           if (!response || response.success !== true) throw new Error(response?.error || 'Open failed');
         } catch (error) {
           this._setHeaderFeedback(error?.message || 'Open failed', 5000);
+        }
+      }
+
+      async _toggleHighlighter(button) {
+        if (button && button.disabled) return;
+        const previousText = button ? button.textContent : '';
+        if (button) {
+          button.disabled = true;
+          button.textContent = '...';
+        }
+        try {
+          const response = await sendRuntimeMessage({
+            action: 'dev1SnapshotHelperToggleHighlighter',
+            lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
+            item: this.config
+          }, 30000);
+          if (!response || response.success !== true) {
+            if (response && response.pdf === true) {
+              this._setHeaderFeedback(this.translate('highlight_tool_unavailable_pdf'), 4200);
+              return;
+            }
+            throw new Error(response?.error || this.translate('highlight_tool_failed'));
+          }
+          this._setHeaderFeedback(response.visible === false
+            ? this.translate('highlight_tool_hidden')
+            : this.translate('highlight_tool_ready'));
+        } catch (error) {
+          this._setHeaderFeedback(`${this.translate('highlight_tool_failed')}: ${error?.message || error}`, 5000);
+        } finally {
+          if (button) {
+            button.disabled = false;
+            button.textContent = previousText || this.translate('highlight_tool');
+          }
         }
       }
 

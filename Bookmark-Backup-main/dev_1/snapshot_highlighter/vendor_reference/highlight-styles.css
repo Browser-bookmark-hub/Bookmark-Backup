@@ -1,0 +1,611 @@
+/* Custom Highlight Styles for Text Highlighting Extension */
+
+.custom-highlight {
+  /* Base styles applied via JavaScript, but this provides fallbacks and additional styling */
+  position: relative !important;
+  display: inline !important;
+  box-decoration-break: clone !important;
+  -webkit-box-decoration-break: clone !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  cursor: pointer !important;
+  /* Do not force underline; reserve for underline tools. Avoid !important so
+     JS-applied underline styles (e.g., tool 'underline', 'double-underline', etc.)
+     can take effect. */
+  text-decoration: none;
+  /* 支持叠加效果：每个高亮都是独立的层叠上下文，后创建的覆盖先创建的 */
+  isolation: isolate;
+}
+
+/* 嵌套高亮（叠加效果）：确保内层高亮在视觉上覆盖外层 */
+.custom-highlight .custom-highlight {
+  position: relative !important;
+  /* 嵌套的高亮始终显示在父高亮之上 */
+  z-index: 1 !important;
+}
+
+/* MD 渲染效果的叠加支持 */
+.md-rendered-content {
+  position: relative !important;
+  isolation: isolate;
+}
+
+/* 普通高亮与 MD 渲染效果的相互叠加 */
+.custom-highlight .md-rendered-content,
+.md-rendered-content .custom-highlight {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* MD 渲染效果内部的嵌套 */
+.md-rendered-content .md-rendered-content {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+/* 多行特效工具的整块 overlay 容器（foreignObject 内容） */
+.effect-merged-box {
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+}
+
+.effect-merged-box-inner {
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+}
+
+/* 多行特效 overlay 内部的文字容器，由 JS 注入 */
+.effect-merged-box-inner .effect-merged-box-text {
+  position: relative;
+  z-index: 1;
+  white-space: pre-wrap;
+}
+
+/* Multi-line merged overlay containers (foreignObject content) */
+
+/* Neon glow effects for special colors */
+.custom-highlight[data-color="#ff0080"] {
+  animation: neonPulse 2s ease-in-out infinite alternate !important;
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.8) !important;
+}
+
+.custom-highlight[data-color="#00ff80"] {
+  animation: neonPulse 2s ease-in-out infinite alternate !important;
+  text-shadow: 0 0 5px rgba(0, 0, 0, 0.8) !important;
+}
+
+.custom-highlight[data-color="#8000ff"] {
+  animation: neonPulse 2s ease-in-out infinite alternate !important;
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.8) !important;
+}
+
+.custom-highlight[data-color="#ff4000"] {
+  animation: neonPulse 2s ease-in-out infinite alternate !important;
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.8) !important;
+}
+
+.custom-highlight[data-color="#00ffff"] {
+  animation: neonPulse 2s ease-in-out infinite alternate !important;
+  text-shadow: 0 0 5px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* Premium gradient highlights */
+.custom-highlight[data-color="#ffd700"] {
+  background: linear-gradient(45deg, #ffd700, #ffed4e) !important;
+  background-size: 200% 200% !important;
+  animation: gradientShift 3s ease infinite !important;
+}
+
+.custom-highlight[data-color="#c0c0c0"] {
+  background: linear-gradient(45deg, #c0c0c0, #e8e8e8) !important;
+  background-size: 200% 200% !important;
+  animation: gradientShift 3s ease infinite !important;
+}
+
+.custom-highlight[data-color="#ff69b4"] {
+  background: linear-gradient(45deg, #ff69b4, #ffb6c1) !important;
+  background-size: 200% 200% !important;
+  animation: gradientShift 3s ease infinite !important;
+}
+
+/* Hover effects */
+.custom-highlight:hover {
+  transform: scale(1.02) !important;
+  z-index: 1000 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Selection animation */
+.custom-highlight.newly-created {
+  animation: highlightCreated 0.6s ease-out !important;
+}
+
+/* Tooltip styles - Dynamic theme support */
+.highlight-tooltip {
+  position: absolute !important;
+  background: var(--tooltip-bg, #2c3e50) !important;
+  color: var(--tooltip-text, white) !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  z-index: 10007 !important;
+  pointer-events: all !important;
+  /* box-shadow 通过 JavaScript 动态设置以支持光环效果 */
+  white-space: nowrap !important;
+  /* 仅保留 opacity 过渡，移除 transform/scale 过渡以减少缩放时的漂移 */
+  transition: opacity 0.2s ease-out !important;
+  border: 1px solid var(--tooltip-border, rgba(255, 255, 255, 0.1)) !important;
+  display: flex !important;
+  gap: 8px !important;
+  align-items: center !important;
+}
+
+/* Tooltip arrow: single triangle in the gap outside tooltip edge */
+/* 箭头使用与tooltip相同的背景色，确保平滑过渡 */
+.highlight-tooltip::after {
+  content: '' !important;
+  position: absolute !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  border: 6px solid transparent !important;
+  height: 0 !important;
+  width: 0 !important;
+  pointer-events: none !important;
+  z-index: 10002 !important;
+  /* Tooltip above highlight -> triangle below tooltip, pointing DOWN */
+  top: 100% !important;
+  /* 箭头使用与tooltip相同的背景色 */
+  border-top-color: var(--tooltip-bg, rgba(0, 0, 0, 0.9)) !important;
+  transition: border-color 0.3s ease !important;
+}
+/* Tooltip below highlight -> triangle above tooltip, pointing UP */
+.highlight-tooltip.tooltip-below::after {
+  top: auto !important;
+  bottom: 100% !important;
+  border-top-color: transparent !important;
+  /* 箭头使用与tooltip相同的背景色 */
+  border-bottom-color: var(--tooltip-bg, rgba(0, 0, 0, 0.9)) !important;
+  transition: border-color 0.3s ease !important;
+}
+
+/* Light theme tooltip styles */
+.highlight-tooltip.light-theme {
+  --tooltip-bg: #ffffff;
+  --tooltip-text: #2c3e50;
+  --tooltip-border: rgba(0, 0, 0, 0.15);
+  --button-bg: #f8f9fa;
+  --button-hover-bg: #e9ecef;
+  --button-text: #495057;
+  --button-border: rgba(0, 0, 0, 0.1);
+  --icon-color: #6c757d;
+  --icon-hover-color: #495057;
+  --divider-color: rgba(0, 0, 0, 0.1);
+  
+  background: var(--tooltip-bg) !important;
+  color: var(--tooltip-text) !important;
+  border: 1px solid var(--tooltip-border) !important;
+  /* box-shadow 通过 JavaScript 动态设置以支持光环效果 */
+}
+
+.highlight-tooltip.light-theme button {
+  /* 按钮背景色和悬停效果通过 JavaScript 动态设置以支持颜色主题 */
+  color: var(--button-text) !important;
+  border: 1px solid var(--button-border) !important;
+}
+
+.highlight-tooltip.light-theme button:hover {
+  /* 悬停效果通过 JavaScript 动态设置 */
+  color: var(--icon-hover-color) !important;
+  border-color: rgba(0, 0, 0, 0.2) !important;
+}
+
+.highlight-tooltip.light-theme .tooltip-icon {
+  color: var(--icon-color) !important;
+}
+
+.highlight-tooltip.light-theme .tooltip-icon:hover {
+  color: var(--icon-hover-color) !important;
+}
+
+.highlight-tooltip.light-theme .tooltip-divider {
+  background: var(--divider-color) !important;
+}
+
+
+/* Dark theme tooltip styles */
+.highlight-tooltip.dark-theme {
+  --tooltip-bg: #000000;
+  --tooltip-text: #e0e0e0;
+  --tooltip-border: rgba(255, 255, 255, 0.2);
+  --button-bg: #0f0f0f;
+  --button-hover-bg: #1a1a1a;
+  --button-text: #e0e0e0;
+  --button-border: rgba(255, 255, 255, 0.15);
+  --icon-color: #e0e0e0;
+  --icon-hover-color: #ffffff;
+  --divider-color: rgba(255, 255, 255, 0.12);
+
+  background: var(--tooltip-bg) !important;
+  color: var(--tooltip-text) !important;
+  border: 1px solid var(--tooltip-border) !important;
+  /* box-shadow 通过 JavaScript 动态设置以支持光环效果 */
+}
+
+
+.highlight-tooltip.dark-theme button {
+  /* 按钮背景色和悬停效果通过 JavaScript 动态设置以支持颜色主题 */
+  color: var(--button-text) !important;
+  border: 1px solid var(--button-border) !important;
+}
+
+.highlight-tooltip.dark-theme button:hover {
+  /* 悬停效果通过 JavaScript 动态设置 */
+  color: var(--icon-hover-color) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.highlight-tooltip.dark-theme .tooltip-icon {
+  color: var(--icon-color) !important;
+}
+
+.highlight-tooltip.dark-theme .tooltip-icon:hover {
+  color: var(--icon-hover-color) !important;
+}
+
+.highlight-tooltip.dark-theme .tooltip-divider {
+  background: var(--divider-color) !important;
+}
+
+
+/* Keyframe animations */
+@keyframes neonPulse {
+  0% {
+    box-shadow: 0 0 5px currentColor, 0 0 10px currentColor, 0 0 15px currentColor !important;
+  }
+  100% {
+    box-shadow: 0 0 10px currentColor, 0 0 20px currentColor, 0 0 30px currentColor !important;
+  }
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50% !important;
+  }
+  50% {
+    background-position: 100% 50% !important;
+  }
+  100% {
+    background-position: 0% 50% !important;
+  }
+}
+
+@keyframes highlightCreated {
+  0% {
+    transform: scale(1) !important;
+    box-shadow: 0 0 0 rgba(102, 126, 234, 0.5) !important;
+  }
+  50% {
+    transform: scale(1.05) !important;
+    box-shadow: 0 0 20px rgba(102, 126, 234, 0.5) !important;
+  }
+  100% {
+    transform: scale(1) !important;
+    box-shadow: 0 0 0 rgba(102, 126, 234, 0.5) !important;
+  }
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0 !important;
+    transform: translateX(-50%) translateY(5px) !important;
+  }
+  to {
+    opacity: 1 !important;
+    transform: translateX(-50%) translateY(0) !important;
+  }
+}
+
+/* 彩虹光环动画效果 - 平滑的色相旋转 */
+@keyframes rainbowGlow {
+  0% {
+    filter: hue-rotate(0deg) brightness(1) saturate(1) !important;
+  }
+  25% {
+    filter: hue-rotate(90deg) brightness(1.05) saturate(1.1) !important;
+  }
+  50% {
+    filter: hue-rotate(180deg) brightness(1.1) saturate(1.2) !important;
+  }
+  75% {
+    filter: hue-rotate(270deg) brightness(1.05) saturate(1.1) !important;
+  }
+  100% {
+    filter: hue-rotate(360deg) brightness(1) saturate(1) !important;
+  }
+}
+
+/* 彩虹光环脉冲效果 - 用于改变不透明度 */
+@keyframes rainbowPulse {
+  0%, 100% {
+    transform: scale(1) !important;
+    opacity: 0.9 !important;
+  }
+  50% {
+    transform: scale(1.02) !important;
+    opacity: 1 !important;
+  }
+}
+
+/* 彩虹边框旋转动画 - 让边框本身旋转 */
+@keyframes rainbowBorderRotate {
+  0% {
+    background: conic-gradient(from 0deg, #ff3b30, #ff9500, #ffcc00, #34c759, #00c7ff, #007aff, #af52de, #ff3b30) !important;
+  }
+  25% {
+    background: conic-gradient(from 90deg, #ff3b30, #ff9500, #ffcc00, #34c759, #00c7ff, #007aff, #af52de, #ff3b30) !important;
+  }
+  50% {
+    background: conic-gradient(from 180deg, #ff3b30, #ff9500, #ffcc00, #34c759, #00c7ff, #007aff, #af52de, #ff3b30) !important;
+  }
+  75% {
+    background: conic-gradient(from 270deg, #ff3b30, #ff9500, #ffcc00, #34c759, #00c7ff, #007aff, #af52de, #ff3b30) !important;
+  }
+  100% {
+    background: conic-gradient(from 360deg, #ff3b30, #ff9500, #ffcc00, #34c759, #00c7ff, #007aff, #af52de, #ff3b30) !important;
+  }
+}
+
+/* Double-click removal animation */
+.custom-highlight.removing {
+  animation: highlightRemove 0.3s ease-out forwards !important;
+}
+
+@keyframes highlightRemove {
+  0% {
+    opacity: 1 !important;
+    transform: scale(1) !important;
+  }
+  100% {
+    opacity: 0 !important;
+    transform: scale(0.8) !important;
+  }
+}
+
+/* Special effects for different color categories */
+
+/* Pastel colors - soft glow */
+.custom-highlight[data-color="#ffcccb"],
+.custom-highlight[data-color="#e0e0ff"],
+.custom-highlight[data-color="#ffe0e0"],
+.custom-highlight[data-color="#e0ffe0"] {
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6) !important;
+}
+
+/* Classic colors - subtle shadow */
+.custom-highlight[data-color="#ffeb3b"],
+.custom-highlight[data-color="#4caf50"],
+.custom-highlight[data-color="#2196f3"],
+.custom-highlight[data-color="#ff9800"] {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Print styles */
+@media print {
+  .custom-highlight {
+    background: #ffeb3b !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    animation: none !important;
+  }
+  
+  .highlight-tooltip {
+    display: none !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .custom-highlight {
+    border: 2px solid currentColor !important;
+    background: rgba(255, 255, 0, 0.3) !important;
+    color: #000 !important;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .custom-highlight,
+  .custom-highlight *,
+  .highlight-tooltip {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Color and Tool Picker Light Theme Support */
+.highlight-color-picker.light-theme,
+.highlight-tool-picker.light-theme,
+.batch-color-picker.light-theme,
+.batch-tool-picker.light-theme {
+  background: #ffffff !important;
+  border-color: #e0e6ed !important;
+  color: #2c3e50 !important;
+}
+
+.highlight-color-picker.light-theme .category-sidebar,
+.highlight-tool-picker.light-theme .category-sidebar {
+  background: #f8f9fa !important;
+  border-color: #e0e6ed !important;
+}
+
+.highlight-color-picker.light-theme .category-btn,
+.highlight-tool-picker.light-theme .category-btn {
+  color: #666 !important;
+}
+
+.highlight-color-picker.light-theme .category-btn.active,
+.highlight-tool-picker.light-theme .category-btn.active {
+  background: #e3f2fd !important;
+  color: #1976d2 !important;
+  border-left-color: #1976d2 !important;
+}
+
+/* Light theme scrollbar styles */
+.highlight-color-picker.light-theme .color-area,
+.highlight-tool-picker.light-theme .tool-area,
+.highlight-color-picker.light-theme .category-sidebar,
+.highlight-tool-picker.light-theme .category-sidebar {
+  scrollbar-width: thin !important;
+  scrollbar-color: #c1c1c1 #f1f1f1 !important;
+}
+
+.highlight-color-picker.light-theme .color-area::-webkit-scrollbar,
+.highlight-tool-picker.light-theme .tool-area::-webkit-scrollbar,
+.highlight-color-picker.light-theme .category-sidebar::-webkit-scrollbar,
+.highlight-tool-picker.light-theme .category-sidebar::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.highlight-color-picker.light-theme .color-area::-webkit-scrollbar-track,
+.highlight-tool-picker.light-theme .tool-area::-webkit-scrollbar-track,
+.highlight-color-picker.light-theme .category-sidebar::-webkit-scrollbar-track,
+.highlight-tool-picker.light-theme .category-sidebar::-webkit-scrollbar-track {
+  background: #f1f1f1 !important;
+  border-radius: 4px !important;
+}
+
+.highlight-color-picker.light-theme .color-area::-webkit-scrollbar-thumb,
+.highlight-tool-picker.light-theme .tool-area::-webkit-scrollbar-thumb,
+.highlight-color-picker.light-theme .category-sidebar::-webkit-scrollbar-thumb,
+.highlight-tool-picker.light-theme .category-sidebar::-webkit-scrollbar-thumb {
+  background: #c1c1c1 !important;
+  border-radius: 4px !important;
+  border: 1px solid #f1f1f1 !important;
+}
+
+.highlight-color-picker.light-theme .color-area::-webkit-scrollbar-thumb:hover,
+.highlight-tool-picker.light-theme .tool-area::-webkit-scrollbar-thumb:hover,
+.highlight-color-picker.light-theme .category-sidebar::-webkit-scrollbar-thumb:hover,
+.highlight-tool-picker.light-theme .category-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8 !important;
+}
+
+/* Dark theme scrollbar styles for consistency */
+.highlight-color-picker.dark-theme .color-area,
+.highlight-tool-picker.dark-theme .tool-area,
+.highlight-color-picker.dark-theme .category-sidebar,
+.highlight-tool-picker.dark-theme .category-sidebar {
+  scrollbar-width: thin !important;
+  scrollbar-color: #555 #2a2a2a !important;
+}
+
+.highlight-color-picker.dark-theme .color-area::-webkit-scrollbar,
+.highlight-tool-picker.dark-theme .tool-area::-webkit-scrollbar,
+.highlight-color-picker.dark-theme .category-sidebar::-webkit-scrollbar,
+.highlight-tool-picker.dark-theme .category-sidebar::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.highlight-color-picker.dark-theme .color-area::-webkit-scrollbar-track,
+.highlight-tool-picker.dark-theme .tool-area::-webkit-scrollbar-track,
+.highlight-color-picker.dark-theme .category-sidebar::-webkit-scrollbar-track,
+.highlight-tool-picker.dark-theme .category-sidebar::-webkit-scrollbar-track {
+  background: #2a2a2a !important;
+  border-radius: 4px !important;
+}
+
+.highlight-color-picker.dark-theme .color-area::-webkit-scrollbar-thumb,
+.highlight-tool-picker.dark-theme .tool-area::-webkit-scrollbar-thumb,
+.highlight-color-picker.dark-theme .category-sidebar::-webkit-scrollbar-thumb,
+.highlight-tool-picker.dark-theme .category-sidebar::-webkit-scrollbar-thumb {
+  background: #555 !important;
+  border-radius: 4px !important;
+  border: 1px solid #2a2a2a !important;
+}
+
+.highlight-color-picker.dark-theme .color-area::-webkit-scrollbar-thumb:hover,
+.highlight-tool-picker.dark-theme .tool-area::-webkit-scrollbar-thumb:hover,
+.highlight-color-picker.dark-theme .category-sidebar::-webkit-scrollbar-thumb:hover,
+.highlight-tool-picker.dark-theme .category-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #666 !important;
+}
+
+/* Dark mode adjustments - keep existing for compatibility */
+@media (prefers-color-scheme: dark) {
+  .highlight-tooltip:not(.light-theme) {
+    background: #000000 !important;
+    color: #ecf0f1 !important;
+  }
+
+  /* Tooltip above highlight (default): triangle at bottom edge, pointing down */
+  .highlight-tooltip:not(.light-theme):not(.tooltip-below)::after {
+    border-top-color: #000000 !important;
+    border-bottom-color: transparent !important;
+  }
+
+  /* Tooltip below highlight: triangle at top edge, pointing up */
+  .highlight-tooltip:not(.light-theme).tooltip-below::after {
+    border-top-color: transparent !important;
+    border-bottom-color: #000000 !important;
+  }
+}
+  outline-offset: 2px !important;
+}
+
+/* Screen reader support */
+.custom-highlight::before {
+  content: attr(data-color-name) " highlight start" !important;
+  position: absolute !important;
+  left: -10000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+}
+
+.custom-highlight::after {
+  content: "highlight end" !important;
+  position: absolute !important;
+  left: -10000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+} 
+
+/* 复制反馈动画 */
+@keyframes copyFeedbackSlide {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* 面板滑入动画 (用于二级UI窗口) */
+@keyframes panelSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes panelSlideOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+} 

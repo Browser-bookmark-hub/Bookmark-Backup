@@ -1,0 +1,437 @@
+/* 涟漪工具 - 被动反馈边框效果 (Manifest V3) */
+
+/* 外层高亮：保持与原文本一致的行内布局 */
+.custom-highlight.tool-ripple {
+  position: relative !important;
+  display: inline !important;
+  vertical-align: baseline !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  box-decoration-break: clone !important;
+  -webkit-box-decoration-break: clone !important;
+}
+
+/* 内层容器：仅用于裁剪波纹，边框透明 */
+.custom-highlight.tool-ripple > .ripple-box {
+  position: relative !important;
+  display: inline-flex !important;
+  vertical-align: baseline !important;
+  line-height: inherit !important;
+  align-items: center !important;
+  padding: calc(var(--ripple-vpad-top, var(--ripple-vpad, 4px))) 8px calc(var(--ripple-vpad-bottom, var(--ripple-vpad, 4px))) 8px !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  border-radius: 8px !important;
+  background: rgba(var(--ripple-rgb, 66, 133, 244), 0.1) !important;
+  border: 1px solid transparent !important;
+  z-index: 0 !important;
+  box-shadow: none !important;
+  transition: background-color 0.6s ease, border-color 0.6s ease, box-shadow 0.6s ease !important;
+  will-change: background-color, border-color, box-shadow, transform;
+  transform: translateY(var(--ripple-offset-y, 0));
+}
+
+.custom-highlight.tool-ripple.ripple-overlay-active > .ripple-box {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.custom-highlight.tool-ripple.ripple-overlay-active > .ripple-box::before,
+.custom-highlight.tool-ripple.ripple-overlay-active > .ripple-box::after,
+.custom-highlight.tool-ripple.ripple-overlay-active > .ripple-box .ripple-edge {
+  display: none !important;
+}
+
+/* 主体脉冲波动画 */
+@keyframes pulse-wave {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(4);
+    opacity: 0;
+  }
+}
+
+/* 粒子脉冲动画 */
+@keyframes pulse-particle {
+  0% {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(3.5);
+    opacity: 0;
+  }
+}
+
+/* 颜色循环（彩虹模式） */
+@keyframes ripple-hue {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+/* 脉冲伪元素 - 主体波纹 */
+.custom-highlight.tool-ripple > .ripple-box::before {
+  content: '';
+  position: absolute !important;
+  top: calc(50% + var(--ripple-y-shift, 0px)) !important;
+  left: 50% !important;
+  width: 150px !important;
+  height: 150px !important;
+  transform: translate(-50%, -50%) scale(0);
+  transform-origin: 50% 50% !important;
+  border-radius: 50% !important;
+  background-color: rgba(var(--ripple-rgb, 66, 133, 244), 0.58) !important;
+  animation: pulse-wave 2s cubic-bezier(0.2, 0.8, 0.8, 0.2) infinite !important;
+  animation-delay: var(--ripple-delay-2s, var(--ripple-sync-2s, 0s)) !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+  will-change: transform, opacity, background-color, filter;
+  mix-blend-mode: screen;
+  filter: blur(1.2px) saturate(1.05);
+  transition: background-color 0.6s ease, filter 0.6s ease, opacity 0.3s ease !important;
+}
+
+/* 脉冲伪元素 - 粒子效果 */
+.custom-highlight.tool-ripple > .ripple-box::after {
+  content: '';
+  position: absolute !important;
+  top: calc(50% + var(--ripple-y-shift, 0px)) !important;
+  left: 50% !important;
+  width: 120px !important;
+  height: 120px !important;
+  transform: translate(-50%, -50%) scale(0);
+  transform-origin: 50% 50% !important;
+  border-radius: 50% !important;
+  background-image: radial-gradient(
+    circle,
+    rgba(var(--ripple-rgb, 66, 133, 244), 0.80) 10%,
+    rgba(var(--ripple-rgb, 66, 133, 244), 0.20) 50%,
+    transparent 70%
+  ) !important;
+  animation: pulse-particle 2s cubic-bezier(0.2, 0.8, 0.8, 0.2) infinite !important;
+  animation-delay: calc(var(--ripple-delay-2s, var(--ripple-sync-2s, 0s)) + 0.3s) !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+  will-change: transform, opacity, filter, background-image;
+  transition: filter 0.6s ease, opacity 0.3s ease, background 0.6s ease !important;
+}
+
+/* 彩虹模式 */
+.custom-highlight.tool-ripple.ripple-rainbow > .ripple-box::before,
+.custom-highlight.tool-ripple.ripple-rainbow > .ripple-box::after {
+  animation-name: pulse-wave, ripple-hue;
+  animation-duration: 2s, 2s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.8, 0.2), linear;
+  animation-iteration-count: infinite, infinite;
+  animation-delay: var(--ripple-delay-2s, var(--ripple-sync-2s, 0s)), var(--ripple-delay-2s, var(--ripple-sync-2s, 0s));
+}
+
+/* ===== 新的被动反馈系统 - 波纹到达边框时产生反馈 ===== */
+
+/* 自定义属性：波纹半径 */
+@property --rf-strong {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --rfw-strong {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 22px;
+}
+
+@property --rf-max-strong {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 300px;
+}
+
+@property --rf-weak {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --rfw-weak {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 18px;
+}
+
+@property --rf-max-weak {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 210px;
+}
+
+/* 被动反馈的脉冲强度 - 随波纹接近边框而增加 */
+@property --passive-impact-intensity {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+/* 主波动画：波纹扩散 */
+@keyframes ripple-rf-strong {
+  0% { --rf-strong: 0px; }
+  100% { --rf-strong: var(--rf-max-strong); }
+}
+
+/* 弱波动画：第二次脉冲 */
+@keyframes ripple-rf-weak {
+  0% { --rf-weak: 0px; }
+  100% { --rf-weak: var(--rf-max-weak); }
+}
+
+/* 强波不透明度动画 */
+@keyframes ripple-rf-opacity-strong {
+  0%  { opacity: 0.00; }
+  20% { opacity: 1.00; }
+  55% { opacity: 0.85; }
+  100%{ opacity: 0.00; }
+}
+
+/* 弱波不透明度动画 */
+@keyframes ripple-rf-opacity-weak {
+  0%   { opacity: 0.15; }
+  40%  { opacity: 0.45; }
+  70%  { opacity: 0.90; }
+  90%  { opacity: 0.65; }
+  100% { opacity: 0.00; }
+}
+
+/* 被动反馈冲击动画 - 波纹到达边框时 */
+@keyframes passive-border-impact {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+    box-shadow: 
+      inset 0 0 0 0 rgba(var(--ripple-rgb, 66, 133, 244), 0),
+      0 0 0 0 rgba(var(--ripple-rgb, 66, 133, 244), 0);
+  }
+  35% { /* 波纹还未到达 */
+    opacity: 0;
+    transform: scale(1);
+    box-shadow: 
+      inset 0 0 0 0 rgba(var(--ripple-rgb, 66, 133, 244), 0),
+      0 0 0 0 rgba(var(--ripple-rgb, 66, 133, 244), 0);
+  }
+  50% { /* 波纹接触边框时 - 内边框反应 */
+    opacity: 1;
+    transform: scale(1.01);
+    box-shadow: 
+      inset 0 0 8px 0 rgba(var(--ripple-rgb, 66, 133, 244), 0.6),
+      0 0 12px 2px rgba(var(--ripple-rgb, 66, 133, 244), 0.4);
+  }
+  65% { /* 反馈开始扩散 - 外边框波纹 */
+    opacity: 0.8;
+    transform: scale(1);
+    box-shadow: 
+      inset 0 0 4px 0 rgba(var(--ripple-rgb, 66, 133, 244), 0.3),
+      0 0 20px 4px rgba(var(--ripple-rgb, 66, 133, 244), 0.6);
+  }
+  80% { /* 反馈衰减 */
+    opacity: 0.3;
+    transform: scale(0.99);
+    box-shadow: 
+      inset 0 0 2px 0 rgba(var(--ripple-rgb, 66, 133, 244), 0.1),
+      0 0 10px 2px rgba(var(--ripple-rgb, 66, 133, 244), 0.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+    box-shadow: 
+      inset 0 0 0 0 rgba(var(--ripple-rgb, 66, 133, 244), 0),
+      0 0 0 0 rgba(var(--ripple-rgb, 66, 133, 244), 0);
+  }
+}
+
+/* 弱波被动反馈（第二次脉冲） */
+@keyframes passive-border-impact-weak {
+  0% {
+    opacity: 0;
+    box-shadow: 
+      0 0 0 0 rgba(var(--ripple-rgb, 66, 133, 244), 0);
+  }
+  40% { /* 等待主波反馈过去 */
+    opacity: 0;
+    box-shadow: 
+      0 0 0 0 rgba(var(--ripple-rgb, 66, 133, 244), 0);
+  }
+  55% { /* 弱波接触边框 - 叠加效果开始 */
+    opacity: 0.7;
+    box-shadow: 
+      0 0 10px 1px rgba(var(--ripple-rgb, 66, 133, 244), 0.5);
+  }
+  70% { /* 叠加峰值 */
+    opacity: 1;
+    box-shadow: 
+      0 0 18px 3px rgba(var(--ripple-rgb, 66, 133, 244), 0.7);
+  }
+  85% { /* 衰减 */
+    opacity: 0.4;
+    box-shadow: 
+      0 0 12px 2px rgba(var(--ripple-rgb, 66, 133, 244), 0.3);
+  }
+  100% {
+    opacity: 0;
+    box-shadow: 
+      0 0 0 0 rgba(var(--ripple-rgb, 66, 133, 244), 0);
+  }
+}
+
+/* 被动反馈边界容器 */
+.custom-highlight.tool-ripple > .ripple-box .ripple-edge,
+.ripple-merged-box-inner .ripple-edge {
+  position: absolute !important;
+  inset: 0 !important;
+  border-radius: inherit !important;
+  pointer-events: none !important;
+  z-index: 1 !important;
+  box-sizing: border-box !important;
+  border: transparent !important;
+  background: transparent !important;
+  --rf-atten: 1;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* 强波前：主要被动反馈（第一次脉冲） */
+.custom-highlight.tool-ripple > .ripple-box .ripple-edge::before,
+.ripple-merged-box-inner .ripple-edge::before {
+  content: '';
+  position: absolute !important;
+  inset: 0 !important;
+  border-radius: inherit !important;
+  background: transparent !important;
+  border: 2px solid transparent;
+  /* 波前薄环遮罩（强） */
+  -webkit-mask-image: radial-gradient(
+    circle at 50% calc(50% + var(--ripple-y-shift, 0px)),
+    transparent calc((var(--rf-strong, 0px)) - (var(--rfw-strong, 22px))),
+    #000 calc((var(--rf-strong, 0px)) - (var(--rfw-strong, 22px))),
+    #000 calc((var(--rf-strong, 0px)) + (var(--rfw-strong, 22px))),
+    transparent calc((var(--rf-strong, 0px)) + (var(--rfw-strong, 22px)))
+  );
+  mask-image: radial-gradient(
+    circle at 50% calc(50% + var(--ripple-y-shift, 0px)),
+    transparent calc((var(--rf-strong, 0px)) - (var(--rfw-strong, 22px))),
+    #000 calc((var(--rf-strong, 0px)) - (var(--rfw-strong, 22px))),
+    #000 calc((var(--rf-strong, 0px)) + (var(--rfw-strong, 22px))),
+    transparent calc((var(--rf-strong, 0px)) + (var(--rfw-strong, 22px)))
+  );
+  animation-name: ripple-rf-strong, ripple-rf-opacity-strong, passive-border-impact;
+  animation-duration: 2s, 2s, 2s !important;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.8, 0.2), linear, ease-out !important;
+  animation-iteration-count: infinite, infinite, infinite !important;
+  animation-delay: var(--ripple-delay-2s, var(--ripple-sync-2s, 0s)), var(--ripple-delay-2s, var(--ripple-sync-2s, 0s)), var(--ripple-delay-2s, var(--ripple-sync-2s, 0s)) !important;
+  mix-blend-mode: screen;
+  will-change: opacity, background-color, filter, box-shadow, border-color;
+  transition: background-color 0.6s ease, filter 0.6s ease, opacity 0.3s ease, border-color 0.3s ease !important;
+}
+
+/* 弱波前：次要被动反馈（第二次脉冲） - 叠加效果 */
+.custom-highlight.tool-ripple > .ripple-box .ripple-edge::after,
+.ripple-merged-box-inner .ripple-edge::after {
+  content: '';
+  position: absolute !important;
+  inset: 0 !important;
+  border-radius: inherit !important;
+  background: transparent !important;
+  border: 2px solid transparent;
+  -webkit-mask-image: radial-gradient(
+    circle at 50% calc(50% + var(--ripple-y-shift, 0px)),
+    transparent calc(var(--rf-weak, 0px) - var(--rfw-weak, 18px)),
+    #000 calc(var(--rf-weak, 0px) - var(--rfw-weak, 18px)),
+    #000 calc(var(--rf-weak, 0px) + var(--rfw-weak, 18px)),
+    transparent calc(var(--rf-weak, 0px) + var(--rfw-weak, 18px))
+  );
+  mask-image: radial-gradient(
+    circle at 50% calc(50% + var(--ripple-y-shift, 0px)),
+    transparent calc(var(--rf-weak, 0px) - var(--rfw-weak, 18px)),
+    #000 calc(var(--rf-weak, 0px) - var(--rfw-weak, 18px)),
+    #000 calc(var(--rf-weak, 0px) + var(--rfw-weak, 18px)),
+    transparent calc(var(--rf-weak, 0px) + var(--rfw-weak, 18px))
+  );
+  animation-name: ripple-rf-weak, ripple-rf-opacity-weak, passive-border-impact-weak;
+  animation-duration: 2.4s, 2.4s, 2.4s !important;
+  animation-timing-function: cubic-bezier(0.07, 0.55, 0.20, 1.00), linear, ease-out !important;
+  animation-iteration-count: infinite, infinite, infinite !important;
+  animation-delay: calc(var(--ripple-delay-2p4s, var(--ripple-sync-2s, 0s)) + 0.4s), calc(var(--ripple-delay-2p4s, var(--ripple-sync-2s, 0s)) + 0.4s), calc(var(--ripple-delay-2p4s, var(--ripple-sync-2s, 0s)) + 0.4s) !important;
+  mix-blend-mode: screen;
+  will-change: opacity, background-color, filter, box-shadow;
+  transition: background-color 0.6s ease, filter 0.6s ease, opacity 0.3s ease, border-color 0.3s ease !important;
+}
+
+/* ===== 合并多行的涟漪大框 ===== */
+.ripple-merged-box {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  position: relative;
+  display: block;
+}
+
+.ripple-merged-box-inner {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: rgba(var(--ripple-rgb, 66, 133, 244), 0.1);
+  overflow: hidden;
+  box-shadow: none;
+  will-change: border-color, box-shadow;
+}
+
+.ripple-merged-box-inner::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.9;
+  width: 230px;
+  height: 230px;
+  background-color: rgba(var(--ripple-rgb, 66, 133, 244), 0.55);
+  animation: pulse-wave 2s cubic-bezier(0.2, 0.8, 0.8, 0.2) infinite;
+  animation-delay: var(--ripple-delay-2s, 0s);
+  filter: blur(calc(var(--ripple-overlay-blur, 16px) * 0.18));
+}
+
+.ripple-merged-box-inner::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.9;
+  width: 180px;
+  height: 180px;
+  background-image: radial-gradient(
+    circle,
+    rgba(var(--ripple-rgb, 66, 133, 244), 0.8) 18%,
+    rgba(var(--ripple-rgb, 66, 133, 244), 0.25) 55%,
+    transparent 80%
+  );
+  animation: pulse-particle 2.2s cubic-bezier(0.2, 0.8, 0.8, 0.2) infinite;
+  animation-delay: var(--ripple-delay-2p4s, 0s);
+  filter: blur(calc(var(--ripple-overlay-blur, 16px) * 0.12));
+}

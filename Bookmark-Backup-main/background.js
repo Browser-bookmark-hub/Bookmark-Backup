@@ -5500,6 +5500,14 @@ if (browserAPI?.tabs?.onUpdated && typeof browserAPI.tabs.onUpdated.addListener 
 
 if (browserAPI?.tabs?.onRemoved && typeof browserAPI.tabs.onRemoved.addListener === 'function') {
     browserAPI.tabs.onRemoved.addListener(async (tabId, removeInfo = {}) => {
+        const scopedPrefix = `dev1_scoped_${tabId}_`;
+        try {
+            const all = await browserAPI.storage.local.get(null);
+            const keysToRemove = Object.keys(all || {}).filter(k => k.startsWith(scopedPrefix));
+            if (keysToRemove.length > 0) {
+                await browserAPI.storage.local.remove(keysToRemove);
+            }
+        } catch (_) {}
         const reviewWindowId = dev1NormalizeWindowId(removeInfo?.windowId);
         if (reviewWindowId == null) return;
         dev1BroadcastReviewWindowChanged(reviewWindowId, {
@@ -5507,14 +5515,6 @@ if (browserAPI?.tabs?.onRemoved && typeof browserAPI.tabs.onRemoved.addListener 
             reason: 'tab-removed',
             isWindowClosing: removeInfo?.isWindowClosing === true
         });
-        const scopedPrefix = `dev1_scoped_${tabId}_`;
-        try {
-            const all = await browserAPI.storage.local.get(null);
-            const keysToRemove = Object.keys(all || {}).filter(k => k.startsWith(scopedPrefix));
-            if (keysToRemove.length > 0) {
-                browserAPI.storage.local.remove(keysToRemove).catch(() => {});
-            }
-        } catch (_) {}
     });
 }
 
@@ -6590,6 +6590,119 @@ async function dev1ExecuteScriptFile(tabId, filePath, world = 'ISOLATED') {
             reject(error);
         }
     });
+}
+
+async function dev1InsertCssFile(tabId, filePath) {
+    return await new Promise((resolve, reject) => {
+        try {
+            if (!browserAPI.scripting || typeof browserAPI.scripting.insertCSS !== 'function') {
+                reject(new Error('scripting.insertCSS unavailable'));
+                return;
+            }
+            browserAPI.scripting.insertCSS({
+                target: { tabId: Number(tabId) },
+                files: [String(filePath || '').trim()]
+            }, () => {
+                if (browserAPI.runtime.lastError) {
+                    reject(new Error(browserAPI.runtime.lastError.message || 'insertCSS failed'));
+                    return;
+                }
+                resolve(true);
+            });
+        } catch (error) {
+            reject(error);
+        }
+    });
+}
+
+function dev1IsSnapshotHighlighterPdfUrl(rawUrl = '') {
+    const url = String(rawUrl || '').trim();
+    if (!url) return false;
+    if (/\.pdf(?:[?#]|$)/i.test(url)) return true;
+    if (url.includes('/pdf-helper.html') || url.includes('pdf-helper.html?')) return true;
+    return false;
+}
+
+async function dev1IsSnapshotHighlighterPdfPage(tabId) {
+    try {
+        const result = await dev1ExecuteScript(tabId, () => {
+            try {
+                const href = String(window.location.href || '');
+                if (/\.pdf(?:[?#]|$)/i.test(href)) return true;
+                if (href.includes('pdf-helper.html')) return true;
+                if (document.contentType === 'application/pdf') return true;
+                if (document.querySelector('embed[type="application/pdf"], object[type="application/pdf"], pdf-viewer, viewer-toolbar')) return true;
+                const body = document.body;
+                if (body && body.children && body.children.length === 1) {
+                    const only = body.children[0];
+                    if (only && only.tagName === 'EMBED' && String(only.type || '').toLowerCase() === 'application/pdf') return true;
+                }
+            } catch (_) { }
+            return false;
+        });
+        return result === true;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function dev1ToggleSnapshotHighlighterForTab(message = {}, sender = {}) {
+    const tab = sender?.tab || {};
+    const tabId = dev1NormalizeTabId(tab?.id);
+    if (tabId == null) throw new Error('Missing current tab id');
+    let tabInfo = tab;
+    if (!tabInfo.url) {
+        try { tabInfo = await browserAPI.tabs.get(tabId); } catch (_) { tabInfo = tab; }
+    }
+    const rawUrl = String(tabInfo?.url || message?.item?.url || '').trim();
+    let parsed = null;
+    try { parsed = new URL(rawUrl); } catch (_) { parsed = null; }
+    if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+        throw new Error('Highlight tool requires an http(s) page');
+    }
+    if (dev1IsSnapshotHighlighterPdfUrl(rawUrl) || await dev1IsSnapshotHighlighterPdfPage(tabId)) {
+        return { success: false, pdf: true, error: 'PDF pages do not use the highlight tool' };
+    }
+
+    let lang = message?.lang === 'en' ? 'en' : (message?.lang === 'zh_CN' ? 'zh_CN' : '');
+    if (!lang) {
+        try { lang = await getCurrentLang(); } catch (_) { lang = 'zh_CN'; }
+    }
+    const config = {
+        ...(message?.item || {}),
+        lang,
+        source: 'snapshot_helper_highlighter',
+        title: String(tabInfo?.title || message?.item?.title || '').trim(),
+        url: parsed.toString(),
+        domain: parsed.hostname || '',
+        existingTabId: tabId,
+        originExtensionTabId: message?.item?.originExtensionTabId,
+        originExtensionWindowId: message?.item?.originExtensionWindowId
+    };
+
+    await dev1ExecuteScriptFile(tabId, 'dev_1/tab_scoped_storage.js');
+    try {
+        await dev1ExecuteScriptFile(tabId, 'dev_1/snapshot_highlighter/history_hook.js', 'MAIN');
+    } catch (_) { }
+    await dev1InsertCssFile(tabId, 'dev_1/snapshot_highlighter/styles.css');
+    await dev1ExecuteScriptFile(tabId, 'dev_1/snapshot_highlighter/index.js');
+    const result = await dev1ExecuteScript(tabId, (highlighterConfig) => {
+        const api = window.__dev1SnapshotHighlighter;
+        if (!api || typeof api.toggle !== 'function') {
+            return { success: false, error: 'Snapshot highlighter unavailable' };
+        }
+        return api.toggle(highlighterConfig);
+    }, [config]);
+    if (!result || result.success !== true) {
+        throw new Error(result?.error || 'Snapshot highlighter unavailable');
+    }
+    return {
+        success: true,
+        tabId,
+        visible: result.visible !== false,
+        count: result.count || 0,
+        url: parsed.toString()
+    };
 }
 
 async function dev1SnapshotHelperCaptureVisibleTab(sender = {}) {
@@ -9872,6 +9985,19 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({
                         success: false,
                         error: error?.message || 'dev_1 helper inject failed'
+                    });
+                }
+            })();
+            return true;
+        } else if (message.action === 'dev1SnapshotHelperToggleHighlighter') {
+            (async () => {
+                try {
+                    const result = await dev1ToggleSnapshotHighlighterForTab(message, sender);
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 helper highlighter toggle failed'
                     });
                 }
             })();
