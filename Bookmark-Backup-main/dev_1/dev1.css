@@ -1502,6 +1502,11 @@
     display: block;
 }
 
+.dev1-snapshot-helper-shortcut-line {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
 .dev1-export-note-link {
     color: #2563eb;
     text-decoration: underline;

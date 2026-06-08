@@ -465,7 +465,7 @@
           button.addEventListener('blur', removeTip);
           button.addEventListener('click', removeTip);
         };
-        shadow.querySelector('.dev1-helper-close').addEventListener('click', () => this.hidePanel());
+        shadow.querySelector('.dev1-helper-close').addEventListener('click', () => this.destroy());
         const setOpen = (open) => {
           root.dataset.open = open ? 'true' : 'false';
           launcher.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -617,6 +617,11 @@
         return { success: true };
       }
 
+      isVisible() {
+        const host = this.host || document.getElementById(HOST_ID);
+        return !!(host && host.isConnected && host.style.display !== 'none');
+      }
+
       hidePanel() {
         if (typeof this.activeSessionCleanup === 'function') {
           try { this.activeSessionCleanup(); } catch (_) { }
@@ -624,6 +629,36 @@
         }
         this._removeRecordingSettingsPanel();
         if (this.host) this.host.style.display = 'none';
+        return { success: true };
+      }
+
+      destroy() {
+        if (typeof this.activeSessionCleanup === 'function') {
+          try { this.activeSessionCleanup(); } catch (_) { }
+          this.activeSessionCleanup = null;
+        }
+        if (typeof this._longShotStabilityCleanup === 'function') {
+          try { this._longShotStabilityCleanup(); } catch (_) { }
+          this._longShotStabilityCleanup = null;
+        }
+        if (this._headerFeedbackTimer) {
+          clearTimeout(this._headerFeedbackTimer);
+          this._headerFeedbackTimer = null;
+        }
+        this._removeRecordingSettingsPanel();
+        this._removeMdSettingsPanel();
+        this._removeMarkdownSourceHighlight();
+        this._removeZoomInvariantContainer();
+        if (this.host) {
+          try { this.host.remove(); } catch (_) { }
+        } else {
+          const host = document.getElementById(HOST_ID);
+          if (host) {
+            try { host.remove(); } catch (_) { }
+          }
+        }
+        this.host = null;
+        this.shadow = null;
         return { success: true };
       }
 
@@ -5981,6 +6016,8 @@
     window[API_KEY] = {
       loaded: true,
       show: (config) => helper.show(config),
-      hide: () => helper.hidePanel()
+      hide: () => helper.hidePanel(),
+      destroy: () => helper.destroy(),
+      isVisible: () => helper.isVisible()
     };
 })();

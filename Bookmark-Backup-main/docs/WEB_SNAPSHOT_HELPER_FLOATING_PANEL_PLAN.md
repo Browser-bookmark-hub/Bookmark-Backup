@@ -226,10 +226,10 @@ linux.do_LINUX_DO_Mail_开始起航_mhtml_014212.mhtml
 Option/Alt + A  激活扩展
 Option/Alt + C  打开当前变化
 Option/Alt + H  打开备份历史
-Option/Alt + W  当前页网页快照辅助工具
+Option/Alt + 1  打开/关闭当前页网页快照辅助工具
 ```
 
-第四个命令建议从“打开网页快照页”调整为“当前页网页快照辅助工具”。
+第四个命令建议从“打开网页快照页”调整为“打开/关闭当前页网页快照辅助工具”。
 
 原因：
 
@@ -372,7 +372,7 @@ dev1-helper-open-snapshot
 英文：
 
 ```text
-Open Quick Snapshot Tool
+Open/Close Quick Snapshot Tool
 ```
 
 影响文件：
@@ -476,7 +476,7 @@ MVP 完成后应满足：
 推荐先实现 MVP：
 
 ```text
-Option/Alt + W -> 当前页弹出网页快照辅助工具
+Option/Alt + 1 -> 打开/关闭当前页网页快照辅助工具
 标题栏新增 MHTML + 打开网页快照页按钮
 MHTML 保存到时间戳根目录
 临时模式文件名不带序号

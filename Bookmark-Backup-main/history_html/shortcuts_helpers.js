@@ -22,7 +22,7 @@ function updateShortcutsDisplay() {
         const keyActivate = formatKey(safe(shortcuts._execute_action, defaultPrefix + 'A'));
         const key1 = formatKey(safe(shortcuts.open_current_changes_view, defaultPrefix + 'C'));
         const key2 = formatKey(safe(shortcuts.open_backup_history_view, defaultPrefix + 'H'));
-        const key3 = formatKey(safe(shortcuts.open_web_snapshot_view, defaultPrefix + 'W'));
+        const key3 = formatKey(safe(shortcuts.open_web_snapshot_view, defaultPrefix + '1'));
         const allowed = Array.isArray(window.__ALLOWED_VIEWS) ? new Set(window.__ALLOWED_VIEWS) : null;
 
         const rows = [];
@@ -39,7 +39,7 @@ function updateShortcutsDisplay() {
         if (!allowed || allowed.has('dev-1')) {
             rows.push({
                 key: key3,
-                label: lang === 'en' ? 'Open Quick Snapshot Tool' : '打开当前页快照工具'
+                label: lang === 'en' ? 'Open/Close Quick Snapshot Tool' : '打开/关闭当前页快照工具'
             });
         }
 

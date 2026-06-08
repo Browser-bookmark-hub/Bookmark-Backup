@@ -412,8 +412,10 @@
             fmtMd: 'MD',
             fmtMhtmlOfficial: '官方 MHTML API',
             snapshotHelperLabel: '辅助工具',
-            snapshotHelperTip: '勾选后，会按当前队列已打开页面的 Tab ID 注入悬浮工具：区域截图、长截图、屏幕录制。（仅通过“在新窗口打开”的页面可用，原有 Tab 页面不会注入。）',
-            snapshotHelperHint: '辅助工具产生的区域截图、长截图、屏幕录制会和 MHTML / MD 一起保存到当次网页快照时间戳目录根目录，便于按文件名排序查看。（仅通过“在新窗口打开”的页面可用，原有 Tab 页面不会注入。）',
+            snapshotHelperTip: '勾选后，会按当前队列已打开页面的 Tab ID 注入辅助工具：区域截图、长截图、屏幕录制、MHTML / MD 高亮工具。（若队列是从「所有窗口Tab页面」的则不会注入。）',
+            snapshotHelperHintLine1: '辅助工具：区域截图、长截图、屏幕录制、MHTML / MD 高亮工具。',
+            snapshotHelperHintLine2: '保存位置：当次网页快照时间戳目录。（若队列是从「所有窗口Tab页面」的则不会注入。）',
+            snapshotHelperShortcutHint: '也可以通过快捷键「{shortcut}」直接在任意页面打开/关闭工具箱。',
             snapshotHelperEnabledStatus: '辅助工具已启用',
             snapshotHelperDisabledStatus: '辅助工具已关闭',
             snapshotHelperPartialStatus: '部分页面未能启用辅助工具',
@@ -626,8 +628,10 @@
             fmtMd: 'MD',
             fmtMhtmlOfficial: 'Official MHTML API',
             snapshotHelperLabel: 'Helper Tools',
-            snapshotHelperTip: 'When checked, floating tools are injected by the opened queue tab IDs: area screenshot, long screenshot, and screen recording. (Only pages opened via "Open in New Window" support this; existing tabs are not injected.)',
-            snapshotHelperHint: 'Area screenshots, long screenshots, screen recordings, and MHTML/MD files are saved directly in the current web-snapshot timestamp folder root for easy filename sorting. (Only pages opened via "Open in New Window" support this; existing tabs are not injected.)',
+            snapshotHelperTip: 'When checked, helper tools are injected by opened queue tab IDs: area screenshot, long screenshot, screen recording, and MHTML / MD highlight tools. (Queues from "All Window Tabs" are not injected.)',
+            snapshotHelperHintLine1: 'Helper tools: area screenshot, long screenshot, screen recording, and MHTML / MD highlight tools.',
+            snapshotHelperHintLine2: 'Save location: the current web-snapshot timestamp folder. (Queues from "All Window Tabs" are not injected.)',
+            snapshotHelperShortcutHint: 'You can also press "{shortcut}" on any page to open/close the toolbox directly.',
             snapshotHelperEnabledStatus: 'Helper tools enabled',
             snapshotHelperDisabledStatus: 'Helper tools disabled',
             snapshotHelperPartialStatus: 'Some pages could not enable helper tools',
@@ -711,6 +715,76 @@
             `MHTML 使用 Chrome 官方 ${pageCaptureLink} API，仅保存抓取时已加载内容；未渲染或懒加载区域可能缺失。`,
             `MD 基于 ${obsidianClipperLink} 的开源算法（v1.6.2），转换当前页面为 Markdown。`
         ].map(line => `<span class="dev1-export-note-line">${line}</span>`).join('');
+    }
+
+    function getShortcutFallbackPrefix() {
+        const isMac = navigator.platform?.toUpperCase().includes('MAC') ||
+            navigator.userAgent?.toUpperCase().includes('MAC');
+        return isMac ? '⌥' : 'Alt+';
+    }
+
+    function formatShortcutForDisplay(value, fallback = '') {
+        const raw = String(value || fallback || '').trim();
+        if (!raw) return '';
+        return getShortcutFallbackPrefix() === '⌥'
+            ? raw.replace(/Alt\+/gi, '⌥')
+            : raw;
+    }
+
+    function getQuickSnapshotShortcutFallback() {
+        return `${getShortcutFallbackPrefix()}1`;
+    }
+
+    async function getCommandShortcutForDisplay(commandName, fallback = '') {
+        const fallbackText = formatShortcutForDisplay(fallback || getQuickSnapshotShortcutFallback());
+        const commandsApi = runtimeApi && runtimeApi.commands;
+        if (!commandsApi || typeof commandsApi.getAll !== 'function') return fallbackText;
+
+        const commands = await new Promise((resolve) => {
+            let settled = false;
+            const finish = (value) => {
+                if (settled) return;
+                settled = true;
+                resolve(value);
+            };
+            try {
+                const maybePromise = commandsApi.getAll((items) => finish(items));
+                if (maybePromise && typeof maybePromise.then === 'function') {
+                    maybePromise.then(finish).catch(() => finish(null));
+                }
+            } catch (_) {
+                finish(null);
+            }
+            setTimeout(() => finish(null), 900);
+        });
+
+        const hit = Array.isArray(commands)
+            ? commands.find((command) => command && command.name === commandName)
+            : null;
+        return formatShortcutForDisplay(hit && hit.shortcut, fallbackText);
+    }
+
+    function buildSnapshotHelperShortcutHintText(shortcutText = '') {
+        const shortcut = String(shortcutText || getQuickSnapshotShortcutFallback()).trim();
+        return t('snapshotHelperShortcutHint').replace('{shortcut}', shortcut);
+    }
+
+    function renderSnapshotHelperHintHtml(shortcutText = '') {
+        const shortcutHint = buildSnapshotHelperShortcutHintText(shortcutText);
+        return [
+            `<span class="dev1-export-note-line">${escapeHtml(t('snapshotHelperHintLine1'))}</span>`,
+            `<span class="dev1-export-note-line">${escapeHtml(t('snapshotHelperHintLine2'))}</span>`,
+            `<span class="dev1-export-note-line dev1-snapshot-helper-shortcut-line" data-dev1-snapshot-helper-shortcut-hint>${escapeHtml(shortcutHint)}</span>`
+        ].join('');
+    }
+
+    async function hydrateSnapshotHelperShortcutHint(root = document) {
+        const target = root && typeof root.querySelector === 'function'
+            ? root.querySelector('[data-dev1-snapshot-helper-shortcut-hint]')
+            : null;
+        if (!target) return;
+        const shortcut = await getCommandShortcutForDisplay('open_web_snapshot_view', getQuickSnapshotShortcutFallback());
+        target.textContent = buildSnapshotHelperShortcutHintText(shortcut);
     }
 
     function getCurrentViewSafe() {
@@ -2561,9 +2635,22 @@
         }));
     }
 
+    function isQueueFromAllWindowTabsSource(queueItems = []) {
+        const activeItems = getActiveQueueItems(queueItems);
+        return Array.isArray(activeItems)
+            && activeItems.length > 0
+            && activeItems.every((item) => item && item.sourceKey === SOURCE_ALL_TABS);
+    }
+
+    function canAutoInjectSnapshotHelperForQueue(queueItems = []) {
+        return isQueuePreparedWithExistingTabs(queueItems) && !isQueueFromAllWindowTabsSource(queueItems);
+    }
+
     async function enableSnapshotHelperForQueue(queueItems = [], options = {}) {
         if (!isSnapshotHelperEnabled()) return null;
-        const items = buildSnapshotHelperMessageItems(getActiveQueueItems(queueItems));
+        const activeItems = getActiveQueueItems(queueItems);
+        if (!canAutoInjectSnapshotHelperForQueue(activeItems)) return null;
+        const items = buildSnapshotHelperMessageItems(activeItems);
         if (!items.length) return null;
         const response = await sendRuntimeMessage({
             action: 'dev1EnableSnapshotHelperForItems',
@@ -5358,6 +5445,7 @@
 
     function bindRootEvents(root) {
         if (!root) return;
+        hydrateSnapshotHelperShortcutHint(root).catch(() => { });
 
         const runBtn = root.querySelector('#dev1RunBtn');
         if (runBtn) {
@@ -5486,7 +5574,7 @@
                     return;
                 }
                 const queueItems = getActiveQueueItems(getCurrentQueueBatchItems());
-                if (isQueuePreparedWithExistingTabs(queueItems)) {
+                if (canAutoInjectSnapshotHelperForQueue(queueItems)) {
                     enableSnapshotHelperForQueue(queueItems).catch((error) => {
                         setStatus(`${t('snapshotHelperFailed')}: ${error?.message || ''}`, 'warning');
                     });
@@ -7266,7 +7354,7 @@
                     <div class="dev1-format-row dev1-export-note-row">
                         <div class="dev1-export-note">
                             <i class="fas fa-toolbox"></i>
-                            <span>${escapeHtml(t('snapshotHelperHint'))}</span>
+                            <span class="dev1-export-note-lines">${renderSnapshotHelperHintHtml()}</span>
                         </div>
                     </div>
                 </section>

@@ -2707,7 +2707,7 @@ async function renderPopupShortcutsDisplay(lang = 'zh_CN') {
         _execute_action: `${fallbackPrefix}A`,
         open_current_changes_view: `${fallbackPrefix}C`,
         open_backup_history_view: `${fallbackPrefix}H`,
-        open_web_snapshot_view: `${fallbackPrefix}W`
+        open_web_snapshot_view: `${fallbackPrefix}1`
     };
 
     try {
@@ -2737,8 +2737,8 @@ async function renderPopupShortcutsDisplay(lang = 'zh_CN') {
             label: isEn ? 'Open Backup History' : '打开备份历史'
         },
         {
-            key: formatShortcut(shortcuts.open_web_snapshot_view, `${fallbackPrefix}W`),
-            label: isEn ? 'Open Quick Snapshot Tool' : '打开当前页快照工具'
+            key: formatShortcut(shortcuts.open_web_snapshot_view, `${fallbackPrefix}1`),
+            label: isEn ? 'Open/Close Quick Snapshot Tool' : '打开/关闭当前页快照工具'
         }
     ];
 

@@ -1762,6 +1762,26 @@ async function openQuickSnapshotHelperForCurrentPage() {
         throw new Error('Current page cannot use Web Snapshot helper');
     }
 
+    const toggledOff = await dev1ExecuteScript(tabId, () => {
+        const api = window.__dev1SnapshotHelper;
+        const host = document.getElementById('dev1-snapshot-helper-host');
+        const isVisible = typeof api?.isVisible === 'function'
+            ? api.isVisible()
+            : !!(host && host.isConnected && host.style.display !== 'none');
+        if (!isVisible) return { toggled: false };
+        if (typeof api?.destroy === 'function') {
+            return { toggled: true, result: api.destroy() };
+        }
+        if (typeof api?.hide === 'function') {
+            return { toggled: true, result: api.hide() };
+        }
+        if (host) host.remove();
+        return { toggled: true };
+    }).catch(() => null);
+    if (toggledOff && toggledOff.toggled === true) {
+        return { success: true, tabId, closed: true };
+    }
+
     const lang = await getCurrentLang();
     const targetFolder = dev1BuildSnapshotHelperTargetFolder(lang);
     await dev1ExecuteScriptFile(tabId, 'dev_1/mp4-muxer.js');

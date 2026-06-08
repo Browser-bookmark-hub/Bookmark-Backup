@@ -2,7 +2,7 @@
    "manifest_version": 3,
    "default_locale": "en",
    "name": "__MSG_extensionName__",
-   "version": "3.0.6",
+   "version": "3.2.0",
    "description": "__MSG_extensionDescription__",
    "author": "kk1",
    "icons": {
@@ -53,12 +53,12 @@
       },
       "open_web_snapshot_view": {
          "suggested_key": {
-            "default": "Alt+W",
-            "mac": "Alt+W",
-            "windows": "Alt+W",
-            "linux": "Alt+W"
+            "default": "Alt+1",
+            "mac": "Alt+1",
+            "windows": "Alt+1",
+            "linux": "Alt+1"
          },
-         "description": "Open quick Web Snapshot helper on current page"
+         "description": "Open/close quick Web Snapshot helper on current page"
       }
    },
    "permissions": [
@@ -69,8 +69,8 @@
       "commands",
       "scripting",
       "windows",
-    "tabs",
-    "tabGroups",
+      "tabs",
+      "tabGroups",
       "downloads",
       "downloads.shelf",
       "pageCapture",
