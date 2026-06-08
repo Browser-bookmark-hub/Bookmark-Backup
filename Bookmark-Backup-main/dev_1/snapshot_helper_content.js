@@ -1008,7 +1008,1238 @@
         }
         settings.remove();
       }
+      this._removeMarkdownSourceHighlight();
       this._mdSettingsAnchor = null;
+    }
+
+    _isMarkdownSourceCandidateVisible(element, options = {}) {
+      if (!element || !(element instanceof Element)) return false;
+      if (element.id === HOST_ID || element.closest(`#${HOST_ID}`)) return false;
+      const tagName = String(element.tagName || '').toLowerCase();
+      if (/^(script|style|noscript|template|svg|canvas|iframe|nav|footer|header)$/i.test(tagName)) return false;
+      try {
+        const style = getComputedStyle(element);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+        const rect = element.getBoundingClientRect();
+        const minWidth = Number.isFinite(Number(options.minWidth)) ? Number(options.minWidth) : 120;
+        const minHeight = Number.isFinite(Number(options.minHeight)) ? Number(options.minHeight) : 40;
+        return rect.width >= minWidth && rect.height >= minHeight;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    _getMarkdownSourceText(element) {
+      if (!element) return '';
+      try {
+        return String(element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim();
+      } catch (_) {
+        return '';
+      }
+    }
+
+    _normalizeMarkdownLookupText(text) {
+      return String(text || '')
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/!\[([^\]]*)\]\([^)]+\)/g, ' $1 ')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, ' $1 ')
+        .replace(/`([^`]+)`/g, ' $1 ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/(^|\n)\s{0,3}#{1,6}\s+/g, ' ')
+        .replace(/(^|\n)\s*[-*+]\s+/g, ' ')
+        .replace(/(^|\n)\s*\d+[.)]\s+/g, ' ')
+        .replace(/&(?:nbsp|amp|lt|gt|quot);/gi, ' ')
+        .replace(/[*_~>#|[\]{}()"':`]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+    }
+
+    _trimMarkdownLookupText(text, maxLength = 220) {
+      const normalized = this._normalizeMarkdownLookupText(text);
+      if (normalized.length <= maxLength) return normalized;
+      const clipped = normalized.slice(0, maxLength);
+      const lastSpace = clipped.lastIndexOf(' ');
+      return lastSpace > 80 ? clipped.slice(0, lastSpace).trim() : clipped.trim();
+    }
+
+    _trimMarkdownLookupTail(text, maxLength = 180) {
+      const normalized = this._normalizeMarkdownLookupText(text);
+      if (normalized.length <= maxLength) return normalized;
+      const clipped = normalized.slice(Math.max(0, normalized.length - maxLength));
+      const firstSpace = clipped.indexOf(' ');
+      return firstSpace > 0 && firstSpace < 80 ? clipped.slice(firstSpace + 1).trim() : clipped.trim();
+    }
+
+    _countMarkdownLookupOccurrences(haystackText, needleText) {
+      const haystack = this._normalizeMarkdownLookupText(haystackText);
+      const needle = this._normalizeMarkdownLookupText(needleText);
+      if (!haystack || !needle || needle.length < 8) return 0;
+      let count = 0;
+      let index = 0;
+      while ((index = haystack.indexOf(needle, index)) !== -1) {
+        count += 1;
+        index += Math.max(needle.length, 1);
+      }
+      return count;
+    }
+
+    _buildMarkdownLookupPayload(target, label, value, start, end, lookupText) {
+      const normalizedLookup = this._trimMarkdownLookupText(lookupText);
+      const rawLookupText = String(lookupText || '').replace(/\s+/g, ' ').trim();
+      const rawBeforeText = String(value.slice(Math.max(0, start - 260), start) || '').replace(/\s+/g, ' ').trim();
+      const rawAfterText = String(value.slice(end, Math.min(value.length, end + 260)) || '').replace(/\s+/g, ' ').trim();
+      const beforeText = this._trimMarkdownLookupTail(value.slice(Math.max(0, start - 260), start), 180);
+      const afterText = this._trimMarkdownLookupText(value.slice(end, Math.min(value.length, end + 260)), 180);
+      return {
+        target,
+        label,
+        lookupText: normalizedLookup,
+        rawLookupText,
+        beforeText,
+        afterText,
+        rawBeforeText,
+        rawAfterText,
+        occurrenceIndex: this._countMarkdownLookupOccurrences(value.slice(0, start), normalizedLookup)
+      };
+    }
+
+    _getMarkdownTextareaSourceLookup(textarea, mode = 'article', defaultLabel = '正文来源') {
+      if (!(textarea instanceof HTMLTextAreaElement)) {
+        return { target: 'content', label: defaultLabel, lookupText: '' };
+      }
+      const value = String(textarea.value || '');
+      const savedSelection = textarea.__dev1MdLastSelection || {};
+      const rawSelectionStart = Number.isFinite(textarea.selectionStart) ? textarea.selectionStart : savedSelection.start;
+      const rawSelectionEnd = Number.isFinite(textarea.selectionEnd) ? textarea.selectionEnd : savedSelection.end;
+      const selectionStart = Number.isFinite(savedSelection.start) ? savedSelection.start : (Number.isFinite(rawSelectionStart) ? rawSelectionStart : 0);
+      const selectionEnd = Number.isFinite(savedSelection.end) ? savedSelection.end : (Number.isFinite(rawSelectionEnd) ? rawSelectionEnd : selectionStart);
+      const start = Math.max(0, Math.min(selectionStart, selectionEnd));
+      const end = Math.max(start, Math.max(selectionStart, selectionEnd));
+      const lineStart = value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+      const nextLineBreak = value.indexOf('\n', end);
+      const lineEnd = nextLineBreak === -1 ? value.length : nextLineBreak;
+      const lineText = value.slice(lineStart, lineEnd);
+
+      if (mode === 'template') {
+        const contextStart = Math.max(0, start - 90);
+        const contextEnd = Math.min(value.length, end + 90);
+        const context = value.slice(contextStart, contextEnd);
+        const placeholderPattern = /\{\{\s*(title|content|description|author|published|url|created)\s*\}\}/gi;
+        let placeholder = '';
+        let bestPlaceholderDistance = Infinity;
+        let placeholderMatch = null;
+        while ((placeholderMatch = placeholderPattern.exec(context))) {
+          const absoluteStart = contextStart + placeholderMatch.index;
+          const absoluteEnd = absoluteStart + placeholderMatch[0].length;
+          const overlapsCaret = absoluteStart <= end && absoluteEnd >= start;
+          const distance = overlapsCaret
+            ? 0
+            : Math.min(Math.abs(absoluteEnd - start), Math.abs(absoluteStart - end));
+          if (distance < bestPlaceholderDistance) {
+            bestPlaceholderDistance = distance;
+            placeholder = String(placeholderMatch[1] || '').toLowerCase();
+          }
+        }
+        if (placeholder === 'content') {
+          return { target: 'content', label: '{{content}} 对应正文来源', lookupText: '' };
+        }
+        if (placeholder === 'title') {
+          return { target: 'title', label: '{{title}} 对应标题来源', lookupText: document.title || '' };
+        }
+        if (placeholder) {
+          return { target: 'metadata', label: `{{${placeholder}}}` };
+        }
+
+        const yamlFieldMatch = lineText.match(/^\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
+        if (yamlFieldMatch) {
+          const fieldName = String(yamlFieldMatch[1] || '').trim().toLowerCase();
+          const fieldValue = String(yamlFieldMatch[2] || '').trim().replace(/^['"]|['"]$/g, '').trim();
+          if (fieldName === 'title') {
+            return { target: 'title', label: 'title 对应标题来源', lookupText: fieldValue || document.title || '', rawLookupText: fieldValue || document.title || '' };
+          }
+          if (fieldName === 'description' || fieldName === 'author' || fieldName === 'published') {
+            if (fieldValue.length >= 4) {
+              return {
+                target: 'content',
+                label: `${fieldName} 对应页面位置`,
+                lookupText: this._trimMarkdownLookupText(fieldValue),
+                rawLookupText: fieldValue,
+                beforeText: '',
+                afterText: ''
+              };
+            }
+            return { target: 'metadata', label: fieldName };
+          }
+          if (fieldName === 'source' || fieldName === 'url' || fieldName === 'created' || fieldName === 'tags') {
+            return { target: 'metadata', label: fieldName };
+          }
+        }
+      }
+
+      const selectedText = end > start ? value.slice(start, end) : '';
+      const selectedLookup = this._trimMarkdownLookupText(selectedText);
+      if (selectedLookup.length >= 8) {
+        return this._buildMarkdownLookupPayload('content', defaultLabel, value, start, end, selectedText);
+      }
+
+      const aroundText = value.slice(Math.max(0, start - 140), Math.min(value.length, end + 140));
+      const lineLookup = this._trimMarkdownLookupText(lineText.length > 260 ? aroundText : lineText);
+      if (lineLookup.length >= 12) {
+        return this._buildMarkdownLookupPayload('content', defaultLabel, value, start, end, lineText.length > 260 ? aroundText : lineText);
+      }
+
+      const prevBlank = value.lastIndexOf('\n\n', Math.max(0, start - 1));
+      const nextBlank = value.indexOf('\n\n', end);
+      const paragraphStart = prevBlank === -1 ? 0 : prevBlank + 2;
+      const paragraphEnd = nextBlank === -1 ? value.length : nextBlank;
+      const paragraphText = value.slice(paragraphStart, paragraphEnd);
+      const paragraphLookup = this._trimMarkdownLookupText(paragraphText);
+      if (paragraphLookup.length >= 12) {
+        return this._buildMarkdownLookupPayload('content', defaultLabel, value, start, end, paragraphText);
+      }
+
+      const aroundLookup = this._trimMarkdownLookupText(aroundText);
+      if (aroundLookup.length >= 12) {
+        return this._buildMarkdownLookupPayload('content', defaultLabel, value, start, end, aroundText);
+      }
+      return { target: 'content', label: defaultLabel, lookupText: '' };
+    }
+
+    _bindMarkdownTextareaSelectionMemory(textarea) {
+      if (!(textarea instanceof HTMLTextAreaElement) || textarea.__dev1MdSelectionMemoryBound) return;
+      textarea.__dev1MdSelectionMemoryBound = true;
+      const remember = () => {
+        const valueLength = String(textarea.value || '').length;
+        const start = Number.isFinite(textarea.selectionStart) ? textarea.selectionStart : valueLength;
+        const end = Number.isFinite(textarea.selectionEnd) ? textarea.selectionEnd : start;
+        textarea.__dev1MdLastSelection = {
+          start: Math.max(0, Math.min(valueLength, start)),
+          end: Math.max(0, Math.min(valueLength, end))
+        };
+      };
+      ['select', 'selectionchange', 'keyup', 'mouseup', 'pointerup', 'input', 'focus', 'click'].forEach((eventName) => {
+        textarea.addEventListener(eventName, remember);
+      });
+      remember();
+    }
+
+    _getMarkdownLinkTextLength(element) {
+      try {
+        return Array.from(element.querySelectorAll('a'))
+          .reduce((sum, link) => sum + this._getMarkdownSourceText(link).length, 0);
+      } catch (_) {
+        return 0;
+      }
+    }
+
+    _findMarkdownSourceElement() {
+      const readerArticle = document.querySelector('.obsidian-reader-active .obsidian-reader-content article');
+      if (this._isMarkdownSourceCandidateVisible(readerArticle) && this._getMarkdownSourceText(readerArticle).length >= 80) {
+        return readerArticle;
+      }
+
+      const selectors = [
+        'article',
+        'main article',
+        'main',
+        '[role="main"]',
+        '.article-content',
+        '.post-content',
+        '.entry-content',
+        '.markdown-body',
+        '.reader-content',
+        '.content'
+      ];
+      const candidates = new Set();
+      selectors.forEach((selector) => {
+        try {
+          document.querySelectorAll(selector).forEach((element) => candidates.add(element));
+        } catch (_) { }
+      });
+      if (candidates.size < 12) {
+        try {
+          Array.from(document.querySelectorAll('article, main, [role="main"], section, div'))
+            .slice(0, 1800)
+            .forEach((element) => candidates.add(element));
+        } catch (_) { }
+      }
+
+      let best = null;
+      let bestScore = 0;
+      for (const element of candidates) {
+        if (!this._isMarkdownSourceCandidateVisible(element)) continue;
+        const text = this._getMarkdownSourceText(element);
+        const textLength = text.length;
+        if (textLength < 160) continue;
+
+        const tagName = String(element.tagName || '').toLowerCase();
+        const role = String(element.getAttribute('role') || '').toLowerCase();
+        const className = String(element.className || '').toLowerCase();
+        let rectArea = 0;
+        try {
+          const rect = element.getBoundingClientRect();
+          rectArea = Math.min((rect.width * rect.height) / 1000, 500);
+        } catch (_) { }
+
+        let paragraphCount = 0;
+        let headingCount = 0;
+        try {
+          paragraphCount = element.querySelectorAll('p').length;
+          headingCount = element.querySelectorAll('h1,h2,h3').length;
+        } catch (_) { }
+
+        const linkRatio = Math.min(1, this._getMarkdownLinkTextLength(element) / Math.max(textLength, 1));
+        let score = Math.min(textLength, 8000) + paragraphCount * 240 + headingCount * 120 + rectArea - linkRatio * 2200;
+        if (tagName === 'article') score += 1800;
+        if (tagName === 'main' || role === 'main') score += 700;
+        if (/(article|post|entry|reader|markdown)/i.test(className)) score += 650;
+        if (/(nav|menu|sidebar|footer|header|comment|related)/i.test(className)) score -= 2200;
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = element;
+        }
+      }
+      return best;
+    }
+
+    _findMarkdownTitleElement(lookupText = '') {
+      const candidates = [];
+      try {
+        candidates.push(...Array.from(document.querySelectorAll('h1, [itemprop="headline"], .article-title, .post-title, .entry-title')));
+      } catch (_) { }
+      const lookup = this._normalizeMarkdownLookupText(lookupText || document.title || '');
+      let best = null;
+      let bestScore = 0;
+      for (const element of candidates) {
+        if (!this._isMarkdownSourceCandidateVisible(element, { minWidth: 8, minHeight: 1 })) continue;
+        const text = this._normalizeMarkdownLookupText(this._getMarkdownSourceText(element));
+        if (!text) continue;
+        let score = 100;
+        if (lookup && text.includes(lookup)) score += 1000;
+        if (lookup && lookup.includes(text)) score += 800;
+        if (String(element.tagName || '').toLowerCase() === 'h1') score += 250;
+        score -= Math.abs(text.length - lookup.length);
+        if (score > bestScore) {
+          bestScore = score;
+          best = element;
+        }
+      }
+      return best;
+    }
+
+    _getMarkdownLookupFragments(lookupText) {
+      const lookup = this._normalizeMarkdownLookupText(lookupText);
+      if (!lookup) return [];
+      const fragments = new Set();
+      const addFragment = (fragment) => {
+        const cleaned = String(fragment || '').replace(/\s+/g, ' ').trim();
+        if (cleaned.length >= 8) fragments.add(cleaned);
+      };
+
+      addFragment(lookup);
+      const lengths = lookup.length >= 80 ? [72, 48, 32, 20] : [48, 32, 20, 12];
+      for (const length of lengths) {
+        if (lookup.length <= length) continue;
+        const starts = [
+          0,
+          Math.max(0, Math.floor((lookup.length - length) / 2)),
+          Math.max(0, lookup.length - length)
+        ];
+        starts.forEach((start) => addFragment(lookup.slice(start, start + length)));
+      }
+
+      const sentences = lookup.split(/\s*[。！？!?；;]\s*|\s{2,}/).filter(Boolean);
+      sentences.slice(0, 8).forEach((sentence) => addFragment(sentence.slice(0, 80)));
+
+      const words = lookup.split(/\s+/).filter((word) => word.length >= 2);
+      if (words.length >= 4) {
+        for (let i = 0; i <= words.length - 4; i += 2) {
+          addFragment(words.slice(i, Math.min(words.length, i + 8)).join(' '));
+        }
+      }
+
+      return Array.from(fragments).sort((a, b) => b.length - a.length).slice(0, 18);
+    }
+
+    _scoreMarkdownElementForLookup(element, lookup, fragments = []) {
+      if (!this._isMarkdownSourceCandidateVisible(element, { minWidth: 8, minHeight: 1 })) return 0;
+      const text = this._normalizeMarkdownLookupText(this._getMarkdownSourceText(element));
+      if (text.length < 4) return 0;
+
+      const tagName = String(element.tagName || '').toLowerCase();
+      const className = String(element.className || '').toLowerCase();
+      let score = 0;
+
+      if (lookup && text.includes(lookup)) {
+        score = 26000 - Math.min(text.length, 12000) * 0.8;
+      } else if (lookup && lookup.includes(text) && text.length >= Math.min(24, lookup.length)) {
+        score = 12000 + text.length;
+      } else {
+        for (const fragment of fragments) {
+          if (fragment.length >= 12 && text.includes(fragment)) {
+            score = Math.max(score, 18000 + fragment.length * 5 - Math.min(text.length, 12000) * 0.5);
+          }
+        }
+      }
+
+      if (!score && lookup) {
+        const lookupWords = lookup.split(/\s+/).filter((word) => word.length >= 3);
+        if (lookupWords.length >= 4) {
+          const textWordSet = new Set(text.split(/\s+/).filter((word) => word.length >= 3));
+          const hitCount = lookupWords.reduce((count, word) => count + (textWordSet.has(word) ? 1 : 0), 0);
+          const ratio = hitCount / lookupWords.length;
+          if (hitCount >= 4 && ratio >= 0.55) {
+            score = 7000 + hitCount * 180 + ratio * 1800 - Math.min(text.length, 12000) * 0.2;
+          }
+        }
+      }
+
+      if (!score) return 0;
+      if (/^(p|li|h1|h2|h3|h4|h5|h6|blockquote|figcaption|td|th|dt|dd|summary)$/i.test(tagName)) score += 1400;
+      if (/^(article|main|section)$/i.test(tagName)) score -= 800;
+      if (tagName === 'div') score -= 1100;
+      if (/(nav|menu|sidebar|footer|header|comment|related|recommend|share|toolbar)/i.test(className)) score -= 2600;
+      return score;
+    }
+
+    _getMarkdownVisibleTextBlocks() {
+      const selectors = [
+        'p',
+        'li',
+        'h1',
+        'h2',
+        'h3',
+        'h4',
+        'h5',
+        'h6',
+        'blockquote',
+        'figcaption',
+        'td',
+        'th',
+        'dt',
+        'dd',
+        'summary',
+        'pre',
+        'code',
+        'article',
+        'main',
+        '[role="main"]',
+        'section',
+        'div'
+      ].join(',');
+      const blocks = [];
+      try {
+        const elements = Array.from(document.querySelectorAll(selectors)).slice(0, 6000);
+        for (const element of elements) {
+          if (!this._isMarkdownSourceCandidateVisible(element, { minWidth: 8, minHeight: 1 })) continue;
+          const tagName = String(element.tagName || '').toLowerCase();
+          if (/^(article|main|section|div)$/i.test(tagName)) {
+            try {
+              if (element.querySelector('p,li,h1,h2,h3,h4,h5,h6,blockquote,figcaption,td,th,dt,dd,summary,pre')) {
+                continue;
+              }
+            } catch (_) { }
+          }
+          const text = this._normalizeMarkdownLookupText(this._getMarkdownSourceText(element));
+          if (text.length < 4) continue;
+          blocks.push({ element, text, tagName, className: String(element.className || '').toLowerCase() });
+        }
+      } catch (_) { }
+      return blocks;
+    }
+
+    _scoreMarkdownBlockForLookup(block, lookup, fragments, lookupConfig, blocks, index, hitOrder) {
+      if (!block || !block.element) return 0;
+      let score = this._scoreMarkdownElementForLookup(block.element, lookup, fragments);
+      if (!score) return 0;
+
+      const beforeText = this._normalizeMarkdownLookupText(lookupConfig.beforeText || '');
+      const afterText = this._normalizeMarkdownLookupText(lookupConfig.afterText || '');
+      const beforeFragments = [
+        this._trimMarkdownLookupTail(beforeText, 120),
+        this._trimMarkdownLookupTail(beforeText, 72),
+        this._trimMarkdownLookupTail(beforeText, 40)
+      ].filter((fragment, index, list) => fragment.length >= 8 && list.indexOf(fragment) === index);
+      const afterFragments = [
+        this._trimMarkdownLookupText(afterText, 120),
+        this._trimMarkdownLookupText(afterText, 72),
+        this._trimMarkdownLookupText(afterText, 40)
+      ].filter((fragment, index, list) => fragment.length >= 8 && list.indexOf(fragment) === index);
+      const prevText = blocks.slice(Math.max(0, index - 5), index).map((item) => item.text).join(' ');
+      const nextText = blocks.slice(index + 1, Math.min(blocks.length, index + 6)).map((item) => item.text).join(' ');
+      const neighborhood = `${prevText} ${block.text} ${nextText}`;
+
+      let beforeHit = false;
+      for (const fragment of beforeFragments) {
+        if (fragment.length >= 8 && prevText.includes(fragment)) {
+          score += 7200;
+          beforeHit = true;
+          break;
+        }
+        if (fragment.length >= 12 && neighborhood.includes(fragment)) {
+          score += 2600;
+          beforeHit = true;
+          break;
+        }
+      }
+
+      let afterHit = false;
+      for (const fragment of afterFragments) {
+        if (fragment.length >= 8 && nextText.includes(fragment)) {
+          score += 7200;
+          afterHit = true;
+          break;
+        }
+        if (fragment.length >= 12 && neighborhood.includes(fragment)) {
+          score += 2600;
+          afterHit = true;
+          break;
+        }
+      }
+
+      if (beforeHit && afterHit) score += 4200;
+
+      const occurrenceIndex = Number(lookupConfig.occurrenceIndex);
+      if (Number.isFinite(occurrenceIndex) && occurrenceIndex > 0 && hitOrder >= 0) {
+        score -= Math.min(Math.abs(hitOrder - occurrenceIndex) * 2600, 9000);
+      }
+
+      if (/^(p|li|h1|h2|h3|h4|h5|h6|blockquote|figcaption|td|th|dt|dd|summary)$/i.test(block.tagName)) {
+        score += 900;
+      }
+      return score;
+    }
+
+    _findMarkdownVisibleTextMatchElement(lookupInput = '') {
+      const lookupConfig = lookupInput && typeof lookupInput === 'object'
+        ? lookupInput
+        : { lookupText: lookupInput };
+      const lookup = this._normalizeMarkdownLookupText(lookupConfig.lookupText || '');
+      if (lookup.length < 8) return null;
+      const fragments = this._getMarkdownLookupFragments(lookup);
+      const blocks = this._getMarkdownVisibleTextBlocks();
+      let best = null;
+      let bestScore = 0;
+      let hitOrder = -1;
+      for (let index = 0; index < blocks.length; index += 1) {
+        const block = blocks[index];
+        const hasDirectHit = block.text.includes(lookup)
+          || fragments.some((fragment) => fragment.length >= 12 && block.text.includes(fragment));
+        if (hasDirectHit) hitOrder += 1;
+        const score = this._scoreMarkdownBlockForLookup(block, lookup, fragments, lookupConfig, blocks, index, hasDirectHit ? hitOrder : -1);
+        if (score > bestScore) {
+          bestScore = score;
+          best = block.element;
+        }
+      }
+
+      if (best && bestScore > 7600) return best;
+      return null;
+    }
+
+    _getMarkdownDefuddle() {
+      try {
+        const Defuddle = window.__DEV1_DEFUDDLE_FULL;
+        return typeof Defuddle === 'function' ? Defuddle : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    _htmlToMarkdownPlainText(html) {
+      const raw = String(html || '');
+      if (!raw) return '';
+      try {
+        const parsed = new DOMParser().parseFromString(raw, 'text/html');
+        return this._getMarkdownSourceText(parsed.body);
+      } catch (_) {
+        return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      }
+    }
+
+    _getMarkdownArticleExtractionContext() {
+      const now = Date.now();
+      if (this._mdArticleExtractionContext && now - this._mdArticleExtractionContext.time < 5000) {
+        return this._mdArticleExtractionContext;
+      }
+
+      const context = {
+        time: now,
+        sourceElement: null,
+        contentHtml: '',
+        extractedText: '',
+        title: '',
+        metadata: {}
+      };
+
+      try {
+        const readerArticle = document.querySelector('.obsidian-reader-active .obsidian-reader-content article');
+        if (this._isMarkdownSourceCandidateVisible(readerArticle, { minWidth: 8, minHeight: 1 })) {
+          context.sourceElement = readerArticle;
+          const originalHtml = readerArticle.getAttribute('data-original-html');
+          context.contentHtml = originalHtml || readerArticle.innerHTML || '';
+          context.extractedText = this._htmlToMarkdownPlainText(context.contentHtml) || this._getMarkdownSourceText(readerArticle);
+        }
+      } catch (_) { }
+
+      const Defuddle = this._getMarkdownDefuddle();
+      if (Defuddle) {
+        try {
+          const setElementHTML = (element, html) => {
+            const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
+            element.replaceChildren(...Array.from(parsed.body.childNodes));
+          };
+          const parseForClip = (inputDoc) => {
+            const readerArticle = inputDoc.querySelector('.obsidian-reader-active .obsidian-reader-content article');
+            if (readerArticle) {
+              const readerDoc = inputDoc.implementation.createHTMLDocument();
+              const originalHtml = readerArticle.getAttribute('data-original-html');
+              if (originalHtml) {
+                setElementHTML(readerDoc.body, originalHtml);
+              } else {
+                readerDoc.body.replaceChildren(
+                  ...Array.from(readerArticle.childNodes).map((node) => readerDoc.importNode(node, true))
+                );
+              }
+              return new Defuddle(readerDoc, { url: '' }).parse();
+            }
+            const clonedDoc = inputDoc.cloneNode(true);
+            return new Defuddle(clonedDoc, { url: inputDoc.URL }).parse();
+          };
+
+          const defuddled = parseForClip(document);
+          context.contentHtml = String(defuddled?.content || context.contentHtml || '');
+          context.extractedText = this._htmlToMarkdownPlainText(context.contentHtml) || context.extractedText;
+          context.title = String((defuddled?.title || document.title || '')).trim();
+          context.metadata = {
+            title: context.title,
+            author: String(defuddled?.author || '').trim(),
+            published: String(defuddled?.published || '').split(',')[0].trim(),
+            description: String(defuddled?.description || '').trim()
+          };
+        } catch (_) { }
+      }
+
+      if (!context.sourceElement && context.extractedText) {
+        context.sourceElement = this._findMarkdownSourceElementByExtractedText(context.extractedText);
+      }
+      if (!context.sourceElement) {
+        context.sourceElement = this._findMarkdownSourceElement();
+      }
+      if (!context.extractedText && context.sourceElement) {
+        context.extractedText = this._getMarkdownSourceText(context.sourceElement);
+      }
+
+      this._mdArticleExtractionContext = context;
+      return context;
+    }
+
+    _findMarkdownSourceElementByExtractedText(extractedText) {
+      const extracted = this._normalizeMarkdownLookupText(extractedText);
+      if (extracted.length < 80) return null;
+
+      const fragments = this._getMarkdownLookupFragments(extracted)
+        .filter((fragment) => fragment.length >= 24)
+        .slice(0, 14);
+      if (!fragments.length) return null;
+
+      const selectors = [
+        'article',
+        'main article',
+        'main',
+        '[role="main"]',
+        '.article-content',
+        '.post-content',
+        '.entry-content',
+        '.markdown-body',
+        '.reader-content',
+        '.content',
+        'section',
+        'div'
+      ].join(',');
+      const candidates = new Set();
+      try {
+        Array.from(document.querySelectorAll(selectors)).slice(0, 2500).forEach((element) => candidates.add(element));
+      } catch (_) { }
+
+      let best = null;
+      let bestScore = 0;
+      for (const element of candidates) {
+        if (!this._isMarkdownSourceCandidateVisible(element, { minWidth: 80, minHeight: 20 })) continue;
+        const text = this._normalizeMarkdownLookupText(this._getMarkdownSourceText(element));
+        if (text.length < 80) continue;
+
+        let score = 0;
+        let hitCount = 0;
+        let longestHit = 0;
+        for (const fragment of fragments) {
+          if (text.includes(fragment)) {
+            hitCount += 1;
+            longestHit = Math.max(longestHit, fragment.length);
+            score += 1800 + fragment.length * 48;
+          }
+        }
+        if (hitCount === 0) continue;
+
+        if (text.includes(extracted.slice(0, Math.min(160, extracted.length)))) score += 3400;
+        if (text.includes(extracted.slice(Math.max(0, extracted.length - 160)))) score += 2600;
+        if (extracted.includes(text) && text.length >= 180) score += Math.min(text.length, 5000);
+
+        const tagName = String(element.tagName || '').toLowerCase();
+        const role = String(element.getAttribute('role') || '').toLowerCase();
+        const className = String(element.className || '').toLowerCase();
+        if (tagName === 'article') score += 1600;
+        if (tagName === 'main' || role === 'main') score += 700;
+        if (/(article|post|entry|reader|markdown)/i.test(className)) score += 900;
+        if (/(nav|menu|sidebar|footer|header|comment|related|recommend|share|toolbar)/i.test(className)) score -= 4000;
+        score += hitCount * 900 + longestHit * 20;
+        score -= Math.min(Math.abs(text.length - extracted.length), 12000) * 0.12;
+
+        if (score > bestScore) {
+          bestScore = score;
+          best = element;
+        }
+      }
+
+      return bestScore > 2200 ? best : null;
+    }
+
+    _markdownToPlainSearchText(text) {
+      return String(text || '')
+        .replace(/```[\s\S]*?```/g, (block) => block.replace(/```[^\n]*\n?|```/g, ' '))
+        .replace(/!\[([^\]]*)\]\((?:[^()]|\([^)]*\))*\)/g, ' $1 ')
+        .replace(/\[([^\]]+)\]\((?:[^()]|\([^)]*\))*\)/g, ' $1 ')
+        .replace(/`([^`]+)`/g, ' $1 ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/^\s{0,3}#{1,6}\s+/gm, ' ')
+        .replace(/^\s*[-*+]\s+/gm, ' ')
+        .replace(/^\s*\d+[.)]\s+/gm, ' ')
+        .replace(/&(?:nbsp|amp|lt|gt|quot);/gi, ' ')
+        .replace(/[*_~>#|[\]{}]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    _normalizeMarkdownSearchSegment(text) {
+      const raw = String(text || '');
+      let out = '';
+      let pendingSpace = false;
+      for (let offset = 0; offset < raw.length;) {
+        const codePoint = raw.codePointAt(offset);
+        const char = String.fromCodePoint(codePoint);
+        offset += char.length;
+        let normalized = '';
+        try {
+          normalized = char.normalize('NFKC').toLowerCase();
+        } catch (_) {
+          normalized = char.toLowerCase();
+        }
+        for (const unit of normalized) {
+          if (/[\u200B-\u200D\uFEFF]/u.test(unit)) continue;
+          if (/[\p{L}\p{N}]/u.test(unit)) {
+            if (pendingSpace && out && !out.endsWith(' ')) out += ' ';
+            pendingSpace = false;
+            out += unit;
+          } else if (out) {
+            pendingSpace = true;
+          }
+        }
+      }
+      return out.trim();
+    }
+
+    _getMarkdownPlainSearchFragments(lookupConfig = {}) {
+      const fragments = new Set();
+      const add = (value) => {
+        const plain = this._markdownToPlainSearchText(value);
+        const normalized = this._normalizeMarkdownSearchSegment(plain);
+        if (normalized.length >= 8) fragments.add(plain.replace(/\s+/g, ' ').trim());
+      };
+
+      [
+        lookupConfig.rawLookupText,
+        lookupConfig.lookupText,
+        lookupConfig.selectedText
+      ].forEach(add);
+
+      const base = this._markdownToPlainSearchText(lookupConfig.rawLookupText || lookupConfig.lookupText || '');
+      if (base) {
+        add(base);
+        const sentenceParts = base.split(/\s*[。！？!?；;]\s*|\n+/).filter(Boolean);
+        sentenceParts.slice(0, 10).forEach((sentence) => {
+          const trimmed = sentence.trim();
+          if (trimmed.length > 120) {
+            add(trimmed.slice(0, 120));
+            add(trimmed.slice(Math.max(0, trimmed.length - 120)));
+          } else {
+            add(trimmed);
+          }
+        });
+
+        const words = base.split(/\s+/).filter(Boolean);
+        if (words.length >= 4) {
+          for (let i = 0; i <= words.length - 4; i += 2) {
+            add(words.slice(i, Math.min(words.length, i + 10)).join(' '));
+          }
+        } else if (base.length >= 24) {
+          [0, Math.max(0, Math.floor(base.length / 2) - 36), Math.max(0, base.length - 72)].forEach((start) => {
+            add(base.slice(start, start + 72));
+          });
+        }
+      }
+
+      return Array.from(fragments)
+        .filter((fragment) => this._normalizeMarkdownSearchSegment(fragment).length >= 8)
+        .sort((a, b) => this._normalizeMarkdownSearchSegment(b).length - this._normalizeMarkdownSearchSegment(a).length)
+        .slice(0, 22);
+    }
+
+    _isNodeInsideSnapshotHelper(node) {
+      try {
+        const root = node && typeof node.getRootNode === 'function' ? node.getRootNode() : null;
+        if (root && root.host && root.host.id === HOST_ID) return true;
+      } catch (_) { }
+      const element = node instanceof Element ? node : (node && node.parentElement);
+      return !!(element && (element.id === HOST_ID || element.closest(`#${HOST_ID}`)));
+    }
+
+    _isMarkdownTextSearchNodeVisible(node) {
+      if (!node || !node.parentElement) return false;
+      if (this._isNodeInsideSnapshotHelper(node)) return false;
+      let element = node.parentElement;
+      while (element && element !== document.documentElement) {
+        const tagName = String(element.tagName || '').toLowerCase();
+        if (/^(script|style|noscript|template|svg|canvas|iframe|textarea|input|select|option|button)$/i.test(tagName)) return false;
+        if (element.id === HOST_ID || element.closest(`#${HOST_ID}`)) return false;
+        try {
+          const style = getComputedStyle(element);
+          if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+        } catch (_) {
+          return false;
+        }
+        element = element.parentElement;
+      }
+      return true;
+    }
+
+    _buildMarkdownTextSearchIndex(rootElement) {
+      const root = rootElement instanceof Element ? rootElement : document.body;
+      const textParts = [];
+      const positions = [];
+      let pendingSpacePosition = null;
+
+      const appendSpace = (position) => {
+        if (!position || textParts.length === 0 || textParts[textParts.length - 1] === ' ') return;
+        textParts.push(' ');
+        positions.push(position);
+      };
+
+      const appendChar = (unit, position) => {
+        if (pendingSpacePosition) {
+          appendSpace(pendingSpacePosition);
+          pendingSpacePosition = null;
+        }
+        textParts.push(unit);
+        positions.push(position);
+      };
+
+      try {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+          acceptNode: (node) => {
+            if (!this._isMarkdownTextSearchNodeVisible(node)) return NodeFilter.FILTER_REJECT;
+            const text = String(node.nodeValue || '');
+            return text.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+          }
+        });
+
+        let node = walker.nextNode();
+        while (node) {
+          const raw = String(node.nodeValue || '');
+          for (let offset = 0; offset < raw.length;) {
+            const codePoint = raw.codePointAt(offset);
+            const char = String.fromCodePoint(codePoint);
+            const startOffset = offset;
+            const endOffset = offset + char.length;
+            offset = endOffset;
+
+            let normalized = '';
+            try {
+              normalized = char.normalize('NFKC').toLowerCase();
+            } catch (_) {
+              normalized = char.toLowerCase();
+            }
+            const position = { node, startOffset, endOffset };
+            for (const unit of normalized) {
+              if (/[\u200B-\u200D\uFEFF]/u.test(unit)) continue;
+              if (/[\p{L}\p{N}]/u.test(unit)) {
+                appendChar(unit, position);
+              } else if (textParts.length) {
+                pendingSpacePosition = pendingSpacePosition || position;
+              }
+            }
+          }
+          pendingSpacePosition = pendingSpacePosition || null;
+          node = walker.nextNode();
+        }
+      } catch (_) { }
+
+      return { text: textParts.join(''), positions };
+    }
+
+    _createMarkdownRangeFromTextIndex(searchIndex, index, length) {
+      if (!searchIndex || !Array.isArray(searchIndex.positions)) return null;
+      const start = searchIndex.positions[index];
+      const end = searchIndex.positions[index + length - 1];
+      if (!start || !end) return null;
+      try {
+        const range = document.createRange();
+        range.setStart(start.node, start.startOffset);
+        range.setEnd(end.node, end.endOffset);
+        return range;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    _findMarkdownRangeInRoot(lookupConfig, rootElement) {
+      const fragments = this._getMarkdownPlainSearchFragments(lookupConfig);
+      if (!fragments.length) return null;
+
+      const searchIndex = this._buildMarkdownTextSearchIndex(rootElement);
+      const haystack = searchIndex.text || '';
+      if (!haystack || haystack.length < 8) return null;
+
+      const beforeSource = lookupConfig.rawBeforeText || lookupConfig.beforeText || '';
+      const afterSource = lookupConfig.rawAfterText || lookupConfig.afterText || '';
+      const before = this._normalizeMarkdownSearchSegment(beforeSource);
+      const after = this._normalizeMarkdownSearchSegment(afterSource);
+      const beforeNeedles = [
+        before.slice(Math.max(0, before.length - 120)),
+        before.slice(Math.max(0, before.length - 72)),
+        before.slice(Math.max(0, before.length - 40))
+      ].filter((item, index, list) => item.length >= 8 && list.indexOf(item) === index);
+      const afterNeedles = [
+        after.slice(0, 120),
+        after.slice(0, 72),
+        after.slice(0, 40)
+      ].filter((item, index, list) => item.length >= 8 && list.indexOf(item) === index);
+
+      let best = null;
+      let bestScore = 0;
+      for (const fragment of fragments) {
+        const needle = this._normalizeMarkdownSearchSegment(fragment);
+        if (needle.length < 8) continue;
+
+        let index = 0;
+        let localHitOrder = 0;
+        let guard = 0;
+        while ((index = haystack.indexOf(needle, index)) !== -1 && guard < 250) {
+          guard += 1;
+          const range = this._createMarkdownRangeFromTextIndex(searchIndex, index, needle.length);
+          if (range && !this._isNodeInsideSnapshotHelper(range.commonAncestorContainer)) {
+            const beforeWindow = haystack.slice(Math.max(0, index - 900), index);
+            const afterWindow = haystack.slice(index + needle.length, Math.min(haystack.length, index + needle.length + 900));
+            let score = needle.length * 120;
+
+            if (beforeNeedles.some((item) => beforeWindow.includes(item))) score += 6200;
+            if (afterNeedles.some((item) => afterWindow.includes(item))) score += 6200;
+            if (beforeNeedles.length && afterNeedles.length
+              && beforeNeedles.some((item) => beforeWindow.includes(item))
+              && afterNeedles.some((item) => afterWindow.includes(item))) {
+              score += 3600;
+            }
+
+            const occurrenceIndex = Number(lookupConfig.occurrenceIndex);
+            if (Number.isFinite(occurrenceIndex) && occurrenceIndex > 0) {
+              score -= Math.min(Math.abs(localHitOrder - occurrenceIndex) * 1200, 4800);
+            }
+
+            const rect = this._getMarkdownRangeClientRect(range);
+            if (rect && rect.width >= 1 && rect.height >= 1) score += 1200;
+            if (score > bestScore) {
+              bestScore = score;
+              best = { range, score, fragment };
+            }
+          }
+          localHitOrder += 1;
+          index += Math.max(needle.length, 1);
+        }
+      }
+
+      return best && bestScore >= 900 ? best.range : null;
+    }
+
+    _findMarkdownRangeWithWindowFind(lookupConfig) {
+      if (typeof window.find !== 'function') return null;
+      const fragments = this._getMarkdownPlainSearchFragments(lookupConfig).slice(0, 12);
+      const body = document.body || document.documentElement;
+      if (!body) return null;
+
+      for (const fragment of fragments) {
+        const query = this._markdownToPlainSearchText(fragment);
+        if (this._normalizeMarkdownSearchSegment(query).length < 8) continue;
+        try {
+          const selection = window.getSelection();
+          if (!selection) continue;
+          selection.removeAllRanges();
+          const startRange = document.createRange();
+          startRange.setStart(body, 0);
+          startRange.collapse(true);
+          selection.addRange(startRange);
+
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            const found = window.find(query, false, false, true, false, false, false);
+            if (!found || !selection.rangeCount) break;
+            const range = selection.getRangeAt(0);
+            if (range && !this._isNodeInsideSnapshotHelper(range.commonAncestorContainer)) {
+              return range.cloneRange();
+            }
+          }
+        } catch (_) { }
+      }
+      return null;
+    }
+
+    _findMarkdownSourceRange(lookupConfig, sourceElement) {
+      if (!lookupConfig || (!lookupConfig.lookupText && !lookupConfig.rawLookupText)) return null;
+      const roots = [];
+      if (sourceElement instanceof Element) roots.push(sourceElement);
+      if (document.body && !roots.includes(document.body)) roots.push(document.body);
+
+      for (const root of roots) {
+        const range = this._findMarkdownRangeInRoot(lookupConfig, root);
+        if (range) return range;
+      }
+      return this._findMarkdownRangeWithWindowFind(lookupConfig);
+    }
+
+    _getMarkdownRangeClientRect(range) {
+      if (!range) return null;
+      try {
+        const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0);
+        const visibleRects = rects.filter((rect) =>
+          rect.bottom >= 0 && rect.right >= 0 && rect.top <= window.innerHeight && rect.left <= window.innerWidth
+        );
+        const targetRects = visibleRects.length ? visibleRects : rects;
+        if (!targetRects.length) {
+          const rect = range.getBoundingClientRect();
+          return rect && rect.width > 0 && rect.height > 0 ? rect : null;
+        }
+        return targetRects.reduce((acc, rect) => ({
+          left: Math.min(acc.left, rect.left),
+          top: Math.min(acc.top, rect.top),
+          right: Math.max(acc.right, rect.right),
+          bottom: Math.max(acc.bottom, rect.bottom),
+          width: Math.max(acc.right, rect.right) - Math.min(acc.left, rect.left),
+          height: Math.max(acc.bottom, rect.bottom) - Math.min(acc.top, rect.top)
+        }), {
+          left: targetRects[0].left,
+          top: targetRects[0].top,
+          right: targetRects[0].right,
+          bottom: targetRects[0].bottom,
+          width: targetRects[0].width,
+          height: targetRects[0].height
+        });
+      } catch (_) {
+        return null;
+      }
+    }
+
+    _selectMarkdownSourceRange(range) {
+      if (!range) return;
+      try {
+        const selection = window.getSelection();
+        if (!selection) return;
+        selection.removeAllRanges();
+        selection.addRange(range.cloneRange());
+      } catch (_) { }
+    }
+
+    _scrollMarkdownRangeIntoView(range) {
+      if (!range) return;
+      try {
+        const node = range.startContainer;
+        const element = node instanceof Element ? node : node.parentElement;
+        if (element && typeof element.scrollIntoView === 'function') {
+          element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+        }
+      } catch (_) { }
+    }
+
+    _getMarkdownHighlightOverlayBox(rect, options = {}) {
+      if (!rect) return null;
+      const margin = 8;
+      const minWidth = Number.isFinite(Number(options.minWidth)) ? Number(options.minWidth) : 40;
+      const minHeight = Number.isFinite(Number(options.minHeight)) ? Number(options.minHeight) : 40;
+      const paddingX = Number.isFinite(Number(options.paddingX)) ? Number(options.paddingX) : 6;
+      const paddingY = Number.isFinite(Number(options.paddingY)) ? Number(options.paddingY) : 6;
+      const viewportWidth = Math.max(margin * 2 + 1, window.innerWidth || 0);
+      const viewportHeight = Math.max(margin * 2 + 1, window.innerHeight || 0);
+      const centerX = (Number(rect.left) + Number(rect.right)) / 2;
+      const centerY = (Number(rect.top) + Number(rect.bottom)) / 2;
+      let width = Math.max(minWidth, Number(rect.width || 0) + paddingX * 2);
+      let height = Math.max(minHeight, Number(rect.height || 0) + paddingY * 2);
+
+      width = Math.min(width, Math.max(1, viewportWidth - margin * 2));
+      height = Math.min(height, Math.max(1, viewportHeight - margin * 2));
+
+      let left = centerX - width / 2;
+      let top = centerY - height / 2;
+      left = Math.max(margin, Math.min(viewportWidth - margin - width, left));
+      top = Math.max(margin, Math.min(viewportHeight - margin - height, top));
+
+      return { left, top, width, height };
+    }
+
+    _removeMarkdownSourceHighlight() {
+      if (this._mdSourceHighlightTimer) {
+        clearTimeout(this._mdSourceHighlightTimer);
+        this._mdSourceHighlightTimer = null;
+      }
+      if (this._mdSourceHighlightFrame) {
+        cancelAnimationFrame(this._mdSourceHighlightFrame);
+        this._mdSourceHighlightFrame = null;
+      }
+      const overlay = document.getElementById('dev1-md-source-highlight');
+      if (overlay) overlay.remove();
+    }
+
+    _showMarkdownSourceNotice(message) {
+      const notice = document.createElement('div');
+      notice.textContent = String(message || '');
+      notice.style.cssText = `
+        position: fixed;
+        left: 50%;
+        top: 18px;
+        transform: translateX(-50%);
+        z-index: 2147483649;
+        padding: 7px 10px;
+        border-radius: 7px;
+        background: rgba(15, 23, 42, 0.92);
+        color: #fff;
+        font: 12px/1.3 system-ui, -apple-system, sans-serif;
+        pointer-events: none;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.25);
+      `;
+      document.documentElement.appendChild(notice);
+      setTimeout(() => notice.remove(), 1500);
+    }
+
+    _showMarkdownSourceHighlight(label = '正文来源', lookup = null) {
+      const lookupConfig = lookup && typeof lookup === 'object' ? lookup : {};
+      const target = lookupConfig.target || 'content';
+      if (target === 'metadata') {
+        this._showMarkdownSourceNotice(`${lookupConfig.label || '当前字段'} 没有可框选的页面原文位置`);
+        return;
+      }
+      const extractionContext = this._getMarkdownArticleExtractionContext();
+      const titleLookup = lookupConfig.rawLookupText || lookupConfig.lookupText || extractionContext.title || document.title || '';
+      const source = target === 'title'
+        ? (this._findMarkdownTitleElement(titleLookup) || extractionContext.sourceElement || this._findMarkdownSourceElement())
+        : (extractionContext.sourceElement || this._findMarkdownSourceElement());
+      if (!source) {
+        this._showMarkdownSourceNotice('未找到可定位的正文来源');
+        return;
+      }
+      const lookupText = lookupConfig.lookupText || lookupConfig.rawLookupText || '';
+      let highlightRange = null;
+      let highlightTarget = null;
+      if (target === 'title') {
+        highlightTarget = source;
+        highlightRange = this._findMarkdownSourceRange({
+          ...lookupConfig,
+          target: 'title',
+          lookupText: this._trimMarkdownLookupText(titleLookup),
+          rawLookupText: titleLookup
+        }, source);
+      } else if (lookupText) {
+        highlightRange = this._findMarkdownSourceRange(lookupConfig, source);
+        highlightTarget = highlightRange ? null : this._findMarkdownVisibleTextMatchElement(lookupConfig);
+      } else {
+        highlightTarget = source;
+      }
+
+      if (!highlightRange && !highlightTarget) {
+        this._showMarkdownSourceNotice('未找到当前输入位置对应的原文');
+        return;
+      }
+
+      try {
+        if (highlightRange) {
+          this._scrollMarkdownRangeIntoView(highlightRange);
+          this._selectMarkdownSourceRange(highlightRange);
+        } else if (highlightTarget) {
+          highlightTarget.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+        }
+      } catch (_) { }
+
+      this._removeMarkdownSourceHighlight();
+      const overlay = document.createElement('div');
+      overlay.id = 'dev1-md-source-highlight';
+      overlay.style.cssText = `
+        position: fixed;
+        z-index: 2147483646;
+        box-sizing: border-box;
+        border: 2px solid #3b82f6;
+        border-radius: 8px;
+        background: rgba(59, 130, 246, 0.08);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.22), inset 0 0 0 1px rgba(255,255,255,0.62);
+        pointer-events: none;
+        transition: opacity 120ms ease;
+      `;
+      const badge = document.createElement('div');
+      badge.textContent = String(lookupConfig.label || label || '正文来源');
+      badge.style.cssText = `
+        position: absolute;
+        left: -2px;
+        top: -26px;
+        height: 22px;
+        box-sizing: border-box;
+        padding: 0 8px;
+        border-radius: 7px;
+        background: #2563eb;
+        color: #fff;
+        font: 12px/22px system-ui, -apple-system, sans-serif;
+        white-space: nowrap;
+        box-shadow: 0 8px 20px rgba(37, 99, 235, 0.28);
+      `;
+      overlay.appendChild(badge);
+      document.documentElement.appendChild(overlay);
+
+      const updateOverlay = () => {
+        if (!overlay.isConnected) return;
+        const rect = highlightRange
+          ? this._getMarkdownRangeClientRect(highlightRange)
+          : highlightTarget.getBoundingClientRect();
+        if (!rect) {
+          this._removeMarkdownSourceHighlight();
+          return;
+        }
+        const isSingleLineRange = !!highlightRange && rect.height > 0 && rect.height < 28;
+        const box = this._getMarkdownHighlightOverlayBox(rect, {
+          minWidth: 40,
+          minHeight: isSingleLineRange ? 30 : 40,
+          paddingX: highlightRange ? 7 : 8,
+          paddingY: isSingleLineRange ? 5 : 8
+        });
+        if (!box) {
+          this._removeMarkdownSourceHighlight();
+          return;
+        }
+        overlay.style.left = `${box.left}px`;
+        overlay.style.top = `${box.top}px`;
+        overlay.style.width = `${box.width}px`;
+        overlay.style.height = `${box.height}px`;
+        badge.style.top = box.top <= 34 ? 'calc(100% + 4px)' : '-26px';
+        this._mdSourceHighlightFrame = requestAnimationFrame(updateOverlay);
+      };
+      updateOverlay();
+      this._mdSourceHighlightTimer = setTimeout(() => {
+        overlay.style.opacity = '0';
+        setTimeout(() => this._removeMarkdownSourceHighlight(), 140);
+      }, 1500);
     }
 
     _getMarkdownImageFileMime(file) {
@@ -1546,12 +2777,127 @@
         overflow: hidden;
       `;
 
-      // 1. 导出模板
-      const templateLabel = document.createElement('div');
-      templateLabel.style.cssText = `font-size: 11px; font-weight: 600; color: ${isDark ? '#9ca3af' : '#64748b'}; margin-bottom: -6px; flex-shrink: 0;`;
-      templateLabel.textContent = '1. 导出模板（可自定义）';
+      const createSourceLocateButton = (title, label, getLookup) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.noDrag = 'true';
+        const tipText = '根据输入闪烁竖条/选中候选，进行定位';
+        btn.setAttribute('aria-label', tipText);
+        btn.title = title || tipText;
+        btn.style.cssText = `
+          width: 22px;
+          height: 22px;
+          border: 0;
+          border-radius: 6px;
+          background: transparent;
+          color: ${isDark ? '#cbd5e1' : '#475569'};
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          flex: 0 0 22px;
+        `;
+        btn.innerHTML = `
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="7"></circle>
+            <circle cx="12" cy="12" r="2"></circle>
+            <path d="M12 2v3"></path><path d="M12 19v3"></path><path d="M2 12h3"></path><path d="M19 12h3"></path>
+          </svg>
+        `;
+        let sourceTip = null;
+        let sourceTipTimer = null;
+        const removeSourceTip = () => {
+          if (sourceTipTimer) {
+            clearTimeout(sourceTipTimer);
+            sourceTipTimer = null;
+          }
+          if (sourceTip) {
+            sourceTip.remove();
+            sourceTip = null;
+          }
+        };
+        const showSourceTip = () => {
+          removeSourceTip();
+          sourceTipTimer = setTimeout(() => {
+            sourceTip = document.createElement('div');
+            sourceTip.textContent = tipText;
+            sourceTip.style.cssText = `
+              position: fixed;
+              z-index: 2147483649;
+              height: 24px;
+              box-sizing: border-box;
+              padding: 0 8px;
+              border-radius: 7px;
+              background: ${isDark ? '#111827' : '#0f172a'};
+              color: #fff;
+              font: 11px/24px system-ui, -apple-system, sans-serif;
+              white-space: nowrap;
+              pointer-events: none;
+              box-shadow: 0 8px 22px rgba(15, 23, 42, 0.24);
+            `;
+            document.documentElement.appendChild(sourceTip);
+            const rect = btn.getBoundingClientRect();
+            const tipRect = sourceTip.getBoundingClientRect();
+            const gap = 6;
+            const left = Math.max(8, Math.min(window.innerWidth - tipRect.width - 8, rect.left + rect.width / 2 - tipRect.width / 2));
+            let top = rect.bottom + gap;
+            if (top + tipRect.height > window.innerHeight - 8) {
+              top = rect.top - tipRect.height - gap;
+            }
+            sourceTip.style.left = `${left}px`;
+            sourceTip.style.top = `${Math.max(8, top)}px`;
+          }, 120);
+        };
+        btn.addEventListener('mouseover', () => {
+          btn.style.background = isDark ? '#4b5563' : '#cbd5e1';
+          showSourceTip();
+        });
+        btn.addEventListener('mouseout', () => {
+          btn.style.background = 'transparent';
+          removeSourceTip();
+        });
+        btn.addEventListener('focus', showSourceTip);
+        btn.addEventListener('blur', removeSourceTip);
+        btn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          removeSourceTip();
+          const lookup = typeof getLookup === 'function' ? getLookup() : null;
+          this._showMarkdownSourceHighlight(label, lookup);
+        });
+        return btn;
+      };
 
-      const textarea = document.createElement('textarea');
+      const createSourceLabel = (text, title, highlightLabel, getLookup) => {
+        const label = document.createElement('div');
+        label.style.cssText = `
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 11px;
+          font-weight: 600;
+          color: ${isDark ? '#9ca3af' : '#64748b'};
+          margin-bottom: -6px;
+          flex-shrink: 0;
+        `;
+        const textEl = document.createElement('span');
+        textEl.textContent = text;
+        label.appendChild(textEl);
+        label.appendChild(createSourceLocateButton(title, highlightLabel, getLookup));
+        return label;
+      };
+
+      // 1. 导出模板
+      let textarea = null;
+      const templateLabel = createSourceLabel(
+        '1. 导出模板（可自定义）',
+        '定位 {{content}} 对应正文来源',
+        '{{content}} 对应正文来源',
+        () => this._getMarkdownTextareaSourceLookup(textarea, 'template', '{{content}} 对应正文来源')
+      );
+
+      textarea = document.createElement('textarea');
       textarea.style.cssText = `
         width: 100%;
         flex: 2;
@@ -1569,6 +2915,7 @@
         line-height: 1.5;
       `;
       textarea.value = initialContent;
+      this._bindMarkdownTextareaSelectionMemory(textarea);
 
       // 2. 你的笔记
       const notesLabel = document.createElement('div');
@@ -1600,8 +2947,16 @@
       tab1Content.appendChild(notesLabel);
       tab1Content.appendChild(notesArea);
 
-      // 3. 正文 (No label appended here)
-      const articleArea = document.createElement('textarea');
+      // 3. 正文
+      let articleArea = null;
+      const articleLabel = createSourceLabel(
+        '正文（提取结果）',
+        '定位正文来源',
+        '正文来源',
+        () => this._getMarkdownTextareaSourceLookup(articleArea, 'article', '正文来源')
+      );
+
+      articleArea = document.createElement('textarea');
       articleArea.style.cssText = `
         width: 100%;
         flex: 1;
@@ -1619,7 +2974,9 @@
       `;
       articleArea.value = initialArticle;
       articleArea.placeholder = '提取的正文内容...';
+      this._bindMarkdownTextareaSelectionMemory(articleArea);
 
+      tab2Content.appendChild(articleLabel);
       tab2Content.appendChild(articleArea);
 
       // Tab switching logic
