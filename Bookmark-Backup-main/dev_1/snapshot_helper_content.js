@@ -394,7 +394,7 @@
             .dev1-helper-md { width:auto; min-width:34px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
             .dev1-helper-open-snapshot svg { transform:translateY(1px); }
             .dev1-helper-feedback { max-width:116px; font-size:11px; color:${this.darkModeEnabled ? '#93c5fd' : '#2563eb'}; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-            .dev1-helper-tip { position:fixed; z-index:2147483647; max-width:220px; padding:7px 9px; border-radius:8px; background:${this.darkModeEnabled ? '#111827' : '#0f172a'}; color:#fff; font-size:11px; line-height:1.35; box-shadow:0 10px 28px rgba(15,23,42,0.28); pointer-events:none; opacity:0; transform:translateY(-4px); transition:opacity 80ms ease, transform 80ms ease; }
+            .dev1-helper-tip { position:fixed; z-index:2147483647; max-width:220px; height:24px; box-sizing:border-box; padding:0 8px; border-radius:7px; background:${this.darkModeEnabled ? '#111827' : '#0f172a'}; color:#fff; font-size:11px; line-height:1; display:flex; align-items:center; white-space:nowrap; box-shadow:0 8px 22px rgba(15,23,42,0.24); pointer-events:none; opacity:0; transform:translateY(-2px); transition:opacity 80ms ease, transform 80ms ease; }
             .dev1-helper-tip[data-show="true"] { opacity:1; transform:translateY(0); }
             .dev1-helper-body { padding: 0 14px 16px; }
             .dev1-helper-body button { cursor:pointer; }
@@ -446,8 +446,13 @@
             shadow.appendChild(tip);
             const rect = button.getBoundingClientRect();
             const tipRect = tip.getBoundingClientRect();
+            const tipGap = 6;
             const left = Math.max(8, Math.min(window.innerWidth - tipRect.width - 8, rect.left + rect.width / 2 - tipRect.width / 2));
-            const top = Math.max(8, rect.top - tipRect.height - 8);
+            let top = rect.bottom + tipGap;
+            if (top + tipRect.height > window.innerHeight - 8) {
+              top = rect.top - tipRect.height - tipGap;
+            }
+            top = Math.max(8, Math.min(window.innerHeight - tipRect.height - 8, top));
             tip.style.left = `${left}px`;
             tip.style.top = `${top}px`;
             requestAnimationFrame(() => {
@@ -994,6 +999,9 @@
     _removeMdSettingsPanel() {
       const settings = this._getMdSettingsPanel();
       if (settings) {
+        if (typeof settings._closeHelpPopover === 'function') {
+          settings._closeHelpPopover();
+        }
         if (settings._resizeHandler) {
           window.removeEventListener('resize', settings._resizeHandler);
           window.removeEventListener('scroll', settings._resizeHandler);
@@ -1001,6 +1009,304 @@
         settings.remove();
       }
       this._mdSettingsAnchor = null;
+    }
+
+    _getMarkdownImageFileMime(file) {
+      if (!file) return '';
+      const rawType = String(file.type || '').trim().toLowerCase();
+      if (/^image\//i.test(rawType)) return rawType;
+
+      const name = String(file.name || '').trim().toLowerCase();
+      const ext = (name.match(/\.([a-z0-9]+)$/i) || [])[1] || '';
+      const mimeByExt = {
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        gif: 'image/gif',
+        webp: 'image/webp',
+        svg: 'image/svg+xml',
+        avif: 'image/avif',
+        bmp: 'image/bmp',
+        ico: 'image/x-icon',
+        tif: 'image/tiff',
+        tiff: 'image/tiff',
+        heic: 'image/heic',
+        heif: 'image/heif'
+      };
+      return mimeByExt[ext] || '';
+    }
+
+    _isMarkdownImageFile(file) {
+      return !!this._getMarkdownImageFileMime(file);
+    }
+
+    _extractMarkdownImageFileFromDataTransfer(dt) {
+      if (!dt) return null;
+      try {
+        if (dt.items && dt.items.length) {
+          for (const item of Array.from(dt.items)) {
+            if (!item || item.kind !== 'file') continue;
+            const file = typeof item.getAsFile === 'function' ? item.getAsFile() : null;
+            if (this._isMarkdownImageFile(file)) return file;
+          }
+        }
+      } catch (_) { }
+      try {
+        if (dt.files && dt.files.length) {
+          return Array.from(dt.files).find((file) => this._isMarkdownImageFile(file)) || null;
+        }
+      } catch (_) { }
+      return null;
+    }
+
+    _readMarkdownImageFileAsDataUrl(file) {
+      return new Promise((resolve) => {
+        try {
+          const reader = new FileReader();
+          reader.onload = () => {
+            let dataUrl = String(reader.result || '');
+            const mime = this._getMarkdownImageFileMime(file);
+            if (mime && dataUrl && !/^data:image\//i.test(dataUrl)) {
+              dataUrl = dataUrl.replace(/^data:[^;,]*(;base64,)/i, `data:${mime}$1`);
+              if (!/^data:image\//i.test(dataUrl) && dataUrl.includes(';base64,')) {
+                dataUrl = dataUrl.replace(/^data:/i, `data:${mime}`);
+              }
+            }
+            resolve(dataUrl);
+          };
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(file);
+        } catch (_) {
+          resolve('');
+        }
+      });
+    }
+
+    _normalizeMarkdownImageUrl(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      if (/^(data:image\/|blob:)/i.test(raw)) return raw;
+      try {
+        return new URL(raw, location.href).toString();
+      } catch (_) {
+        return raw;
+      }
+    }
+
+    _isDurableMarkdownImageUrl(value) {
+      try {
+        const url = new URL(String(value || '').trim(), location.href);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+      } catch (_) {
+        return false;
+      }
+    }
+
+    _isLikelyMarkdownImageUrl(value) {
+      const url = String(value || '').trim();
+      if (!url) return false;
+      if (/^data:image\//i.test(url) || /^blob:/i.test(url)) return true;
+      return /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico|tiff?|heic|heif)(?:[?#].*)?$/i.test(url);
+    }
+
+    _extractFirstImageSrcFromHtml(html) {
+      const raw = String(html || '');
+      if (!raw) return '';
+      try {
+        const parsed = new DOMParser().parseFromString(raw, 'text/html');
+        const img = parsed.querySelector('img[src], picture source[srcset], source[srcset]');
+        if (img) {
+          const src = img.getAttribute('src') || String(img.getAttribute('srcset') || '').split(',')[0].trim().split(/\s+/)[0] || '';
+          if (src) return this._normalizeMarkdownImageUrl(src);
+        }
+      } catch (_) { }
+      const srcMatch = raw.match(/<img[^>]*\s+src\s*=\s*['"]([^'"]+)['"]/i);
+      if (srcMatch && srcMatch[1]) return this._normalizeMarkdownImageUrl(srcMatch[1]);
+      const srcsetMatch = raw.match(/<(?:source|img)[^>]*\s+srcset\s*=\s*['"]([^'"]+)['"]/i);
+      if (srcsetMatch && srcsetMatch[1]) {
+        const first = String(srcsetMatch[1] || '').split(',')[0].trim().split(/\s+/)[0] || '';
+        return this._normalizeMarkdownImageUrl(first);
+      }
+      return '';
+    }
+
+    _extractFirstUrlFromMarkdownDropText(text) {
+      const raw = String(text || '');
+      const direct = raw.match(/\b(data:image\/[a-z0-9+.-]+;base64,[^\s"'<>]+)\b/i);
+      if (direct && direct[1]) return direct[1].trim();
+      const url = raw.match(/\b((?:https?|file):\/\/[^\s"'<>]+|blob:[^\s"'<>]+)\b/i);
+      return url && url[1] ? url[1].trim() : '';
+    }
+
+    async _tryFetchMarkdownImageAsDataUrl(src) {
+      const url = String(src || '').trim();
+      if (!url) return '';
+      if (/^data:image\//i.test(url)) return url;
+      try {
+        const response = await fetch(url);
+        if (!response || !response.ok) return '';
+        const blob = await response.blob();
+        if (!blob || !this._isMarkdownImageFile(blob)) return '';
+        return await this._readMarkdownImageFileAsDataUrl(blob);
+      } catch (_) {
+        return '';
+      }
+    }
+
+    _buildMarkdownLocalImageId() {
+      const time = Date.now().toString(36);
+      const random = Math.random().toString(36).slice(2, 9);
+      return `img_${time}_${random}`;
+    }
+
+    async _storeMarkdownLocalImage(dataUrl, alt = '') {
+      const src = String(dataUrl || '').trim();
+      if (!/^data:image\//i.test(src)) return '';
+      const scoped = this._getScopedStorage();
+      const tabId = this.config?.existingTabId;
+      const currentUrl = this._getCurrentUrl();
+      if (!scoped || tabId == null) return '';
+      try {
+        const id = this._buildMarkdownLocalImageId();
+        const existing = await scoped.getScoped(tabId, 'md_images', currentUrl);
+        const images = existing && typeof existing === 'object' && !Array.isArray(existing) ? existing : {};
+        images[id] = {
+          dataUrl: src,
+          alt: String(alt || '').trim(),
+          createdAt: new Date().toISOString()
+        };
+        await scoped.setScoped(tabId, 'md_images', currentUrl, images);
+        return `dev1-local-image:${id}`;
+      } catch (_) {
+        return '';
+      }
+    }
+
+    async _resolveMarkdownImageUrlDropSource(src, alt = '') {
+      const normalized = this._normalizeMarkdownImageUrl(src);
+      if (!normalized) return null;
+      if (this._isDurableMarkdownImageUrl(normalized)) {
+        return { src: normalized, alt };
+      }
+
+      const dataUrl = await this._tryFetchMarkdownImageAsDataUrl(normalized);
+      if (dataUrl && /^data:image\//i.test(dataUrl)) {
+        const placeholder = await this._storeMarkdownLocalImage(dataUrl, alt);
+        return { src: placeholder || dataUrl, alt };
+      }
+
+      return { src: normalized, alt };
+    }
+
+    _dataTransferHasMarkdownImage(dt, allowFileTypeFallback = false) {
+      if (!dt) return false;
+      if (this._extractMarkdownImageFileFromDataTransfer(dt)) return true;
+      try {
+        const types = Array.from(dt.types || []).map((type) => String(type || '').toLowerCase());
+        if (allowFileTypeFallback && types.includes('files')) return true;
+      } catch (_) { }
+      let htmlData = '';
+      let uriList = '';
+      let plainText = '';
+      try {
+        htmlData = dt.getData('text/html') || '';
+        uriList = dt.getData('text/uri-list') || '';
+        plainText = dt.getData('text/plain') || '';
+      } catch (_) { }
+      const imgSrc = this._extractFirstImageSrcFromHtml(htmlData);
+      if (imgSrc) return true;
+      const url = this._extractFirstUrlFromMarkdownDropText(uriList || plainText);
+      return this._isLikelyMarkdownImageUrl(url);
+    }
+
+    async _resolveMarkdownImageDropSource(dt) {
+      if (!dt) return null;
+
+      const file = this._extractMarkdownImageFileFromDataTransfer(dt);
+      if (file) {
+        if (Number(file.size) > 20 * 1024) {
+          alert(this.config.lang === 'en'
+            ? 'Image too large (max 20KB). Only small icons/emojis are inserted as Base64 to avoid bloating Markdown.'
+            : '图片过大（最大支持 20KB）。为避免 Base64 过长影响 Markdown，仅支持小图标/表情。');
+          return null;
+        }
+        const dataUrl = await this._readMarkdownImageFileAsDataUrl(file);
+        if (dataUrl && /^data:image\//i.test(dataUrl)) {
+          const alt = String(file.name || 'image').replace(/[\r\n\[\]]/g, ' ').trim();
+          const placeholder = await this._storeMarkdownLocalImage(dataUrl, alt);
+          return { src: placeholder || dataUrl, alt };
+        }
+      }
+
+      let htmlData = '';
+      let uriList = '';
+      let plainText = '';
+      try {
+        htmlData = dt.getData('text/html') || '';
+        uriList = dt.getData('text/uri-list') || '';
+        plainText = dt.getData('text/plain') || '';
+      } catch (_) { }
+
+      const imgSrc = this._extractFirstImageSrcFromHtml(htmlData);
+      if (imgSrc) return await this._resolveMarkdownImageUrlDropSource(imgSrc, '');
+
+      const url = this._extractFirstUrlFromMarkdownDropText(uriList || plainText);
+      if (this._isLikelyMarkdownImageUrl(url)) {
+        return await this._resolveMarkdownImageUrlDropSource(url, '');
+      }
+
+      return null;
+    }
+
+    _insertTextIntoMarkdownTextarea(textarea, text) {
+      if (!(textarea instanceof HTMLTextAreaElement)) return false;
+      const insertText = String(text || '');
+      const value = String(textarea.value || '');
+      const start = Number.isFinite(textarea.selectionStart) ? textarea.selectionStart : value.length;
+      const end = Number.isFinite(textarea.selectionEnd) ? textarea.selectionEnd : start;
+      let inserted = false;
+      try {
+        textarea.focus({ preventScroll: true });
+        textarea.setSelectionRange(start, end);
+        inserted = typeof document.execCommand === 'function'
+          && document.execCommand('insertText', false, insertText);
+      } catch (_) {
+        inserted = false;
+      }
+      if (!inserted) {
+        const nextPos = start + insertText.length;
+        if (typeof textarea.setRangeText === 'function') {
+          textarea.setRangeText(insertText, start, end, 'end');
+        } else {
+          textarea.value = value.slice(0, start) + insertText + value.slice(end);
+          try { textarea.setSelectionRange(nextPos, nextPos); } catch (_) { }
+        }
+      }
+      try {
+        textarea.focus({ preventScroll: true });
+      } catch (_) { }
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+
+    _bindMarkdownImageDrop(textarea) {
+      if (!(textarea instanceof HTMLTextAreaElement) || textarea.__dev1MarkdownImageDropBound) return;
+      textarea.__dev1MarkdownImageDropBound = true;
+
+      textarea.addEventListener('dragover', (event) => {
+        if (!this._dataTransferHasMarkdownImage(event.dataTransfer, true)) return;
+        event.preventDefault();
+        try { event.dataTransfer.dropEffect = 'copy'; } catch (_) { }
+      });
+
+      textarea.addEventListener('drop', async (event) => {
+        if (!this._dataTransferHasMarkdownImage(event.dataTransfer, false)) return;
+        event.preventDefault();
+        const image = await this._resolveMarkdownImageDropSource(event.dataTransfer);
+        if (!image || !image.src) return;
+        const alt = String(image.alt || '').replace(/\]/g, '\\]');
+        this._insertTextIntoMarkdownTextarea(textarea, `![${alt}](${image.src})`);
+      });
     }
 
     _repositionMdSettingsPanel() {
@@ -1151,7 +1457,15 @@
         flex-shrink: 0;
       `;
       header.innerHTML = `
-        <span>Markdown 模板设置</span>
+        <span style="display:flex; align-items:center; gap:4px; min-width:0;">
+          <span>Markdown 模板设置</span>
+          <button type="button" class="md-settings-help" data-no-drag="true" style="
+            width: 24px; height: 24px; border: 0; background: transparent;
+            color: inherit; cursor: pointer; border-radius: 6px; opacity: .78;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 12px; line-height: 1; font-weight: 700; padding: 0; flex: 0 0 24px;
+          " title="说明" aria-label="说明">?</button>
+        </span>
         <div style="display: flex; gap: 4px; align-items: center;">
           <button type="button" class="md-settings-pin" style="
             width: 24px; height: 24px; border: 0; background: transparent;
@@ -1370,6 +1684,71 @@
       closeBtn.addEventListener('mouseover', () => closeBtn.style.background = isDark ? '#4b5563' : '#cbd5e1');
       closeBtn.addEventListener('mouseout', () => closeBtn.style.background = 'transparent');
 
+      const helpBtn = header.querySelector('.md-settings-help');
+      let helpPopover = null;
+      let helpPopoverOutsideHandler = null;
+      const closeHelpPopover = () => {
+        if (helpPopoverOutsideHandler) {
+          document.removeEventListener('click', helpPopoverOutsideHandler, true);
+          helpPopoverOutsideHandler = null;
+        }
+        if (helpPopover) {
+          helpPopover.remove();
+          helpPopover = null;
+        }
+      };
+      panel._closeHelpPopover = closeHelpPopover;
+      const toggleHelpPopover = (event) => {
+        event.stopPropagation();
+        if (helpPopover) {
+          closeHelpPopover();
+          return;
+        }
+        helpPopover = document.createElement('div');
+        helpPopover.style.cssText = `
+          position: absolute;
+          top: 44px;
+          left: 12px;
+          right: 12px;
+          z-index: 2;
+          padding: 10px 12px;
+          border-radius: 8px;
+          border: 1px solid ${isDark ? '#4b5563' : '#cbd5e1'};
+          background: ${isDark ? '#111827' : '#ffffff'};
+          color: ${isDark ? '#e5e7eb' : '#0f172a'};
+          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.22);
+          font-size: 12px;
+          line-height: 1.55;
+          font-weight: 400;
+        `;
+        helpPopover.innerHTML = `
+          <div>1. 可以拖动图片进入模板、笔记或正文输入框；有 http/https 链接的图片会保留链接，本地或临时图片会临时存储并在导出时转为 Base64。</div>
+          <div style="margin-top:6px;">2. 如果处于「队列批量处理」，这里的改变会临时存储，跟随 URL；Tab 页关闭后对应临时存储会清除。</div>
+        `;
+        panel.appendChild(helpPopover);
+        helpPopoverOutsideHandler = (outsideEvent) => {
+          const path = typeof outsideEvent.composedPath === 'function' ? outsideEvent.composedPath() : [];
+          if (path.includes(helpBtn) || path.includes(helpPopover)) return;
+          closeHelpPopover();
+        };
+        setTimeout(() => {
+          if (helpPopover && helpPopoverOutsideHandler) {
+            document.addEventListener('click', helpPopoverOutsideHandler, true);
+          }
+        }, 0);
+      };
+      if (helpBtn) {
+        helpBtn.addEventListener('click', toggleHelpPopover);
+        helpBtn.addEventListener('mouseover', () => {
+          helpBtn.style.opacity = '1';
+          helpBtn.style.background = isDark ? '#4b5563' : '#cbd5e1';
+        });
+        helpBtn.addEventListener('mouseout', () => {
+          helpBtn.style.opacity = '.78';
+          helpBtn.style.background = 'transparent';
+        });
+      }
+
       // --- 置顶按钮 ---
       let isPinned = true;
       const pinBtn = header.querySelector('.md-settings-pin');
@@ -1421,6 +1800,9 @@
       textarea.addEventListener('input', autoSave);
       notesArea.addEventListener('input', autoSave);
       articleArea.addEventListener('input', autoSave);
+      this._bindMarkdownImageDrop(textarea);
+      this._bindMarkdownImageDrop(notesArea);
+      this._bindMarkdownImageDrop(articleArea);
 
       refreshBtn.addEventListener('click', async () => {
         refreshBtn.textContent = '提取中...';

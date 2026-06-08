@@ -6099,6 +6099,18 @@ async function dev1ExtractMarkdownArticle(tabId) {
     };
 }
 
+function dev1ExpandMarkdownLocalImagePlaceholders(markdownText = '', images = null) {
+    const text = String(markdownText || '');
+    if (!text || !images || typeof images !== 'object' || Array.isArray(images)) return text;
+    return text.replace(/dev1-local-image:([a-z0-9_-]+)/gi, (match, imageId) => {
+        const entry = images[imageId];
+        const dataUrl = typeof entry === 'string'
+            ? entry
+            : (entry && typeof entry === 'object' ? String(entry.dataUrl || '') : '');
+        return /^data:image\//i.test(dataUrl) ? dataUrl : match;
+    });
+}
+
 async function dev1CaptureMarkdownContent(tabId, urlText = '') {
     const id = Number(tabId);
     if (!Number.isFinite(id)) throw new Error('Invalid tab id');
@@ -6115,12 +6127,14 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
     const contentKey = `dev1_scoped_${id}_md_content`;
     const notesKey = `dev1_scoped_${id}_md_notes`;
     const articleKey = `dev1_scoped_${id}_md_article`;
+    const imagesKey = `dev1_scoped_${id}_md_images`;
     let userContent = null;
     let userNotes = null;
     let userArticle = null;
+    let userImages = null;
     try {
         if (browserAPI && browserAPI.storage && browserAPI.storage.local) {
-            const res = await browserAPI.storage.local.get([contentKey, notesKey, articleKey]);
+            const res = await browserAPI.storage.local.get([contentKey, notesKey, articleKey, imagesKey]);
             const entry = res && res[contentKey];
             if (entry && typeof entry === 'object' && String(entry.u || '') === String(urlText || '')) {
                 userContent = entry.v;
@@ -6132,6 +6146,10 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
             const articleEntry = res && res[articleKey];
             if (articleEntry && typeof articleEntry === 'object' && String(articleEntry.u || '') === String(urlText || '')) {
                 userArticle = articleEntry.v;
+            }
+            const imagesEntry = res && res[imagesKey];
+            if (imagesEntry && typeof imagesEntry === 'object' && String(imagesEntry.u || '') === String(urlText || '')) {
+                userImages = imagesEntry.v;
             }
         }
     } catch(e) {}
@@ -6237,8 +6255,9 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
     if (!result || result.success !== true) {
         throw new Error(result?.error || 'Markdown capture failed');
     }
+    const markdown = dev1ExpandMarkdownLocalImagePlaceholders(String(result.markdown || ''), userImages);
     return {
-        markdown: String(result.markdown || ''),
+        markdown,
         title: String(result.title || '').trim(),
         url: String(result.url || '').trim()
     };
