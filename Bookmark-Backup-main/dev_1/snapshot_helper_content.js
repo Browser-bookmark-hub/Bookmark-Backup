@@ -1087,15 +1087,16 @@
     _buildMarkdownLookupPayload(target, label, value, start, end, lookupText) {
       const normalizedLookup = this._trimMarkdownLookupText(lookupText);
       const rawLookupText = String(lookupText || '').replace(/\s+/g, ' ').trim();
-      const rawBeforeText = String(value.slice(Math.max(0, start - 260), start) || '').replace(/\s+/g, ' ').trim();
-      const rawAfterText = String(value.slice(end, Math.min(value.length, end + 260)) || '').replace(/\s+/g, ' ').trim();
-      const beforeText = this._trimMarkdownLookupTail(value.slice(Math.max(0, start - 260), start), 180);
-      const afterText = this._trimMarkdownLookupText(value.slice(end, Math.min(value.length, end + 260)), 180);
+      const rawBeforeText = String(value.slice(Math.max(0, start - 700), start) || '').replace(/\s+/g, ' ').trim();
+      const rawAfterText = String(value.slice(end, Math.min(value.length, end + 700)) || '').replace(/\s+/g, ' ').trim();
+      const beforeText = this._trimMarkdownLookupTail(value.slice(Math.max(0, start - 520), start), 260);
+      const afterText = this._trimMarkdownLookupText(value.slice(end, Math.min(value.length, end + 520)), 260);
       return {
         target,
         label,
         lookupText: normalizedLookup,
         rawLookupText,
+        selectedText: rawLookupText,
         beforeText,
         afterText,
         rawBeforeText,
@@ -1796,6 +1797,304 @@
         .slice(0, 22);
     }
 
+    _getMarkdownSearchTokens(text, options = {}) {
+      const normalized = this._normalizeMarkdownSearchSegment(this._markdownToPlainSearchText(text));
+      if (!normalized) return [];
+
+      const tokens = [];
+      const seen = new Set();
+      const maxTokens = Number.isFinite(Number(options.maxTokens)) ? Math.max(4, Number(options.maxTokens)) : 80;
+      const addToken = (token) => {
+        const value = String(token || '').trim();
+        if (value.length < 2 || seen.has(value)) return;
+        seen.add(value);
+        tokens.push(value);
+      };
+
+      const cjkPattern = /[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]/u;
+      const parts = normalized.match(/[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\uac00-\ud7af]+|[\p{L}\p{N}]+/gu) || [];
+      for (const part of parts) {
+        if (tokens.length >= maxTokens) break;
+        if (cjkPattern.test(part)) {
+          if (part.length <= 4) {
+            addToken(part);
+          } else {
+            for (const size of [4, 3, 2]) {
+              for (let index = 0; index <= part.length - size && tokens.length < maxTokens; index += size === 2 ? 2 : 1) {
+                addToken(part.slice(index, index + size));
+              }
+            }
+          }
+        } else {
+          addToken(part);
+        }
+      }
+
+      return tokens
+        .sort((a, b) => b.length - a.length)
+        .slice(0, maxTokens);
+    }
+
+    _getMarkdownContextNeedles(lookupConfig = {}) {
+      const beforeSource = lookupConfig.rawBeforeText || lookupConfig.beforeText || '';
+      const afterSource = lookupConfig.rawAfterText || lookupConfig.afterText || '';
+      const before = this._normalizeMarkdownSearchSegment(this._markdownToPlainSearchText(beforeSource));
+      const after = this._normalizeMarkdownSearchSegment(this._markdownToPlainSearchText(afterSource));
+      const beforeNeedles = [
+        before.slice(Math.max(0, before.length - 180)),
+        before.slice(Math.max(0, before.length - 120)),
+        before.slice(Math.max(0, before.length - 72)),
+        before.slice(Math.max(0, before.length - 40))
+      ].filter((item, index, list) => item.length >= 8 && list.indexOf(item) === index);
+      const afterNeedles = [
+        after.slice(0, 180),
+        after.slice(0, 120),
+        after.slice(0, 72),
+        after.slice(0, 40)
+      ].filter((item, index, list) => item.length >= 8 && list.indexOf(item) === index);
+      return {
+        beforeSource,
+        afterSource,
+        before,
+        after,
+        beforeNeedles,
+        afterNeedles,
+        beforeTokens: this._getMarkdownSearchTokens(beforeSource, { maxTokens: 36 }),
+        afterTokens: this._getMarkdownSearchTokens(afterSource, { maxTokens: 36 })
+      };
+    }
+
+    _isMarkdownTokenBoundary(haystack, index, token) {
+      const value = String(token || '');
+      if (!/^[a-z0-9]+$/i.test(value)) return true;
+      const before = index > 0 ? haystack[index - 1] : ' ';
+      const after = index + value.length < haystack.length ? haystack[index + value.length] : ' ';
+      return !/[a-z0-9]/i.test(before) && !/[a-z0-9]/i.test(after);
+    }
+
+    _getMarkdownTokenOccurrences(haystack, tokens, maxPerToken = 80) {
+      const occurrences = [];
+      const tokenList = Array.from(new Set((tokens || []).filter(Boolean)));
+      tokenList.forEach((token, tokenIndex) => {
+        let index = 0;
+        let count = 0;
+        while ((index = haystack.indexOf(token, index)) !== -1 && count < maxPerToken) {
+          if (this._isMarkdownTokenBoundary(haystack, index, token)) {
+            occurrences.push({
+              token,
+              tokenIndex,
+              index,
+              end: index + token.length,
+              weight: Math.max(2, Math.min(token.length, 18))
+            });
+            count += 1;
+          }
+          index += Math.max(token.length, 1);
+        }
+      });
+      return occurrences.sort((a, b) => a.index - b.index || b.weight - a.weight);
+    }
+
+    _scoreMarkdownContextWindows(haystack, rangeStart, rangeEnd, context) {
+      const beforeWindow = haystack.slice(Math.max(0, rangeStart - 1100), rangeStart);
+      const afterWindow = haystack.slice(rangeEnd, Math.min(haystack.length, rangeEnd + 1100));
+      let score = 0;
+      let beforeHit = false;
+      let afterHit = false;
+
+      for (const needle of context.beforeNeedles || []) {
+        if (beforeWindow.includes(needle)) {
+          score += 7200 + Math.min(needle.length, 180) * 12;
+          beforeHit = true;
+          break;
+        }
+      }
+      for (const needle of context.afterNeedles || []) {
+        if (afterWindow.includes(needle)) {
+          score += 7200 + Math.min(needle.length, 180) * 12;
+          afterHit = true;
+          break;
+        }
+      }
+
+      if (!beforeHit && context.beforeTokens && context.beforeTokens.length) {
+        const hits = context.beforeTokens.reduce((count, token) => count + (beforeWindow.includes(token) ? 1 : 0), 0);
+        if (hits >= 2) {
+          score += Math.min(4200, hits * 420);
+          beforeHit = true;
+        }
+      }
+      if (!afterHit && context.afterTokens && context.afterTokens.length) {
+        const hits = context.afterTokens.reduce((count, token) => count + (afterWindow.includes(token) ? 1 : 0), 0);
+        if (hits >= 2) {
+          score += Math.min(4200, hits * 420);
+          afterHit = true;
+        }
+      }
+
+      if (beforeHit && afterHit) score += 5200;
+      return { score, beforeHit, afterHit };
+    }
+
+    _findMarkdownTokenizedRangeInTextIndex(lookupConfig, searchIndex, context) {
+      const haystack = searchIndex && searchIndex.text ? searchIndex.text : '';
+      if (!haystack) return null;
+
+      const coreSource = lookupConfig.rawLookupText || lookupConfig.selectedText || lookupConfig.lookupText || '';
+      const coreNormalized = this._normalizeMarkdownSearchSegment(this._markdownToPlainSearchText(coreSource));
+      const coreTokens = this._getMarkdownSearchTokens(coreSource, { maxTokens: 64 });
+      if (!coreTokens.length || coreNormalized.length < 6) return null;
+
+      const occurrences = this._getMarkdownTokenOccurrences(haystack, coreTokens, 70);
+      if (!occurrences.length) return null;
+
+      const expectedLength = Math.max(24, Math.min(360, coreNormalized.length + 80));
+      const minHitCount = coreTokens.length <= 2 ? 1 : 2;
+      const minCoverage = coreTokens.length <= 4 ? 0.34 : 0.24;
+      const candidateStarts = [];
+      const seenStarts = new Set();
+
+      for (const occurrence of occurrences) {
+        const starts = [
+          Math.max(0, occurrence.index - Math.floor(expectedLength * 0.25)),
+          Math.max(0, occurrence.index - Math.floor(expectedLength * 0.5))
+        ];
+        for (const start of starts) {
+          const bucket = Math.floor(start / 24) * 24;
+          if (seenStarts.has(bucket)) continue;
+          seenStarts.add(bucket);
+          candidateStarts.push(bucket);
+          if (candidateStarts.length >= 260) break;
+        }
+        if (candidateStarts.length >= 260) break;
+      }
+
+      let best = null;
+      let fuzzyHitOrder = 0;
+      for (const windowStart of candidateStarts) {
+        const windowEnd = Math.min(haystack.length, windowStart + expectedLength);
+        const windowText = haystack.slice(windowStart, windowEnd);
+        const hitsByToken = new Map();
+        const hitRanges = [];
+
+        for (let tokenIndex = 0; tokenIndex < coreTokens.length; tokenIndex += 1) {
+          const token = coreTokens[tokenIndex];
+          let localIndex = 0;
+          let guard = 0;
+          while ((localIndex = windowText.indexOf(token, localIndex)) !== -1 && guard < 12) {
+            guard += 1;
+            const absoluteIndex = windowStart + localIndex;
+            if (this._isMarkdownTokenBoundary(haystack, absoluteIndex, token)) {
+              const existing = hitsByToken.get(token);
+              if (!existing || token.length > existing.token.length) {
+                hitsByToken.set(token, { token, tokenIndex, index: absoluteIndex, end: absoluteIndex + token.length });
+              }
+              hitRanges.push({ index: absoluteIndex, end: absoluteIndex + token.length, token });
+            }
+            localIndex += Math.max(token.length, 1);
+          }
+        }
+
+        const uniqueHits = Array.from(hitsByToken.values());
+        if (uniqueHits.length < minHitCount) continue;
+        const coverage = uniqueHits.length / Math.max(coreTokens.length, 1);
+        const weightedHitLength = uniqueHits.reduce((sum, item) => sum + Math.min(item.token.length, 18), 0);
+        const weightedCoverage = weightedHitLength / Math.max(8, coreTokens.reduce((sum, token) => sum + Math.min(token.length, 18), 0));
+        const hasStrongSingleHit = uniqueHits.some((item) => item.token.length >= 8);
+        if (coverage < minCoverage && weightedCoverage < 0.32 && !hasStrongSingleHit) continue;
+
+        const rangeStart = Math.min(...hitRanges.map((item) => item.index));
+        const rangeEnd = Math.max(...hitRanges.map((item) => item.end));
+        if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd) || rangeEnd <= rangeStart) continue;
+
+        const contextScore = this._scoreMarkdownContextWindows(haystack, rangeStart, rangeEnd, context);
+        let score = 3200
+          + uniqueHits.length * 520
+          + weightedHitLength * 160
+          + coverage * 4200
+          + weightedCoverage * 4200
+          + contextScore.score
+          - Math.max(0, (rangeEnd - rangeStart) - Math.max(coreNormalized.length + 80, 160)) * 7;
+
+        const occurrenceIndex = Number(lookupConfig.occurrenceIndex);
+        if (Number.isFinite(occurrenceIndex) && occurrenceIndex > 0) {
+          score -= Math.min(Math.abs(fuzzyHitOrder - occurrenceIndex) * 900, 3600);
+        }
+
+        const range = this._createMarkdownRangeFromTextIndex(searchIndex, rangeStart, rangeEnd - rangeStart);
+        const rect = range ? this._getMarkdownRangeClientRect(range) : null;
+        if (rect && rect.width >= 1 && rect.height >= 1) score += 1000;
+        if (range && (!best || score > best.score)) {
+          best = { range, score };
+        }
+        fuzzyHitOrder += 1;
+      }
+
+      return best;
+    }
+
+    _findMarkdownContextOnlyRangeInTextIndex(searchIndex, context) {
+      const haystack = searchIndex && searchIndex.text ? searchIndex.text : '';
+      if (!haystack) return null;
+
+      const findAnchors = (needles, direction) => {
+        const anchors = [];
+        for (const needle of needles || []) {
+          let index = direction === 'before' ? haystack.lastIndexOf(needle) : haystack.indexOf(needle);
+          let guard = 0;
+          while (index !== -1 && guard < 40) {
+            anchors.push({ index, end: index + needle.length, length: needle.length });
+            guard += 1;
+            index = direction === 'before'
+              ? haystack.lastIndexOf(needle, Math.max(0, index - 1))
+              : haystack.indexOf(needle, index + Math.max(needle.length, 1));
+          }
+        }
+        return anchors.sort((a, b) => b.length - a.length).slice(0, 30);
+      };
+
+      const beforeAnchors = findAnchors(context.beforeNeedles, 'before');
+      const afterAnchors = findAnchors(context.afterNeedles, 'after');
+      let best = null;
+
+      const buildCandidate = (start, end, score) => {
+        let rangeStart = Math.max(0, Math.min(haystack.length - 1, start));
+        let rangeEnd = Math.max(rangeStart + 1, Math.min(haystack.length, end));
+        while (rangeStart < rangeEnd && haystack[rangeStart] === ' ') rangeStart += 1;
+        while (rangeEnd > rangeStart && haystack[rangeEnd - 1] === ' ') rangeEnd -= 1;
+        if (rangeEnd <= rangeStart) return;
+        const range = this._createMarkdownRangeFromTextIndex(searchIndex, rangeStart, rangeEnd - rangeStart);
+        const rect = range ? this._getMarkdownRangeClientRect(range) : null;
+        if (!range || !rect || rect.width < 1 || rect.height < 1) return;
+        const candidate = { range, score: score + Math.min(rangeEnd - rangeStart, 80) * 18 };
+        if (!best || candidate.score > best.score) best = candidate;
+      };
+
+      for (const beforeAnchor of beforeAnchors) {
+        for (const afterAnchor of afterAnchors) {
+          if (afterAnchor.index < beforeAnchor.end) continue;
+          const gap = afterAnchor.index - beforeAnchor.end;
+          if (gap > 2400) continue;
+          if (gap >= 4) {
+            buildCandidate(beforeAnchor.end, Math.min(afterAnchor.index, beforeAnchor.end + 140), 8400 - gap);
+          } else {
+            buildCandidate(afterAnchor.index, Math.min(afterAnchor.end, afterAnchor.index + 120), 7600 - gap);
+          }
+        }
+      }
+
+      if (!best && beforeAnchors.length) {
+        const anchor = beforeAnchors[0];
+        buildCandidate(anchor.end, Math.min(haystack.length, anchor.end + 140), 5200);
+      }
+      if (!best && afterAnchors.length) {
+        const anchor = afterAnchors[0];
+        buildCandidate(anchor.index, Math.min(anchor.end, anchor.index + 140), 5000);
+      }
+
+      return best;
+    }
+
     _isNodeInsideSnapshotHelper(node) {
       try {
         const root = node && typeof node.getRootNode === 'function' ? node.getRootNode() : null;
@@ -1905,26 +2204,12 @@
 
     _findMarkdownRangeInRoot(lookupConfig, rootElement) {
       const fragments = this._getMarkdownPlainSearchFragments(lookupConfig);
-      if (!fragments.length) return null;
 
       const searchIndex = this._buildMarkdownTextSearchIndex(rootElement);
       const haystack = searchIndex.text || '';
       if (!haystack || haystack.length < 8) return null;
 
-      const beforeSource = lookupConfig.rawBeforeText || lookupConfig.beforeText || '';
-      const afterSource = lookupConfig.rawAfterText || lookupConfig.afterText || '';
-      const before = this._normalizeMarkdownSearchSegment(beforeSource);
-      const after = this._normalizeMarkdownSearchSegment(afterSource);
-      const beforeNeedles = [
-        before.slice(Math.max(0, before.length - 120)),
-        before.slice(Math.max(0, before.length - 72)),
-        before.slice(Math.max(0, before.length - 40))
-      ].filter((item, index, list) => item.length >= 8 && list.indexOf(item) === index);
-      const afterNeedles = [
-        after.slice(0, 120),
-        after.slice(0, 72),
-        after.slice(0, 40)
-      ].filter((item, index, list) => item.length >= 8 && list.indexOf(item) === index);
+      const context = this._getMarkdownContextNeedles(lookupConfig);
 
       let best = null;
       let bestScore = 0;
@@ -1943,12 +2228,20 @@
             const afterWindow = haystack.slice(index + needle.length, Math.min(haystack.length, index + needle.length + 900));
             let score = needle.length * 120;
 
-            if (beforeNeedles.some((item) => beforeWindow.includes(item))) score += 6200;
-            if (afterNeedles.some((item) => afterWindow.includes(item))) score += 6200;
-            if (beforeNeedles.length && afterNeedles.length
-              && beforeNeedles.some((item) => beforeWindow.includes(item))
-              && afterNeedles.some((item) => afterWindow.includes(item))) {
+            const beforeHit = context.beforeNeedles.some((item) => beforeWindow.includes(item));
+            const afterHit = context.afterNeedles.some((item) => afterWindow.includes(item));
+            if (beforeHit) score += 6200;
+            if (afterHit) score += 6200;
+            if (context.beforeNeedles.length && context.afterNeedles.length && beforeHit && afterHit) {
               score += 3600;
+            }
+            if (!beforeHit && context.beforeTokens.length) {
+              const tokenHits = context.beforeTokens.reduce((count, token) => count + (beforeWindow.includes(token) ? 1 : 0), 0);
+              if (tokenHits >= 2) score += Math.min(2800, tokenHits * 360);
+            }
+            if (!afterHit && context.afterTokens.length) {
+              const tokenHits = context.afterTokens.reduce((count, token) => count + (afterWindow.includes(token) ? 1 : 0), 0);
+              if (tokenHits >= 2) score += Math.min(2800, tokenHits * 360);
             }
 
             const occurrenceIndex = Number(lookupConfig.occurrenceIndex);
@@ -1968,7 +2261,18 @@
         }
       }
 
-      return best && bestScore >= 900 ? best.range : null;
+      const tokenizedBest = this._findMarkdownTokenizedRangeInTextIndex(lookupConfig, searchIndex, context);
+      if (tokenizedBest && tokenizedBest.score > bestScore) {
+        best = tokenizedBest;
+        bestScore = tokenizedBest.score;
+      }
+
+      if (best && bestScore >= 900) return best.range;
+
+      const contextOnlyBest = this._findMarkdownContextOnlyRangeInTextIndex(searchIndex, context);
+      if (contextOnlyBest && contextOnlyBest.score >= 4800) return contextOnlyBest.range;
+
+      return null;
     }
 
     _findMarkdownRangeWithWindowFind(lookupConfig) {
