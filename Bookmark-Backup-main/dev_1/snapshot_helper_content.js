@@ -3304,19 +3304,173 @@
       textarea.__dev1MarkdownImageDropBound = true;
 
       textarea.addEventListener('dragover', (event) => {
-        if (!this._dataTransferHasMarkdownImage(event.dataTransfer, true)) return;
-        event.preventDefault();
-        try { event.dataTransfer.dropEffect = 'copy'; } catch (_) { }
+        const dt = event.dataTransfer;
+        if (!dt) return;
+        // Check types to see if it is a potential file, HTML or text drop
+        try {
+          const types = Array.from(dt.types || []).map((type) => String(type || '').toLowerCase());
+          if (types.includes('files') || types.includes('text/html') || types.includes('text/plain') || types.includes('text/uri-list')) {
+            event.preventDefault();
+            try { dt.dropEffect = 'copy'; } catch (_) { }
+          }
+        } catch (_) { }
       });
 
       textarea.addEventListener('drop', async (event) => {
-        if (!this._dataTransferHasMarkdownImage(event.dataTransfer, false)) return;
-        event.preventDefault();
-        const image = await this._resolveMarkdownImageDropSource(event.dataTransfer);
-        if (!image || !image.src) return;
-        const alt = String(image.alt || '').replace(/\]/g, '\\]');
-        this._insertTextIntoMarkdownTextarea(textarea, `![${alt}](${image.src})`);
+        const dt = event.dataTransfer;
+        if (!dt) return;
+
+        // 1. First priority: Handle direct image file drops
+        const file = this._extractMarkdownImageFileFromDataTransfer(dt);
+        if (file) {
+          event.preventDefault();
+          if (Number(file.size) > 20 * 1024) {
+            alert(this.config.lang === 'en'
+              ? 'Image too large (max 20KB). Only small icons/emojis are inserted as Base64 to avoid bloating Markdown.'
+              : '图片过大（最大支持 20KB）。为避免 Base64 过长影响 Markdown，仅支持小图标/表情。');
+            return;
+          }
+          const dataUrl = await this._readMarkdownImageFileAsDataUrl(file);
+          if (dataUrl && /^data:image\//i.test(dataUrl)) {
+            const alt = String(file.name || 'image').replace(/[\r\n\[\]]/g, ' ').trim();
+            const placeholder = await this._storeMarkdownLocalImage(dataUrl, alt);
+            this._insertTextIntoMarkdownTextarea(textarea, `![${alt}](${placeholder || dataUrl})`);
+          }
+          return;
+        }
+
+        // 2. Second priority: Handle text / HTML / URLs drops
+        let htmlData = '';
+        let plainText = '';
+        let uriList = '';
+        try {
+          htmlData = dt.getData('text/html') || '';
+          plainText = dt.getData('text/plain') || '';
+          uriList = dt.getData('text/uri-list') || '';
+        } catch (_) { }
+
+        const combinedText = uriList || plainText;
+        const formatted = await this._convertTextAndHtmlToMarkdown(combinedText, htmlData);
+        if (formatted) {
+          event.preventDefault();
+          this._insertTextIntoMarkdownTextarea(textarea, formatted);
+        }
       });
+    }
+
+    _bindMarkdownImagePaste(textarea) {
+      if (!(textarea instanceof HTMLTextAreaElement) || textarea.__dev1MarkdownImagePasteBound) return;
+      textarea.__dev1MarkdownImagePasteBound = true;
+
+      textarea.addEventListener('paste', async (event) => {
+        const cd = event.clipboardData;
+        if (!cd) return;
+
+        // 1. Handle direct clipboard image pasting (e.g. screenshot pasting)
+        if (cd.items && cd.items.length) {
+          const imgItem = Array.from(cd.items).find(item => item && item.kind === 'file' && item.type.startsWith('image/'));
+          if (imgItem) {
+            const file = typeof imgItem.getAsFile === 'function' ? imgItem.getAsFile() : null;
+            if (file) {
+              event.preventDefault();
+              if (Number(file.size) > 20 * 1024) {
+                alert(this.config.lang === 'en'
+                  ? 'Image too large (max 20KB). Only small icons/emojis are inserted as Base64 to avoid bloating Markdown.'
+                  : '图片过大（最大支持 20KB）。为避免 Base64 过长影响 Markdown，仅支持小图标/表情。');
+                return;
+              }
+              const dataUrl = await this._readMarkdownImageFileAsDataUrl(file);
+              if (dataUrl && /^data:image\//i.test(dataUrl)) {
+                const alt = String(file.name || 'image').replace(/[\r\n\[\]]/g, ' ').trim();
+                const placeholder = await this._storeMarkdownLocalImage(dataUrl, alt);
+                this._insertTextIntoMarkdownTextarea(textarea, `![${alt}](${placeholder || dataUrl})`);
+              }
+              return;
+            }
+          }
+        }
+
+        // 2. Handle HTML links, Obsidian wikilinks, image urls, etc.
+        let htmlData = '';
+        let plainText = '';
+        try {
+          htmlData = cd.getData('text/html') || '';
+          plainText = cd.getData('text/plain') || '';
+        } catch (_) { }
+
+        const formatted = await this._convertTextAndHtmlToMarkdown(plainText, htmlData);
+        if (formatted) {
+          event.preventDefault();
+          this._insertTextIntoMarkdownTextarea(textarea, formatted);
+        }
+      });
+    }
+
+    async _convertTextAndHtmlToMarkdown(plainText, htmlData) {
+      const trimmedPlain = String(plainText || '').trim();
+      const trimmedHtml = String(htmlData || '').trim();
+
+      // 1. Check HTML for img tag first
+      const htmlImgSrc = this._extractFirstImageSrcFromHtml(trimmedHtml);
+      if (htmlImgSrc) {
+        const resolved = await this._resolveMarkdownImageUrlDropSource(htmlImgSrc, '');
+        if (resolved && resolved.src) {
+          return `![${resolved.alt || ''}](${resolved.src})`;
+        }
+      }
+
+      // 2. Check Obsidian image wikilink format: ![[image.png]] or ![[image.png|width]]
+      const obsImgMatch = trimmedPlain.match(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/);
+      if (obsImgMatch) {
+        const imgPath = obsImgMatch[1].trim();
+        const resolved = await this._resolveMarkdownImageUrlDropSource(imgPath, '');
+        return `![image](${resolved ? resolved.src : imgPath})`;
+      }
+
+      // 3. Check Obsidian standard image wikilink format: [[image.png]] or [[image.png|width]]
+      const obsLinkMatch = trimmedPlain.match(/\[\[([^\]|]+)(?:\|([^\]]*))?\]\]/);
+      if (obsLinkMatch) {
+        const linkPath = obsLinkMatch[1].trim();
+        const dispText = (obsLinkMatch[2] || '').trim() || linkPath;
+        if (this._isLikelyMarkdownImageUrl(linkPath)) {
+          const resolved = await this._resolveMarkdownImageUrlDropSource(linkPath, '');
+          return `![${dispText}](${resolved ? resolved.src : linkPath})`;
+        } else {
+          return `[${dispText}](${linkPath})`;
+        }
+      }
+
+      // 4. Check HTML for a link tag: <a href="url">text</a>
+      if (trimmedHtml) {
+        try {
+          const parsed = new DOMParser().parseFromString(trimmedHtml, 'text/html');
+          const anchor = parsed.querySelector('a[href]');
+          if (anchor) {
+            const href = anchor.getAttribute('href');
+            const text = anchor.textContent.trim() || href;
+            if (href) {
+              return `[${text}](${href})`;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 5. Check if it's a standard URL link
+      if (this._isDurableMarkdownImageUrl(trimmedPlain)) {
+        if (this._isLikelyMarkdownImageUrl(trimmedPlain)) {
+          const resolved = await this._resolveMarkdownImageUrlDropSource(trimmedPlain, '');
+          return `![image](${resolved ? resolved.src : trimmedPlain})`;
+        } else {
+          let linkText = '链接';
+          try {
+            const parsed = new URL(trimmedPlain);
+            linkText = parsed.hostname.replace(/^www\./i, '') || '链接';
+          } catch (_) {}
+          return `[${linkText}](${trimmedPlain})`;
+        }
+      }
+
+      return '';
     }
 
     _repositionMdSettingsPanel() {
@@ -3939,6 +4093,9 @@
       this._bindMarkdownImageDrop(textarea);
       this._bindMarkdownImageDrop(notesArea);
       this._bindMarkdownImageDrop(articleArea);
+      this._bindMarkdownImagePaste(textarea);
+      this._bindMarkdownImagePaste(notesArea);
+      this._bindMarkdownImagePaste(articleArea);
 
       refreshBtn.addEventListener('click', async () => {
         refreshBtn.textContent = '提取中...';
