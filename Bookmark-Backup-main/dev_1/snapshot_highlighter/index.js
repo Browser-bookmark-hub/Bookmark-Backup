@@ -2872,9 +2872,10 @@
       const contextVariant = pickerContext && (pickerContext.variant === 'white' || pickerContext.variant === 'black')
         ? pickerContext.variant
         : '';
+      const pageIsDark = this.detectPageTheme();
       const preferredVariant = contextVariant || (this.currentColorVariant === 'white' || this.currentColorVariant === 'black'
         ? this.currentColorVariant
-        : (this.darkModeEnabled ? 'white' : 'black'));
+        : (pageIsDark ? 'white' : 'black'));
       let activeVariant = preferredVariant;
       const blackBtn = this.createVariantButton(this.t('blackText'), 'black');
       const whiteBtn = this.createVariantButton(this.t('whiteText'), 'white');
@@ -2907,8 +2908,8 @@
         activeVariant = 'white';
         renderGrid();
       });
-      variantBar.appendChild(blackBtn);
       variantBar.appendChild(whiteBtn);
+      variantBar.appendChild(blackBtn);
       content.appendChild(variantBar);
       content.appendChild(grid);
       renderGrid();
@@ -3258,7 +3259,7 @@
       if (explicit) return explicit;
       const raw = safeString(color);
       if (!raw || raw.startsWith('special:')) return '';
-      if (raw === 'transparent') return this.darkModeEnabled ? 'white' : 'black';
+      if (raw === 'transparent') return this.detectPageTheme() ? 'white' : 'black';
       try {
         return luminance(raw) < 0.5 ? 'white' : 'black';
       } catch (_) {
@@ -4945,7 +4946,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         afterText,
         toolId: tool.id,
         color: this.currentColor,
-        textColorOverride: this.currentColorVariant === 'white' || this.currentColorVariant === 'black' ? this.currentColorVariant : '',
+        textColorOverride: this.currentColorVariant === 'white' || this.currentColorVariant === 'black' ? this.currentColorVariant : (this.detectPageTheme() ? 'white' : 'black'),
         selectedText,
         pageUrl: this.currentUrl,
         pageTitle: document.title || '',
@@ -5455,7 +5456,14 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       const colorName = this.getCurrentColorName();
       const colorNameKey = this.currentColorKey || this.getColorNameKeyForValue(color, this.currentColorVariant, colorName);
       const toolStyle = this.currentTool || 'highlight';
-      const textColorOverride = this.currentColorVariant === 'white' || this.currentColorVariant === 'black' ? this.currentColorVariant : '';
+      let textColorOverride = this.currentColorVariant === 'white' || this.currentColorVariant === 'black' ? this.currentColorVariant : '';
+      if (!textColorOverride) {
+        try {
+          textColorOverride = this.detectPageTheme() ? 'white' : 'black';
+        } catch (_) {
+          textColorOverride = '';
+        }
+      }
       this.cacheGroupLineBoxesFromRange(id, range);
       this._creatingHighlightGroupId = id;
       let segments = [];

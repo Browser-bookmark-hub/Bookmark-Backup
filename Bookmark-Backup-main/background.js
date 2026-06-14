@@ -11916,12 +11916,6 @@ async function handleBookmarkChange() {
     }, 250); // 延迟250毫秒，合并短时间内的多次变化（降低角标反馈延迟）
 }
 
-// 添加快捷键监听
-browserAPI.commands.onCommand.addListener((command) => {
-    // 快捷键处理逻辑
-    // 此处已删除打开书签搜索的功能
-});
-
 
 // =================================================================================
 // III. CLOUD FUNCTIONS (云端功能)

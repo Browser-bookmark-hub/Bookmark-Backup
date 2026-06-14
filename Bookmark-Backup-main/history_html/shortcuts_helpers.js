@@ -9,6 +9,7 @@ function updateShortcutsDisplay() {
 
     // 格式化快捷键显示（Mac上Alt显示为⌥）
     const formatKey = (key) => {
+        if (key === "") return lang === 'en' ? 'None' : '未设置';
         if (!key) return key;
         if (isMac) {
             return key.replace(/Alt\+/gi, '⌥');
@@ -17,12 +18,15 @@ function updateShortcutsDisplay() {
     };
 
     const render = (shortcuts) => {
-        const safe = (value, fallback) => (value && typeof value === 'string') ? value : fallback;
-        const defaultPrefix = isMac ? '⌥' : 'Alt+';
-        const keyActivate = formatKey(safe(shortcuts._execute_action, defaultPrefix + 'A'));
+        const safe = (value, fallback) => {
+            if (value === "") return "";
+            return (value && typeof value === 'string') ? value : fallback;
+        };
+        const defaultPrefix = isMac ? '⌥Shift+' : 'Alt+Shift+';
+        const keyActivate = formatKey(safe(shortcuts._execute_action, defaultPrefix + 'Z'));
         const key1 = formatKey(safe(shortcuts.open_current_changes_view, defaultPrefix + 'C'));
-        const key2 = formatKey(safe(shortcuts.open_backup_history_view, defaultPrefix + 'H'));
-        const key3 = formatKey(safe(shortcuts.open_web_snapshot_view, defaultPrefix + '1'));
+        const key2 = formatKey(safe(shortcuts.open_backup_history_view, defaultPrefix + 'T'));
+        const key3 = formatKey(safe(shortcuts.open_web_snapshot_view, defaultPrefix + 'X'));
         const allowed = Array.isArray(window.__ALLOWED_VIEWS) ? new Set(window.__ALLOWED_VIEWS) : null;
 
         const rows = [];
@@ -93,7 +97,7 @@ function updateShortcutsDisplay() {
                 if (Array.isArray(commands)) {
                     commands.forEach((c) => {
                         if (!c || !c.name) return;
-                        if (c.shortcut) {
+                        if (c.shortcut !== undefined) {
                             map[c.name] = c.shortcut;
                         }
                     });

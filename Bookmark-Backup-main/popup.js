@@ -2697,17 +2697,18 @@ async function renderPopupShortcutsDisplay(lang = 'zh_CN') {
 
     const isEn = lang === 'en';
     const isMac = navigator.platform?.toUpperCase().includes('MAC') || navigator.userAgent?.toUpperCase().includes('MAC');
-    const fallbackPrefix = isMac ? '⌥' : 'Alt+';
+    const defaultPrefix = isMac ? '⌥Shift+' : 'Alt+Shift+';
     const formatShortcut = (value, fallbackKey) => {
+        if (value === "") return isEn ? 'None' : '未设置';
         const raw = String(value || fallbackKey || '').trim();
         if (!raw) return '';
         return isMac ? raw.replace(/Alt\+/gi, '⌥') : raw;
     };
     const shortcuts = {
-        _execute_action: `${fallbackPrefix}A`,
-        open_current_changes_view: `${fallbackPrefix}C`,
-        open_backup_history_view: `${fallbackPrefix}H`,
-        open_web_snapshot_view: `${fallbackPrefix}1`
+        _execute_action: undefined,
+        open_current_changes_view: undefined,
+        open_backup_history_view: undefined,
+        open_web_snapshot_view: undefined
     };
 
     try {
@@ -2715,8 +2716,8 @@ async function renderPopupShortcutsDisplay(lang = 'zh_CN') {
             const commands = await new Promise(resolve => chrome.commands.getAll(resolve));
             if (Array.isArray(commands)) {
                 commands.forEach((command) => {
-                    if (command?.name && command.shortcut) {
-                        shortcuts[command.name] = formatShortcut(command.shortcut, shortcuts[command.name]);
+                    if (command?.name && command.shortcut !== undefined) {
+                        shortcuts[command.name] = command.shortcut;
                     }
                 });
             }
@@ -2725,19 +2726,19 @@ async function renderPopupShortcutsDisplay(lang = 'zh_CN') {
 
     const rows = [
         {
-            key: formatShortcut(shortcuts._execute_action, `${fallbackPrefix}A`),
+            key: formatShortcut(shortcuts._execute_action, `${defaultPrefix}Z`),
             label: isEn ? 'Activate the extension' : '激活扩展'
         },
         {
-            key: formatShortcut(shortcuts.open_current_changes_view, `${fallbackPrefix}C`),
+            key: formatShortcut(shortcuts.open_current_changes_view, `${defaultPrefix}C`),
             label: isEn ? 'Open Current Changes' : '打开当前变化'
         },
         {
-            key: formatShortcut(shortcuts.open_backup_history_view, `${fallbackPrefix}H`),
+            key: formatShortcut(shortcuts.open_backup_history_view, `${defaultPrefix}T`),
             label: isEn ? 'Open Backup History' : '打开备份历史'
         },
         {
-            key: formatShortcut(shortcuts.open_web_snapshot_view, `${fallbackPrefix}1`),
+            key: formatShortcut(shortcuts.open_web_snapshot_view, `${defaultPrefix}X`),
             label: isEn ? 'Open/Close Quick Snapshot Tool' : '打开/关闭当前页快照工具'
         }
     ];
