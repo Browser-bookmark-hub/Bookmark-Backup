@@ -1998,10 +1998,13 @@
   background: #2a2a2a !important;
 }
 
-.category-sidebar::-webkit-scrollbar,
+.category-sidebar::-webkit-scrollbar {
+  width: 4px !important;
+}
+
 .color-area::-webkit-scrollbar,
 .tool-area::-webkit-scrollbar {
-  width: 6px !important;
+  width: 8px !important;
 }
 
 .category-sidebar::-webkit-scrollbar-track,
@@ -2010,11 +2013,15 @@
   background: transparent !important;
 }
 
-.category-sidebar::-webkit-scrollbar-thumb,
+.category-sidebar::-webkit-scrollbar-thumb {
+  background: #ccc !important;
+  border-radius: 2px !important;
+}
+
 .color-area::-webkit-scrollbar-thumb,
 .tool-area::-webkit-scrollbar-thumb {
   background: #ccc !important;
-  border-radius: 3px !important;
+  border-radius: 4px !important;
 }
 
 .highlight-color-picker.dark-theme .category-sidebar::-webkit-scrollbar-thumb,
@@ -3822,4 +3829,118 @@
   .dev1-color-grid {
     grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)) !important;
   }
+}
+
+/* ==========================================================================
+   PRESENTATION PEN (演示笔)
+   ========================================================================== */
+.dev1-presentation-pen-settings {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+  padding: 12px 6px !important;
+  color: inherit !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+.dev1-presentation-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 16px !important;
+  font-size: 13px !important;
+  color: inherit !important;
+}
+
+.dev1-presentation-label {
+  min-width: 80px !important;
+  font-weight: 700 !important;
+  color: inherit !important;
+}
+
+.dev1-presentation-options {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.dev1-presentation-btn {
+  min-height: 28px !important;
+  border: 1px solid rgba(120, 130, 150, .28) !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, .9) !important;
+  color: inherit !important;
+  padding: 5px 12px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.highlight-tool-picker.dark-theme .dev1-presentation-btn {
+  background: rgba(40, 40, 40, .9) !important;
+  border-color: rgba(255, 255, 255, .15) !important;
+}
+
+.dev1-presentation-btn:hover {
+  background: rgba(120, 130, 150, .1) !important;
+}
+
+.dev1-presentation-btn.active {
+  background: var(--dev1-highlight-panel-accent-visible, #1976d2) !important;
+  color: #ffffff !important;
+  border-color: var(--dev1-highlight-panel-accent-visible, #1976d2) !important;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, .2) !important;
+}
+
+.dev1-presentation-input-wrap {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  color: inherit !important;
+}
+
+.dev1-presentation-input {
+  width: 72px !important;
+  height: 28px !important;
+  border: 1px solid rgba(120, 130, 150, .28) !important;
+  border-radius: 8px !important;
+  padding: 2px 6px !important;
+  font-size: 12px !important;
+  font-weight: bold !important;
+  color: inherit !important;
+  background: transparent !important;
+  outline: none !important;
+  text-align: center !important;
+  box-sizing: border-box !important;
+}
+
+.highlight-tool-picker.dark-theme .dev1-presentation-input {
+  border-color: rgba(255, 255, 255, .15) !important;
+}
+
+.dev1-presentation-unit {
+  font-size: 12px !important;
+  color: inherit !important;
+}
+
+.dev1-presentation-tip {
+  font-size: 11px !important;
+  color: rgba(120, 130, 150, 0.75) !important;
+  margin-top: -8px !important;
+  margin-left: 96px !important;
+  line-height: 1.35 !important;
+}
+
+.highlight-tool-picker.dark-theme .dev1-presentation-tip {
+  color: rgba(200, 210, 220, 0.55) !important;
+}
+
+
+#dev1-presentation-pen-overlay path,
+#dev1-presentation-pen-overlay line,
+#dev1-presentation-pen-overlay circle,
+#dev1-presentation-pen-overlay rect,
+#dev1-presentation-pen-overlay polygon {
+  pointer-events: none !important;
 }

@@ -342,6 +342,19 @@
           toolsSpecial: '特殊效果',
           toolsDynamic: '动态效果',
           dynamicMhtmlNotice: 'MHTML 导出不支持这些动态效果；如需保留动态效果，请使用录屏，或用 SingleFile 等方式导出。',
+          tool_presentation: '演示笔',
+          tool_presentation_desc: '用于演示或指示，支持形状识别与自动消失',
+          presentationNotice: '给演示用的，录制视频的时候可以指示。',
+          presentationLineStyle: '线条样式',
+          presentationLineSolid: '实线',
+          presentationLineDashed: '虚线',
+          presentationDisappearTime: '消失时间',
+          presentationDisappearImmediately: '立刻',
+          presentationDisappearDelay: '延迟消失',
+          presentationAutoShape: '几何识别',
+          presentationShapeEnable: '启用',
+          presentationShapeDisable: '禁用',
+          presentationShapeTip: '支持自动识别几何形状 (圆、矩形、三角形、五角星、直线线段)',
           classicHighlight: '经典高亮',
           customColor: '自定义颜色',
           apply: '应用'
@@ -435,6 +448,19 @@
           toolsSpecial: 'Special Effects',
           toolsDynamic: 'Dynamic Effects',
           dynamicMhtmlNotice: 'MHTML exports do not preserve these dynamic effects. Use screen recording, or export with tools such as SingleFile when you need to keep them.',
+          tool_presentation: 'Presentation Pen',
+          tool_presentation_desc: 'Used for presentation or indicators, supports shape recognition and auto-disappearance',
+          presentationNotice: 'For presentations. Can be used as an indicator when recording video.',
+          presentationLineStyle: 'Line Style',
+          presentationLineSolid: 'Solid',
+          presentationLineDashed: 'Dashed',
+          presentationDisappearTime: 'Disappear Time',
+          presentationDisappearImmediately: 'Immediately',
+          presentationDisappearDelay: 'Delay',
+          presentationAutoShape: 'Auto Shape',
+          presentationShapeEnable: 'Enable',
+          presentationShapeDisable: 'Disable',
+          presentationShapeTip: 'Supports auto-recognizing shapes (Circle, Rectangle, Triangle, Star, Straight Line)',
           classicHighlight: 'Classic Highlight',
           customColor: 'Custom Color',
           apply: 'Apply'
@@ -453,28 +479,15 @@
 
     normalizeToolbarUi(value = {}) {
       const raw = value && typeof value === 'object' ? value : {};
-      const validPositions = new Set(['floating', 'left', 'right', 'top', 'bottom']);
-      const rawDock = raw.dockState && typeof raw.dockState === 'object' ? raw.dockState : {};
-      const position = validPositions.has(raw.position)
-        ? raw.position
-        : (validPositions.has(rawDock.position) ? rawDock.position : 'floating');
-      const collapsed = position !== 'floating' && !!(raw.collapsed ?? rawDock.collapsed);
       const left = Number(raw.left);
       const top = Number(raw.top);
-      const dockAlongRaw = raw.dockAlong && typeof raw.dockAlong === 'object' ? raw.dockAlong : null;
-      const dockAlongCenter = Number(dockAlongRaw && dockAlongRaw.center);
-      const dockAlongSide = dockAlongRaw && validPositions.has(dockAlongRaw.side) && dockAlongRaw.side !== 'floating'
-        ? dockAlongRaw.side
-        : position;
       return {
-        position,
+        position: 'floating',
         left: Number.isFinite(left) ? left : null,
         top: Number.isFinite(top) ? top : null,
         userMoved: !!raw.userMoved,
-        dockState: { position, collapsed },
-        dockAlong: Number.isFinite(dockAlongCenter) && dockAlongSide !== 'floating'
-          ? { side: dockAlongSide, center: dockAlongCenter }
-          : null
+        dockState: { position: 'floating', collapsed: false },
+        dockAlong: null
       };
     }
 
@@ -705,6 +718,19 @@
       this.currentToolName = this.getToolNameForId(this.currentTool, toolbar.toolName || '');
       this._colorPickerViewMode = toolbar.colorPickerViewMode === 'list' ? 'list' : 'grid';
       this._toolPickerViewMode = toolbar.toolPickerViewMode === 'list' ? 'list' : 'grid';
+      this.presentationPenStyle = toolbar.presentationPenStyle || 'solid';
+      let loadedDelay = toolbar.presentationPenDisappearDelay !== undefined ? Number(toolbar.presentationPenDisappearDelay) : 2000;
+      let immediately = toolbar.presentationPenDisappearImmediately !== undefined 
+        ? !!toolbar.presentationPenDisappearImmediately 
+        : (loadedDelay === 0);
+      if (loadedDelay === 0) {
+        loadedDelay = 2000;
+      } else if (loadedDelay > 0 && loadedDelay <= 10) {
+        loadedDelay = loadedDelay * 1000;
+      }
+      this.presentationPenDisappearDelay = loadedDelay;
+      this.presentationPenDisappearImmediately = immediately;
+      this.presentationPenAutoRecognize = toolbar.presentationPenAutoRecognize !== undefined ? !!toolbar.presentationPenAutoRecognize : true;
       this._rgbPickerLastColor = /^#[0-9a-f]{6}$/i.test(safeString(toolbar.rgbPickerLastColor || ''))
         ? safeString(toolbar.rgbPickerLastColor).toUpperCase()
         : '';
@@ -725,6 +751,10 @@
       this.currentToolName = this.t('classicHighlight');
       this.recentColors = [];
       this.recentTools = [];
+      this.presentationPenStyle = 'solid';
+      this.presentationPenDisappearDelay = 2000;
+      this.presentationPenDisappearImmediately = false;
+      this.presentationPenAutoRecognize = true;
       this._rgbPickerLastColor = '';
       this._colorPickerViewMode = 'grid';
       this._toolPickerViewMode = 'grid';
@@ -747,7 +777,11 @@
           colorVariant: this.currentColorVariant || '',
           rgbPickerLastColor: this._rgbPickerLastColor || '',
           colorPickerViewMode: this._colorPickerViewMode === 'list' ? 'list' : 'grid',
-          toolPickerViewMode: this._toolPickerViewMode === 'list' ? 'list' : 'grid'
+          toolPickerViewMode: this._toolPickerViewMode === 'list' ? 'list' : 'grid',
+          presentationPenStyle: this.presentationPenStyle || 'solid',
+          presentationPenDisappearDelay: this.presentationPenDisappearDelay !== undefined ? this.presentationPenDisappearDelay : 2000,
+          presentationPenDisappearImmediately: this.presentationPenDisappearImmediately !== undefined ? this.presentationPenDisappearImmediately : false,
+          presentationPenAutoRecognize: this.presentationPenAutoRecognize !== undefined ? this.presentationPenAutoRecognize : true
         },
         recentColors: this.recentColors.slice(0, 16),
         recentTools: this.recentTools.slice(0, 16),
@@ -849,6 +883,10 @@
         this.cursorPointerListener = (event) => this._handleGlobalPointerMove(event);
         document.addEventListener('pointermove', this.cursorPointerListener, true);
         document.addEventListener('pointerdown', this.cursorPointerListener, true);
+      }
+      if (!this.presentationDownListener) {
+        this.presentationDownListener = (event) => this.handlePresentationPointerDown(event);
+        document.addEventListener('pointerdown', this.presentationDownListener, true);
       }
       this._attachCursorWatchers();
       if (!this.externalColorListener) {
@@ -997,6 +1035,12 @@
         document.removeEventListener('pointerdown', this.cursorPointerListener, true);
         this.cursorPointerListener = null;
       }
+      if (this.presentationDownListener) {
+        document.removeEventListener('pointerdown', this.presentationDownListener, true);
+        this.presentationDownListener = null;
+      }
+      const pOverlay = document.getElementById('dev1-presentation-pen-overlay');
+      if (pOverlay) pOverlay.remove();
       this._detachCursorWatchers();
       if (this.externalColorListener) {
         window.removeEventListener('dev1SnapshotHighlighterSetColor', this.externalColorListener);
@@ -1276,16 +1320,6 @@
       if (!toolbar) return;
       this.toolbarUi = this.normalizeToolbarUi(this.toolbarUi);
       toolbar.style.setProperty('transition', 'none', 'important');
-      const dockState = this.getToolbarDockState();
-      if (dockState.position && dockState.position !== 'floating') {
-        this.applyToolbarOrientation(dockState.position);
-        this.setToolbarDockPositionOnElement(toolbar, dockState.position);
-        if (dockState.collapsed) {
-          toolbar.style.setProperty('display', 'none', 'important');
-          toolbar.style.setProperty('pointer-events', 'none', 'important');
-        }
-        return;
-      }
       this.applyFloatingToolbarLayout();
       const estimatedSize = this.getEstimatedToolbarSize('floating');
       const anchorRect = this.getConfiguredAnchorRect();
@@ -1376,15 +1410,6 @@
     applyToolbarPosition() {
       if (!this.toolbar) return;
       this.toolbarUi = this.normalizeToolbarUi(this.toolbarUi);
-      const dockState = this.getToolbarDockState();
-      if (dockState.position && dockState.position !== 'floating') {
-        if (dockState.collapsed) {
-          this.collapseToolbarToDock(dockState.position, { skipSave: true });
-        } else {
-          this.expandToolbarFromDock({ position: dockState.position, skipSave: true });
-        }
-        return;
-      }
 
       this.hideDockToggle();
       this.disableToolbarDockOutsideClickCollapse();
@@ -1655,17 +1680,9 @@
           this.toolbarUi.left = finalLeft;
           this.toolbarUi.top = finalTop;
           this.toolbarUi.userMoved = true;
-          const dockPosition = this.findToolbarDockPosition(toolbar.getBoundingClientRect());
-          if (dockPosition) {
-            const dockAlong = this.buildDockAlong(dockPosition, toolbar.getBoundingClientRect());
-            this.setToolbarDockState(dockPosition, true, dockAlong);
-            this.collapseToolbarToDock(dockPosition, { skipSave: true });
-          } else {
-            this.setToolbarDockState('floating', false);
-            this.applyFloatingToolbarLayout();
-            this.hideDockToggle();
-            this.disableToolbarDockOutsideClickCollapse();
-          }
+          this.setToolbarDockState('floating', false);
+          this.hideDockToggle();
+          this.disableToolbarDockOutsideClickCollapse();
           this.repositionTrackedPanels();
           this.requestSave(true);
         } else {
@@ -3418,7 +3435,10 @@
       this.applyPickerTheme(panel);
       this.applyPickerColorFrame(panel, accentColor);
       if (pickerContext && pickerContext.highlightId) panel.dataset.targetHighlightId = pickerContext.highlightId;
-      const categories = this.getAllToolCategories();
+      let categories = this.getAllToolCategories();
+      if (pickerContext) {
+        categories = categories.filter(cat => cat.id !== 'presentation');
+      }
       const closeToolPicker = () => {
         this.untrackPanelPosition(panel);
         if (panel.parentNode) panel.remove();
@@ -3511,6 +3531,19 @@
         pickerPanel.querySelectorAll('.dev1-tool-view-toggle, .dev1-clear-recent.dev1-clear-tools').forEach(node => node.remove());
       }
       if (!category) return;
+      if (category.id === 'presentation') {
+        const tool = category.tools && category.tools[0];
+        if (tool && (!pickerContext && this.currentTool !== tool.id)) {
+          this.currentTool = tool.id;
+          this.currentToolName = this.getToolNameForId(tool.id, tool.name || '');
+          this.exitMdEditMode({ keepTool: true, silent: true });
+          this.pushRecentTool(tool);
+          this.updatePermanentToolbarIndicator();
+          this.requestSave(true);
+        }
+        this.renderPresentationPenSettings(content, pickerContext);
+        return;
+      }
       const viewMode = this._toolPickerViewMode === 'list' ? 'list' : 'grid';
       if (category.id === 'recent') {
         const scrollWrap = document.createElement('div');
@@ -3881,7 +3914,7 @@
       }
       this.pushRecentTool(tool);
       this.updatePermanentToolbarIndicator();
-      if (this.activeToolPicker) {
+      if (this.activeToolPicker && tool.id !== 'presentation-pen') {
         this.closeTransientPanelByKey('activeToolPicker');
       }
       this.requestSave(true);
@@ -3979,6 +4012,9 @@
           tool('md-edit-code-inline', '行内代码', 'Inline Code', '`', '`code`', '`code`'),
           tool('md-edit-sup', '上标', 'Superscript', 'X²', '^sup^', '^sup^'),
           tool('md-edit-sub', '下标', 'Subscript', 'X₂', '~sub~', '~sub~')
+        ] },
+        { id: 'presentation', title: this.t('tool_presentation'), icon: '🖋️', tools: [
+          tool('presentation-pen', '演示笔', 'Presentation Pen', '🖋️', '用于临时画画，可自动识别形状', 'Used for temporary drawing, supports auto shape recognition')
         ] },
         { id: 'lines', title: this.t('toolsLines'), icon: '📏', tools: [
           tool('underline', '下划线', 'Underline', 'U̲', '直线下划线', 'Straight underline'),
@@ -4576,6 +4612,7 @@
 
     highlightSelectedText() {
       if (!this.visible || this.isPdfLikePage()) return;
+      if (this.currentTool === 'presentation-pen') return;
       if (this.currentTool === 'md-edit-disable-highlight') return;
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed || !selection.toString().trim()) return;
@@ -6450,6 +6487,637 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         default:
           return false;
       }
+    }
+
+    renderPresentationPenSettings(content, pickerContext = null) {
+      const notice = document.createElement('div');
+      notice.className = 'dev1-dynamic-mhtml-notice';
+      notice.textContent = this.t('presentationNotice');
+      content.appendChild(notice);
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'dev1-presentation-pen-settings';
+
+      // Line Style Row
+      const rowStyle = document.createElement('div');
+      rowStyle.className = 'dev1-presentation-row';
+      rowStyle.innerHTML = `
+        <span class="dev1-presentation-label">${this.t('presentationLineStyle')}</span>
+        <div class="dev1-presentation-options">
+          <button class="dev1-presentation-btn ${this.presentationPenStyle === 'solid' ? 'active' : ''}" data-style="solid" type="button">${this.t('presentationLineSolid')}</button>
+          <button class="dev1-presentation-btn ${this.presentationPenStyle === 'dashed' ? 'active' : ''}" data-style="dashed" type="button">${this.t('presentationLineDashed')}</button>
+        </div>
+      `;
+      wrapper.appendChild(rowStyle);
+
+      // Disappear Delay Row
+      const isImmediately = this.presentationPenDisappearImmediately;
+      const rowDisappear = document.createElement('div');
+      rowDisappear.className = 'dev1-presentation-row';
+      rowDisappear.innerHTML = `
+        <span class="dev1-presentation-label">${this.t('presentationDisappearTime')}</span>
+        <div class="dev1-presentation-options">
+          <button class="dev1-presentation-btn ${isImmediately ? 'active' : ''}" data-disappear="immediately" type="button">${this.t('presentationDisappearImmediately')}</button>
+          <button class="dev1-presentation-btn ${!isImmediately ? 'active' : ''}" data-disappear="delay" type="button">${this.t('presentationDisappearDelay')}</button>
+          <div class="dev1-presentation-input-wrap" style="display: ${isImmediately ? 'none' : 'inline-flex'};">
+            <input type="number" class="dev1-presentation-input" min="100" max="10000" step="100" value="${this.presentationPenDisappearDelay}" />
+            <span class="dev1-presentation-unit">ms</span>
+          </div>
+        </div>
+      `;
+      wrapper.appendChild(rowDisappear);
+
+      // Shape Recognition Row
+      const rowShape = document.createElement('div');
+      rowShape.className = 'dev1-presentation-row';
+      rowShape.innerHTML = `
+        <span class="dev1-presentation-label">${this.t('presentationAutoShape')}</span>
+        <div class="dev1-presentation-options">
+          <button class="dev1-presentation-btn ${this.presentationPenAutoRecognize ? 'active' : ''}" data-shape="enable" type="button">${this.t('presentationShapeEnable')}</button>
+          <button class="dev1-presentation-btn ${!this.presentationPenAutoRecognize ? 'active' : ''}" data-shape="disable" type="button">${this.t('presentationShapeDisable')}</button>
+        </div>
+      `;
+      wrapper.appendChild(rowShape);
+
+      const tipShape = document.createElement('div');
+      tipShape.className = 'dev1-presentation-tip';
+      tipShape.textContent = this.t('presentationShapeTip');
+      wrapper.appendChild(tipShape);
+
+      content.appendChild(wrapper);
+
+      // Event Listeners for UI
+      rowStyle.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const style = btn.getAttribute('data-style');
+          this.presentationPenStyle = style;
+          rowStyle.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === btn));
+          this.requestSave(true);
+        });
+      });
+
+      const immediatelyBtn = rowDisappear.querySelector('[data-disappear="immediately"]');
+      const delayBtn = rowDisappear.querySelector('[data-disappear="delay"]');
+      const inputWrap = rowDisappear.querySelector('.dev1-presentation-input-wrap');
+      const numInput = rowDisappear.querySelector('.dev1-presentation-input');
+
+      immediatelyBtn.addEventListener('click', () => {
+        this.presentationPenDisappearImmediately = true;
+        immediatelyBtn.classList.add('active');
+        delayBtn.classList.remove('active');
+        inputWrap.style.display = 'none';
+        this.requestSave(true);
+      });
+
+      delayBtn.addEventListener('click', () => {
+        const val = parseFloat(numInput.value) || 2000;
+        this.presentationPenDisappearDelay = Math.max(100, Math.min(10000, val));
+        this.presentationPenDisappearImmediately = false;
+        immediatelyBtn.classList.remove('active');
+        delayBtn.classList.add('active');
+        inputWrap.style.display = 'inline-flex';
+        this.requestSave(true);
+      });
+
+      numInput.addEventListener('change', () => {
+        let val = parseFloat(numInput.value);
+        if (isNaN(val)) val = 2000;
+        val = Math.max(100, Math.min(10000, val));
+        numInput.value = val;
+        this.presentationPenDisappearDelay = val;
+        this.requestSave(true);
+      });
+
+      const enableShapeBtn = rowShape.querySelector('[data-shape="enable"]');
+      const disableShapeBtn = rowShape.querySelector('[data-shape="disable"]');
+
+      enableShapeBtn.addEventListener('click', () => {
+        this.presentationPenAutoRecognize = true;
+        enableShapeBtn.classList.add('active');
+        disableShapeBtn.classList.remove('active');
+        this.requestSave(true);
+      });
+
+      disableShapeBtn.addEventListener('click', () => {
+        this.presentationPenAutoRecognize = false;
+        enableShapeBtn.classList.remove('active');
+        disableShapeBtn.classList.add('active');
+        this.requestSave(true);
+      });
+    }
+
+    getPresentationPenColor() {
+      let color = this.currentColor;
+      if (this.isRainbowColor(color)) {
+        if (this.getRainbowVariant(color) === 'random') {
+          const palette = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#00c7ff', '#007aff', '#af52de'];
+          if (!this._presentationRandomColor) {
+            this._presentationRandomColor = palette[Math.floor(Math.random() * palette.length)];
+          }
+          return this._presentationRandomColor;
+        } else {
+          return 'url(#dev1-presentation-rainbow-gradient)';
+        }
+      }
+      if (this.isTransparentColor(color)) {
+        return 'rgba(148, 163, 184, 0.6)';
+      }
+      return color;
+    }
+
+    ensurePresentationOverlay() {
+      let overlay = document.getElementById('dev1-presentation-pen-overlay');
+      if (!overlay) {
+        overlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        overlay.id = 'dev1-presentation-pen-overlay';
+        overlay.setAttribute('style', 'position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; z-index: 2147483500 !important; pointer-events: none !important; overflow: visible !important; border: none !important; background: transparent !important; margin: 0 !important; padding: 0 !important;');
+        
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+        gradient.id = 'dev1-presentation-rainbow-gradient';
+        gradient.setAttribute('x1', '0%');
+        gradient.setAttribute('y1', '0%');
+        gradient.setAttribute('x2', '100%');
+        gradient.setAttribute('y2', '100%');
+        
+        const colors = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#00c7ff', '#007aff', '#af52de'];
+        colors.forEach((color, index) => {
+          const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+          stop.setAttribute('offset', `${(index / (colors.length - 1)) * 100}%`);
+          stop.setAttribute('stop-color', color);
+          gradient.appendChild(stop);
+        });
+        
+        defs.appendChild(gradient);
+        overlay.appendChild(defs);
+        document.body.appendChild(overlay);
+      }
+      try {
+        const bodyHeight = Math.max(
+          document.body.scrollHeight,
+          document.documentElement.scrollHeight,
+          document.body.offsetHeight,
+          document.documentElement.offsetHeight,
+          document.body.clientHeight,
+          document.documentElement.clientHeight
+        );
+        const bodyWidth = Math.max(
+          document.body.scrollWidth,
+          document.documentElement.scrollWidth,
+          document.body.offsetWidth,
+          document.documentElement.offsetWidth,
+          document.body.clientWidth,
+          document.documentElement.clientWidth
+        );
+        overlay.style.width = `${bodyWidth}px`;
+        overlay.style.height = `${bodyHeight}px`;
+      } catch (_) {}
+      return overlay;
+    }
+
+    handlePresentationPointerDown(event) {
+      if (this.currentTool !== 'presentation-pen') return;
+      if (!this.visible || this.restoreDisplayOnly) return;
+      
+      // Ignore clicks on our UI
+      if (this._isPluginUiNode(event)) return;
+      
+      if (event.button !== 0 && event.pointerType === 'mouse') return;
+      
+      event.preventDefault();
+      event.stopPropagation();
+      
+      this._presentationPoints = [{ x: event.pageX, y: event.pageY }];
+      this._presentationRandomColor = null; // resets for each stroke
+      
+      const overlay = this.ensurePresentationOverlay();
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('fill', 'none');
+      
+      if (this.presentationPenStyle === 'dashed') {
+        path.setAttribute('stroke-dasharray', '8, 8');
+      }
+      
+      const strokeColor = this.getPresentationPenColor();
+      path.setAttribute('stroke', strokeColor);
+      path.setAttribute('stroke-width', '3.5');
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('stroke-linejoin', 'round');
+      
+      this._presentationCurrentPath = path;
+      overlay.appendChild(path);
+      
+      this.updatePresentationPath();
+      
+      const moveHandler = (e) => {
+        e.preventDefault();
+        if (this._presentationPoints) {
+          this._presentationPoints.push({ x: e.pageX, y: e.pageY });
+          this.updatePresentationPath();
+        }
+      };
+      
+      const upHandler = (e) => {
+        window.removeEventListener('pointermove', moveHandler, true);
+        window.removeEventListener('pointerup', upHandler, true);
+        window.removeEventListener('pointercancel', upHandler, true);
+        
+        this.finalizePresentationDrawing();
+      };
+      
+      window.addEventListener('pointermove', moveHandler, true);
+      window.addEventListener('pointerup', upHandler, true);
+      window.addEventListener('pointercancel', upHandler, true);
+    }
+
+    updatePresentationPath() {
+      if (!this._presentationCurrentPath || !this._presentationPoints || !this._presentationPoints.length) return;
+      const pts = this._presentationPoints;
+      let d = `M ${pts[0].x} ${pts[0].y}`;
+      for (let i = 1; i < pts.length; i++) {
+        d += ` L ${pts[i].x} ${pts[i].y}`;
+      }
+      this._presentationCurrentPath.setAttribute('d', d);
+    }
+
+    finalizePresentationDrawing() {
+      if (!this._presentationCurrentPath || !this._presentationPoints || !this._presentationPoints.length) return;
+      
+      let finalElement = this._presentationCurrentPath;
+      
+      if (this.presentationPenAutoRecognize) {
+        const recognized = this.recognizeShape(this._presentationPoints);
+        if (recognized) {
+          const overlay = this.ensurePresentationOverlay();
+          const shapeEl = this.createSvgShapeElement(recognized);
+          if (shapeEl) {
+            overlay.appendChild(shapeEl);
+            this._presentationCurrentPath.remove();
+            finalElement = shapeEl;
+          }
+        }
+      }
+      
+      this._presentationCurrentPath = null;
+      this._presentationPoints = null;
+      
+      if (this.presentationPenDisappearImmediately) {
+        setTimeout(() => {
+          finalElement.remove();
+        }, 100);
+      } else {
+        const delay = this.presentationPenDisappearDelay;
+        setTimeout(() => {
+          finalElement.style.transition = 'opacity 0.3s ease-in-out';
+          finalElement.style.opacity = '0';
+          setTimeout(() => {
+            finalElement.remove();
+          }, 350);
+        }, delay);
+      }
+    }
+
+    createSvgShapeElement(shape) {
+      const color = this.getPresentationPenColor();
+      const style = this.presentationPenStyle;
+      let el = null;
+      
+      if (shape.type === 'line') {
+        el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        el.setAttribute('x1', shape.x1);
+        el.setAttribute('y1', shape.y1);
+        el.setAttribute('x2', shape.x2);
+        el.setAttribute('y2', shape.y2);
+      } else if (shape.type === 'circle') {
+        el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        el.setAttribute('cx', shape.cx);
+        el.setAttribute('cy', shape.cy);
+        el.setAttribute('r', shape.r);
+        el.setAttribute('fill', color);
+        el.setAttribute('fill-opacity', '0.12');
+      } else if (shape.type === 'rectangle') {
+        el = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        el.setAttribute('x', shape.x);
+        el.setAttribute('y', shape.y);
+        el.setAttribute('width', shape.w);
+        el.setAttribute('height', shape.h);
+        el.setAttribute('rx', '4');
+        el.setAttribute('ry', '4');
+        el.setAttribute('fill', color);
+        el.setAttribute('fill-opacity', '0.12');
+      } else if (shape.type === 'triangle' || shape.type === 'star') {
+        el = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        const pointsStr = shape.points.map(p => `${p.x},${p.y}`).join(' ');
+        el.setAttribute('points', pointsStr);
+        el.setAttribute('fill', color);
+        el.setAttribute('fill-opacity', '0.12');
+      }
+      
+      if (el) {
+        el.setAttribute('stroke', color);
+        el.setAttribute('stroke-width', '3.5');
+        el.setAttribute('stroke-linecap', 'round');
+        el.setAttribute('stroke-linejoin', 'round');
+        if (style === 'dashed') {
+          el.setAttribute('stroke-dasharray', '8, 8');
+        }
+      }
+      return el;
+    }
+
+    recognizeShape(points) {
+      if (points.length < 6) return null;
+
+      // Helper to check if two line segments (a1, a2) and (b1, b2) intersect
+      const segmentsIntersect = (a1, a2, b1, b2) => {
+        const det = (a2.x - a1.x) * (b2.y - b1.y) - (a2.y - a1.y) * (b2.x - b1.x);
+        if (det === 0) return false;
+        const lambda = ((b2.y - b1.y) * (b2.x - a1.x) + (b1.x - b2.x) * (b2.y - a1.y)) / det;
+        const gamma = ((a1.y - a2.y) * (b2.x - a1.x) + (a2.x - a1.x) * (b2.y - a1.y)) / det;
+        return (0.01 < lambda && lambda < 0.99) && (0.01 < gamma && gamma < 0.99);
+      };
+
+      // Helper to count self-intersections in a path
+      const countSelfIntersections = (pts) => {
+        let count = 0;
+        const n = pts.length;
+        for (let i = 0; i < n - 2; i++) {
+          for (let j = i + 2; j < n; j++) {
+            if (i === 0 && j === n - 1) continue;
+            if (segmentsIntersect(pts[i], pts[i+1], pts[j], pts[(j+1)%n])) {
+              count++;
+            }
+          }
+        }
+        return count;
+      };
+
+      const distToSeg = (p, v, w) => {
+        const l2 = (v.x - w.x)**2 + (v.y - w.y)**2;
+        if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+        let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+        t = Math.max(0, Math.min(1, t));
+        return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+      };
+
+      const rdpRun = (pts, epsilon) => {
+        if (pts.length <= 2) return pts;
+        let maxD = 0, idx = 0;
+        const end = pts.length - 1;
+        for (let i = 1; i < end; i++) {
+          const d = distToSeg(pts[i], pts[0], pts[end]);
+          if (d > maxD) {
+            idx = i;
+            maxD = d;
+          }
+        }
+        if (maxD > epsilon) {
+          const r1 = rdpRun(pts.slice(0, idx + 1), epsilon);
+          const r2 = rdpRun(pts.slice(idx), epsilon);
+          return r1.slice(0, r1.length - 1).concat(r2);
+        } else {
+          return [pts[0], pts[end]];
+        }
+      };
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const p of points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+
+      const w = maxX - minX;
+      const h = maxY - minY;
+      const diag = Math.hypot(w, h);
+
+      if (diag < 15) return null;
+
+      let sumX = 0, sumY = 0;
+      for (const p of points) {
+        sumX += p.x;
+        sumY += p.y;
+      }
+      const cx = sumX / points.length;
+      const cy = sumY / points.length;
+
+      const start = points[0];
+      const end = points[points.length - 1];
+      const distStartEnd = Math.hypot(end.x - start.x, end.y - start.y);
+
+      let pathLength = 0;
+      for (let i = 1; i < points.length; i++) {
+        pathLength += Math.hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y);
+      }
+
+      // 1. Line check
+      if (distStartEnd > 50 && pathLength / distStartEnd < 1.35) {
+        let maxDev = 0;
+        for (const p of points) {
+          const d = distToSeg(p, start, end);
+          if (d > maxDev) maxDev = d;
+        }
+        if (maxDev < 35 || maxDev / distStartEnd < 0.22) {
+          return { type: 'line', x1: start.x, y1: start.y, x2: end.x, y2: end.y };
+        }
+      }
+
+      // 2. Pentagram self-intersection check (one-stroke star)
+      const simplifiedForIntersections = rdpRun(points, diag * 0.04);
+      const selfIntersects = countSelfIntersections(simplifiedForIntersections);
+
+      if (selfIntersects >= 3 && selfIntersects <= 8) {
+        const R_outer = diag / 2;
+        const R_inner = R_outer * 0.4;
+        let maxDist = 0;
+        let anchorIdx = 0;
+        for (let i = 0; i < simplifiedForIntersections.length; i++) {
+          const d = Math.hypot(simplifiedForIntersections[i].x - cx, simplifiedForIntersections[i].y - cy);
+          if (d > maxDist) {
+            maxDist = d;
+            anchorIdx = i;
+          }
+        }
+        const anchor = simplifiedForIntersections[anchorIdx];
+        const theta_offset = Math.atan2(anchor.y - cy, anchor.x - cx);
+
+        const starPoints = [];
+        for (let k = 0; k < 10; k++) {
+          const angle = theta_offset + (k * Math.PI) / 5;
+          const r = k % 2 === 0 ? R_outer : R_inner;
+          starPoints.push({
+            x: cx + r * Math.cos(angle),
+            y: cy + r * Math.sin(angle)
+          });
+        }
+        return { type: 'star', points: starPoints };
+      }
+
+      const isClosed = distStartEnd < 100 || distStartEnd / diag < 0.50;
+      if (!isClosed) return null;
+
+      // 3. Compute Shoelace Area and Area Ratio
+      let area = 0;
+      for (let i = 0; i < points.length; i++) {
+        const p1 = points[i];
+        const p2 = points[(i + 1) % points.length];
+        area += p1.x * p2.y - p2.x * p1.y;
+      }
+      area = Math.abs(area) / 2;
+      const areaRatio = area / (w * h);
+
+      // 4. Compute circularity (RDP simplified lightly to remove noise)
+      const simplifiedForCirc = rdpRun(points, diag * 0.025);
+      let simplifiedArea = 0;
+      for (let i = 0; i < simplifiedForCirc.length; i++) {
+        const p1 = simplifiedForCirc[i];
+        const p2 = simplifiedForCirc[(i + 1) % simplifiedForCirc.length];
+        simplifiedArea += p1.x * p2.y - p2.x * p1.y;
+      }
+      simplifiedArea = Math.abs(simplifiedArea) / 2;
+
+      let simplifiedPerimeter = 0;
+      for (let i = 1; i < simplifiedForCirc.length; i++) {
+        simplifiedPerimeter += Math.hypot(simplifiedForCirc[i].x - simplifiedForCirc[i-1].x, simplifiedForCirc[i].y - simplifiedForCirc[i-1].y);
+      }
+      const circularity = simplifiedPerimeter > 0 ? (4 * Math.PI * simplifiedArea) / (simplifiedPerimeter * simplifiedPerimeter) : 0;
+
+      const dists = points.map(p => Math.hypot(p.x - cx, p.y - cy));
+      const avgR = dists.reduce((a, b) => a + b, 0) / dists.length;
+      const variance = dists.reduce((sum, d) => sum + (d - avgR)**2, 0) / dists.length;
+      const stdDev = Math.sqrt(variance);
+      const coeffOfVariation = stdDev / avgR;
+      const aspect = w / h;
+
+      // RDP simplification for triangle and rectangle detection
+      const simplifiedPol = rdpRun(points, diag * 0.045);
+      const verts = [...simplifiedPol];
+      if (verts.length > 2) {
+        if (distStartEnd < diag * 0.25) {
+          verts.pop();
+        }
+      }
+
+      // Circle Check:
+      // - Area ratio is close to pi/4 (~0.785)
+      // - Aspect ratio is close to 1.0
+      // - Circularity is high
+      if (areaRatio >= 0.65 && areaRatio <= 0.85 && aspect >= 0.70 && aspect <= 1.43 && circularity > 0.65) {
+        return { type: 'circle', cx, cy, r: avgR };
+      }
+
+      // Ellipse Check (Morphed to Rectangle):
+      // - Area ratio is close to pi/4
+      // - Aspect ratio is squashed
+      // - Circularity is moderate-to-high
+      if (areaRatio >= 0.62 && areaRatio <= 0.85 && circularity > 0.58) {
+        if ((aspect >= 0.35 && aspect < 0.70) || (aspect > 1.43 && aspect <= 2.8)) {
+          return { type: 'rectangle', x: minX, y: minY, w, h };
+        }
+      }
+
+      // Rectangle Check:
+      // - Area ratio is very high (close to 1.0)
+      // - Or simplified to 4 vertices
+      if (areaRatio >= 0.82 || (verts.length === 4 && areaRatio >= 0.72)) {
+        return { type: 'rectangle', x: minX, y: minY, w, h };
+      }
+
+      // Triangle Check:
+      // - Area ratio is close to 0.50
+      // - Or simplified to 3 vertices
+      if ((areaRatio >= 0.35 && areaRatio <= 0.65 && circularity < 0.68) || verts.length === 3) {
+        return { type: 'triangle', points: verts };
+      }
+
+      // 4. Peak-valley analysis for star outlines
+      const smoothedDists = [];
+      const windowSize = Math.max(2, Math.floor(points.length / 25));
+      for (let i = 0; i < points.length; i++) {
+        let sum = 0, count = 0;
+        for (let j = -windowSize; j <= windowSize; j++) {
+          const idx = (i + j + points.length) % points.length;
+          sum += Math.hypot(points[idx].x - cx, points[idx].y - cy);
+          count++;
+        }
+        smoothedDists.push(sum / count);
+      }
+
+      const peaks = [];
+      const peakWindow = Math.max(4, Math.floor(points.length / 10));
+      const circDist = (idx1, idx2) => Math.min(Math.abs(idx1 - idx2), points.length - Math.abs(idx1 - idx2));
+
+      for (let i = 0; i < points.length; i++) {
+        let isPeak = true;
+        const val = smoothedDists[i];
+        for (let j = -peakWindow; j <= peakWindow; j++) {
+          if (j === 0) continue;
+          const idx = (i + j + points.length) % points.length;
+          if (smoothedDists[idx] > val) {
+            isPeak = false;
+            break;
+          }
+        }
+        if (isPeak) {
+          if (peaks.every(p => circDist(i, p.index) > peakWindow)) {
+            peaks.push({ index: i, val });
+          }
+        }
+      }
+
+      if (peaks.length === 5) {
+        const avgPeakDist = peaks.reduce((sum, p) => sum + p.val, 0) / 5;
+        let sumValley = 0, valleyCount = 0;
+        for (let i = 0; i < 5; i++) {
+          const p1 = peaks[i].index;
+          const p2 = peaks[(i + 1) % 5].index;
+          let minVal = Infinity;
+          let startIdx = p1;
+          let endIdx = p2;
+          if (startIdx > endIdx) endIdx += points.length;
+          for (let j = startIdx; j <= endIdx; j++) {
+            const val = smoothedDists[j % points.length];
+            if (val < minVal) minVal = val;
+          }
+          if (minVal !== Infinity) {
+            sumValley += minVal;
+            valleyCount++;
+          }
+        }
+        const avgValleyDist = valleyCount > 0 ? sumValley / valleyCount : avgPeakDist * 0.4;
+        const ratio = avgPeakDist / avgValleyDist;
+
+        if (ratio > 1.25) {
+          const R_outer = avgPeakDist;
+          const R_inner = R_outer * 0.45;
+          const firstPeakIndex = peaks[0].index;
+          const firstPeakPoint = points[firstPeakIndex];
+          const theta_offset = Math.atan2(firstPeakPoint.y - cy, firstPeakPoint.x - cx);
+
+          const starPoints = [];
+          for (let k = 0; k < 10; k++) {
+            const angle = theta_offset + (k * Math.PI) / 5;
+            const r = k % 2 === 0 ? R_outer : R_inner;
+            starPoints.push({
+              x: cx + r * Math.cos(angle),
+              y: cy + r * Math.sin(angle)
+            });
+          }
+          return { type: 'star', points: starPoints };
+        }
+      }
+
+      // Fallback
+      if (areaRatio >= 0.68 && areaRatio <= 0.86) {
+        if (aspect >= 0.70 && aspect <= 1.43) {
+          return { type: 'circle', cx, cy, r: avgR };
+        } else {
+          return { type: 'rectangle', x: minX, y: minY, w, h };
+        }
+      }
+
+      return null;
     }
 
     isRainbowColor(color) {
