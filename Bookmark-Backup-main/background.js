@@ -7231,6 +7231,15 @@ async function dev1ToggleSnapshotHighlighterForTab(message = {}, sender = {}) {
         if (!api || typeof api.toggle !== 'function') {
             return { success: false, error: 'Snapshot highlighter unavailable' };
         }
+        if (highlighterConfig && highlighterConfig.forceState === 'show') {
+            if (typeof api.show === 'function') {
+                return api.show(highlighterConfig);
+            }
+        } else if (highlighterConfig && highlighterConfig.forceState === 'hide') {
+            if (typeof api.hide === 'function') {
+                return api.hide();
+            }
+        }
         return api.toggle(highlighterConfig);
     }, [config]);
     if (!result || result.success !== true) {

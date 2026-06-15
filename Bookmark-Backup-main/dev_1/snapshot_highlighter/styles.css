@@ -497,7 +497,7 @@
   position: fixed !important;
   left: 50% !important;
   bottom: 20px !important;
-  transform: translateX(-50%) !important;
+  transform: translateX(-50%);
   z-index: 2147483600 !important;
   display: flex !important;
   align-items: center !important;
@@ -512,9 +512,51 @@
   backdrop-filter: blur(20px) !important;
   user-select: none !important;
   touch-action: none !important;
-  opacity: .9 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
   will-change: transform, opacity !important;
-  transition: all .3s cubic-bezier(.4, 0, .2, 1) !important;
+  transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+#dev1-snapshot-highlighter-toolbar.no-transition,
+#dev1-snapshot-highlighter-toolbar.no-transition * {
+  transition: none !important;
+}
+
+#dev1-snapshot-highlighter-toolbar[data-open="true"] {
+  opacity: .9 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+}
+
+#dev1-snapshot-highlighter-toolbar[data-open="true"]:hover {
+  opacity: 1 !important;
+}
+
+/* Default collapsed state transforms for each dock position */
+#dev1-snapshot-highlighter-toolbar[data-open="false"][data-dock-position="left"],
+#dev1-snapshot-highlighter-toolbar[data-open="false"][data-dock-position="right"] {
+  transform: translateY(-50%) translateX(30px) scale(0.96) !important;
+}
+#dev1-snapshot-highlighter-toolbar[data-open="false"][data-dock-position="top"],
+#dev1-snapshot-highlighter-toolbar[data-open="false"][data-dock-position="bottom"] {
+  transform: translateX(-50%) translateX(30px) scale(0.96) !important;
+}
+/* When floating and closed (e.g. entering/exiting/hidden state) */
+#dev1-snapshot-highlighter-toolbar[data-open="false"]:not([data-dock-position]),
+#dev1-snapshot-highlighter-toolbar[data-open="false"][data-dock-position="floating"] {
+  transform: translateX(30px) scale(0.96) !important;
+}
+
+/* Expanded state transforms overriding base inline style transforms */
+#dev1-snapshot-highlighter-toolbar[data-open="true"][data-dock-position="left"],
+#dev1-snapshot-highlighter-toolbar[data-open="true"][data-dock-position="right"] {
+  transform: translateY(-50%) translateX(0) scale(1) !important;
+}
+#dev1-snapshot-highlighter-toolbar[data-open="true"][data-dock-position="top"],
+#dev1-snapshot-highlighter-toolbar[data-open="true"][data-dock-position="bottom"] {
+  transform: translateX(-50%) translateY(0) scale(1) !important;
 }
 
 #dev1-snapshot-highlighter-toolbar.light-theme {
@@ -623,7 +665,7 @@
 .permanent-toolbar-dock-toggle {
   position: fixed !important;
   z-index: 2147483600 !important;
-  display: none !important;
+  display: inline-flex !important;
   width: auto !important;
   min-width: 66px !important;
   height: 36px !important;
@@ -637,7 +679,39 @@
   cursor: pointer !important;
   user-select: none !important;
   backdrop-filter: blur(16px) saturate(1.1) !important;
-  transition: transform .16s ease, opacity .16s ease, box-shadow .16s ease !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  transition: transform .16s ease, opacity .16s ease, box-shadow .16s ease, visibility .16s ease !important;
+}
+
+.permanent-toolbar-dock-toggle.no-transition {
+  transition: none !important;
+}
+
+.permanent-toolbar-dock-toggle[data-open="true"] {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+}
+
+/* Dock-specific open / closed transforms for toggle button */
+.permanent-toolbar-dock-toggle[data-open="false"][data-dock-position="left"],
+.permanent-toolbar-dock-toggle[data-open="false"][data-dock-position="right"] {
+  transform: translateY(-50%) translateX(20px) scale(0.9) !important;
+}
+.permanent-toolbar-dock-toggle[data-open="false"][data-dock-position="top"],
+.permanent-toolbar-dock-toggle[data-open="false"][data-dock-position="bottom"] {
+  transform: translateX(-50%) translateX(20px) scale(0.9) !important;
+}
+
+.permanent-toolbar-dock-toggle[data-open="true"][data-dock-position="left"],
+.permanent-toolbar-dock-toggle[data-open="true"][data-dock-position="right"] {
+  transform: translateY(-50%) translateX(0) scale(1) !important;
+}
+.permanent-toolbar-dock-toggle[data-open="true"][data-dock-position="top"],
+.permanent-toolbar-dock-toggle[data-open="true"][data-dock-position="bottom"] {
+  transform: translateX(-50%) translateY(0) scale(1) !important;
 }
 
 .permanent-toolbar-dock-toggle:hover {
@@ -875,6 +949,18 @@
   border-radius: 14px !important;
   box-shadow: 0 18px 44px rgba(15, 23, 42, .24) !important;
   backdrop-filter: blur(18px) saturate(1.1) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  transform: translateX(30px) scale(0.96) !important;
+  transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.dev1-snapshot-highlighter-panel[data-open="true"] {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+  transform: translateX(0) scale(1) !important;
 }
 
 .dev1-snapshot-highlighter-panel.light-theme {
@@ -4182,5 +4268,16 @@
 #dev1-presentation-pen-overlay circle,
 #dev1-presentation-pen-overlay rect,
 #dev1-presentation-pen-overlay polygon {
+  pointer-events: none !important;
+}
+
+#dev1-snapshot-highlighter-toolbar[data-entering="true"] {
+  opacity: 0 !important;
+  transform: translateX(30px) scale(0.96) !important;
+}
+
+#dev1-snapshot-highlighter-toolbar[data-exiting="true"] {
+  opacity: 0 !important;
+  transform: translateX(30px) scale(0.96) !important;
   pointer-events: none !important;
 }

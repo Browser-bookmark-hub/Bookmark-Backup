@@ -44,6 +44,8 @@
     const messages = {
       zh_CN: {
         title: '网页快照辅助工具',
+        section_archive: '网页快照与标注',
+        section_capture: '屏幕截图与录制',
         save_mhtml: '保存 MHTML',
         save_md: '保存 MD',
         mhtml_saving: '保存中...',
@@ -120,6 +122,8 @@
       },
       en: {
         title: 'Web Snapshot Helper',
+        section_archive: 'Page Snapshot & Annotate',
+        section_capture: 'Screen Capture & Record',
         save_mhtml: 'Save MHTML',
         save_md: 'Save MD',
         mhtml_saving: 'Saving...',
@@ -267,7 +271,13 @@
         this._highlighterToolbarUiCache = null;
         this._highlighterToolbarUiCacheUrl = '';
         this._highlighterToolbarUiPrefetch = null;
+        this._mdTextarea = null;
+        this._mdNotesArea = null;
+        this._mdArticleArea = null;
+        this._mdSaveTimer = null;
+        this._urlChangeListener = null;
         this.t = (key) => this.translate(key);
+        this._setupUrlChangeListener();
       }
 
       translate(key) {
@@ -413,35 +423,298 @@
         const host = this._ensureHost();
         const shadow = this.shadow;
         this.darkModeEnabled = this.detectPageTheme();
-        const bg = this.darkModeEnabled ? '#1f1f1f' : '#f0f4f8';
-        const color = this.darkModeEnabled ? '#e2e8f0' : '#1e293b';
-        const border = this.darkModeEnabled ? '#3b3b3b' : '#cbd5e1';
+        const vars = this.darkModeEnabled ? `
+            --panel-bg: rgba(20, 20, 23, 0.9);
+            --panel-border: rgba(63, 63, 70, 0.7);
+            --panel-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
+            --card-bg: rgba(39, 39, 42, 0.6);
+            --card-bg-hover: rgba(39, 39, 42, 0.95);
+            --card-border: rgba(63, 63, 70, 0.4);
+            --card-icon-bg: rgba(59, 130, 246, 0.15);
+            --card-icon-color: #60a5fa;
+            --header-bg: rgba(28, 28, 30, 0.95);
+            --btn-close-hover: rgba(239, 68, 68, 0.2);
+            --btn-min-hover: rgba(156, 163, 175, 0.2);
+        ` : `
+            --panel-bg: rgba(248, 250, 252, 0.95);
+            --panel-border: rgba(226, 232, 240, 0.8);
+            --panel-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --card-bg: rgba(255, 255, 255, 0.7);
+            --card-bg-hover: rgba(255, 255, 255, 0.98);
+            --card-border: rgba(226, 232, 240, 0.6);
+            --card-icon-bg: rgba(59, 130, 246, 0.1);
+            --card-icon-color: #2563eb;
+            --header-bg: rgba(241, 245, 249, 0.98);
+            --btn-close-hover: rgba(239, 68, 68, 0.1);
+            --btn-min-hover: rgba(100, 116, 139, 0.1);
+        `;
         shadow.innerHTML = `
           <style>
-            :host { all: initial; }
+            :host {
+              all: initial;
+              ${vars}
+              --backdrop-filter: blur(16px);
+              --accent-color: #3b82f6;
+              --accent-glow: rgba(59, 130, 246, 0.25);
+            }
             .dev1-helper-root { position: relative; width: 54px; height: 54px; pointer-events: auto; }
-            .dev1-helper-launcher { position: absolute; inset: 0; border-radius:18px; border:1px solid ${border}; background:${bg}; color:${color}; box-shadow:0 14px 36px rgba(15,23,42,0.32); display:flex; align-items:center; justify-content:center; cursor:grab; user-select:none; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; z-index: 2; }
-            .dev1-helper-launcher:active { cursor:grabbing; }
-            .dev1-helper-launcher-icon { width:28px; height:28px; border-radius:10px; background:${this.darkModeEnabled ? '#1e3a5f' : '#c3dafe'}; color:#3b82f6; display:flex; align-items:center; justify-content:center; }
-            .dev1-helper-panel { position: absolute; z-index: 1; width: 500px; max-width: min(500px, calc(100vw - 36px)); border-radius: 18px; background: ${bg}; color: ${color}; border: 1px solid ${border}; box-shadow: 0 18px 50px rgba(15,23,42,0.34); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; pointer-events: auto; }
-            .dev1-helper-root.pos-bottom-right .dev1-helper-panel { bottom: 64px; right: 0; }
-            .dev1-helper-root.pos-bottom-left .dev1-helper-panel { bottom: 64px; left: 0; }
-            .dev1-helper-root.pos-top-right .dev1-helper-panel { top: 64px; right: 0; }
-            .dev1-helper-root.pos-top-left .dev1-helper-panel { top: 64px; left: 0; }
-            .dev1-helper-header { display:flex; align-items:center; gap:8px; padding:10px 12px; background:${this.darkModeEnabled ? '#2d2d2d' : '#e2ebf0'}; cursor:move; user-select:none; }
-            .dev1-helper-title { flex:1; font-size:13px; font-weight:700; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-            .dev1-helper-btn { width:26px; height:26px; border:0; border-radius:8px; background:${this.darkModeEnabled ? '#374151' : '#cbd5e1'}; color:inherit; cursor:pointer; }
-            .dev1-helper-btn:hover { background:${this.darkModeEnabled ? '#4b5563' : '#94a3b8'}; }
-            .dev1-helper-mhtml { width:auto; min-width:48px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
-            .dev1-helper-md { width:auto; min-width:34px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
-            .dev1-helper-highlight { width:auto; min-width:64px; padding:0 7px; font-size:10px; font-weight:800; letter-spacing:0.02em; }
-            .dev1-helper-open-snapshot svg { transform:translateY(1px); }
-            .dev1-helper-feedback { max-width:116px; font-size:11px; color:${this.darkModeEnabled ? '#93c5fd' : '#2563eb'}; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-            .dev1-helper-tip { position:fixed; z-index:2147483647; max-width:220px; height:24px; box-sizing:border-box; padding:0 8px; border-radius:7px; background:${this.darkModeEnabled ? '#111827' : '#0f172a'}; color:#fff; font-size:11px; line-height:1; display:flex; align-items:center; white-space:nowrap; box-shadow:0 8px 22px rgba(15,23,42,0.24); pointer-events:none; opacity:0; transform:translateY(-2px); transition:opacity 80ms ease, transform 80ms ease; }
+            .dev1-helper-launcher {
+              position: absolute;
+              inset: 0;
+              border-radius: 20px;
+              border: 1px solid var(--panel-border);
+              background: var(--panel-bg);
+              backdrop-filter: var(--backdrop-filter);
+              -webkit-backdrop-filter: var(--backdrop-filter);
+              color: var(--text-main);
+              box-shadow: var(--panel-shadow);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              cursor: grab;
+              user-select: none;
+              font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+              z-index: 2;
+              transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s ease, border-color 0.2s ease;
+            }
+            .dev1-helper-launcher:hover {
+              transform: scale(1.06);
+              box-shadow: 0 8px 24px rgba(59, 130, 246, 0.25);
+              border-color: var(--accent-color);
+            }
+            .dev1-helper-launcher:active {
+              cursor: grabbing;
+              transform: scale(0.96);
+            }
+            .dev1-helper-launcher-icon {
+              width: 28px;
+              height: 28px;
+              border-radius: 12px;
+              background: var(--card-icon-bg);
+              color: var(--card-icon-color);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              transition: transform 0.25s ease;
+            }
+            .dev1-helper-launcher:hover .dev1-helper-launcher-icon {
+              transform: scale(1.05) rotate(15deg);
+            }
+            .dev1-helper-panel {
+              position: absolute;
+              z-index: 1;
+              width: 300px;
+              max-width: min(300px, calc(100vw - 36px));
+              border-radius: 20px;
+              background: var(--panel-bg);
+              backdrop-filter: var(--backdrop-filter);
+              -webkit-backdrop-filter: var(--backdrop-filter);
+              color: var(--text-main);
+              border: 1px solid var(--panel-border);
+              box-shadow: var(--panel-shadow);
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+              overflow: hidden;
+              pointer-events: none;
+              opacity: 0;
+              transform: translateY(30px) scale(0.96);
+              transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .dev1-helper-root[data-open="true"] .dev1-helper-panel {
+              opacity: 1;
+              transform: scale(1) translateY(0);
+              pointer-events: auto;
+            }
+            .dev1-helper-root.pos-bottom-right .dev1-helper-panel { bottom: 64px; right: 0; transform-origin: bottom right; }
+            .dev1-helper-root.pos-bottom-left .dev1-helper-panel { bottom: 64px; left: 0; transform-origin: bottom left; }
+            .dev1-helper-root.pos-top-right .dev1-helper-panel { top: 64px; right: 0; transform-origin: top right; }
+            .dev1-helper-root.pos-top-left .dev1-helper-panel { top: 64px; left: 0; transform-origin: top left; }
+            .dev1-helper-header {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              padding: 12px 14px;
+              background: var(--header-bg);
+              border-bottom: 1px solid var(--panel-border);
+              cursor: move;
+              user-select: none;
+            }
+            .dev1-helper-title {
+              flex: 1;
+              font-size: 13px;
+              font-weight: 600;
+              color: var(--text-main);
+              overflow: hidden;
+              white-space: nowrap;
+              text-overflow: ellipsis;
+            }
+            .dev1-helper-btn {
+              width: 26px;
+              height: 26px;
+              border: 0;
+              border-radius: 6px;
+              background: transparent;
+              color: var(--text-muted);
+              cursor: pointer;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              transition: all 0.2s ease;
+              font-size: 14px;
+            }
+            .dev1-helper-btn:hover {
+              background: var(--btn-min-hover);
+              color: var(--text-main);
+            }
+            .dev1-helper-close:hover {
+              background: var(--btn-close-hover);
+              color: #ef4444;
+            }
+            .dev1-helper-open-snapshot svg { transform: translateY(0.5px); }
+            .dev1-helper-feedback {
+              max-width: 100px;
+              font-size: 11px;
+              font-weight: 500;
+              color: var(--accent-color);
+              overflow: hidden;
+              white-space: nowrap;
+              text-overflow: ellipsis;
+              margin-right: 4px;
+            }
+            .dev1-helper-body {
+              padding: 14px 16px 16px;
+              display: flex;
+              flex-direction: column;
+              gap: 14px;
+              box-sizing: border-box;
+            }
+            .dev1-helper-section {
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+            }
+            .dev1-helper-section-title {
+              font-size: 11px;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 0.05em;
+              color: var(--text-muted);
+              margin-left: 2px;
+              margin-bottom: 2px;
+            }
+            .dev1-helper-list {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+            }
+            .dev1-helper-card {
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              width: 100%;
+              height: 42px;
+              border: 1px solid var(--card-border);
+              border-radius: 12px;
+              background: var(--card-bg);
+              color: var(--text-main);
+              cursor: pointer;
+              transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+              padding: 0 14px;
+              box-sizing: border-box;
+              font-family: inherit;
+              position: relative;
+              text-align: left;
+            }
+            .dev1-helper-card:hover {
+              transform: translateY(-1.5px);
+              background: var(--card-bg-hover);
+              border-color: var(--accent-color);
+              box-shadow: 0 6px 14px -5px var(--accent-glow);
+            }
+            .dev1-helper-card:active {
+              transform: scale(0.99);
+            }
+            .dev1-helper-card-icon {
+              width: 26px;
+              height: 26px;
+              border-radius: 8px;
+              background: var(--card-icon-bg);
+              color: var(--card-icon-color);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+              flex-shrink: 0;
+            }
+            .dev1-helper-card-icon svg {
+              width: 14px;
+              height: 14px;
+              display: block;
+            }
+            .dev1-helper-card:hover .dev1-helper-card-icon {
+              background: var(--accent-color);
+              color: #ffffff;
+            }
+            .dev1-helper-card-label {
+              font-size: 13px;
+              font-weight: 550;
+              text-align: left;
+              white-space: nowrap;
+              flex: 1;
+            }
+            .dev1-helper-gear {
+              width: 24px;
+              height: 24px;
+              border-radius: 6px;
+              background: transparent;
+              border: 0;
+              color: var(--text-muted);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              cursor: pointer;
+              transition: all 0.2s ease;
+              flex-shrink: 0;
+            }
+            .dev1-helper-gear:hover {
+              background: var(--btn-min-hover);
+              color: var(--accent-color);
+              transform: rotate(45deg);
+            }
+            .dev1-helper-tip { position:fixed; z-index:2147483647; max-width:220px; height:24px; box-sizing:border-box; padding:0 8px; border-radius:7px; background:rgba(15, 23, 42, 0.95); backdrop-filter: blur(4px); color:#fff; font-size:11px; line-height:1; display:flex; align-items:center; white-space:nowrap; box-shadow:0 8px 22px rgba(15,23,42,0.24); pointer-events:none; opacity:0; transform:translateY(-2px); transition:opacity 80ms ease, transform 80ms ease; }
             .dev1-helper-tip[data-show="true"] { opacity:1; transform:translateY(0); }
             .dev1-highlighter-launch-panel, .dev1-highlighter-launch-panel * { box-sizing:border-box; letter-spacing:0; }
-            .dev1-highlighter-launch-panel { position:fixed; z-index:2147483647; min-height:64px; width:auto; max-width:calc(100vw - 16px); box-sizing:border-box; padding:12px 16px; border-radius:24px; border:1px solid ${this.darkModeEnabled ? '#444' : '#cbd5e1'}; background:${this.darkModeEnabled ? '#2a2a2a' : '#f0f4f8'}; color:${this.darkModeEnabled ? '#e0e0e0' : '#172033'}; box-shadow:0 8px 32px rgba(0,0,0,.15), 0 4px 16px rgba(0,0,0,.1); display:flex; align-items:center; gap:8px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; pointer-events:none; user-select:none; opacity:0; transition:opacity 80ms ease; }
-            .dev1-highlighter-launch-panel[data-show="true"] { opacity:.94; }
+            .dev1-highlighter-launch-panel {
+              position: fixed;
+              z-index: 2147483647;
+              min-height: 64px;
+              width: auto;
+              max-width: calc(100vw - 16px);
+              box-sizing: border-box;
+              padding: 12px 16px;
+              border-radius: 24px;
+              border: 1px solid ${this.darkModeEnabled ? '#444' : '#cbd5e1'};
+              background: ${this.darkModeEnabled ? '#2a2a2a' : '#f0f4f8'};
+              color: ${this.darkModeEnabled ? '#e0e0e0' : '#172033'};
+              box-shadow: 0 8px 32px rgba(0,0,0,.15), 0 4px 16px rgba(0,0,0,.1);
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+              pointer-events: none;
+              user-select: none;
+              opacity: 0;
+              transform: translateX(30px) scale(0.96);
+              transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .dev1-highlighter-launch-panel[data-show="true"] {
+              opacity: .94;
+              transform: scale(1) translateX(0);
+              pointer-events: auto;
+            }
             .dev1-highlighter-launch-btn { width:40px; height:40px; flex:0 0 40px; margin:0; padding:0; border:0; border-radius:12px; background:${this.darkModeEnabled ? '#333' : '#cbd5e1'}; color:inherit; display:inline-flex; align-items:center; justify-content:center; font-size:18px; line-height:1; box-shadow:0 2px 8px rgba(0,0,0,.1); opacity:.86; }
             .dev1-highlighter-launch-btn svg { width:18px; height:18px; display:block; fill:none; stroke:currentColor; stroke-width:2.15; stroke-linecap:round; stroke-linejoin:round; }
             .dev1-highlighter-launch-indicator { min-width:80px; height:40px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:6px 12px; margin:0 6px; border-radius:16px; background:${this.darkModeEnabled ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.05)'}; border:1px solid ${this.darkModeEnabled ? 'rgba(255,255,255,.2)' : 'rgba(0,0,0,.1)'}; box-shadow:0 2px 8px rgba(0,0,0,.1); animation:dev1HighlighterLaunchSoftPulse 900ms ease-in-out infinite; }
@@ -461,25 +734,95 @@
             .dev1-highlighter-launch-drag::before { content:""; position:absolute; left:50%; top:2px; transform:translateX(-50%); width:40px; height:4px; border-radius:999px; background:currentColor; opacity:.34; }
             @keyframes dev1HighlighterLaunchPulse { 0%, 80%, 100% { opacity:.22; transform:translateY(0); } 40% { opacity:.85; transform:translateY(-2px); } }
             @keyframes dev1HighlighterLaunchSoftPulse { 0%, 100% { opacity:.72; } 50% { opacity:1; } }
-            .dev1-helper-body { padding: 0 14px 16px; }
-            .dev1-helper-body button { cursor:pointer; }
-            .dev1-helper-root[data-open="false"] .dev1-helper-panel { display:none; }
+
           </style>
           <div class="dev1-helper-root" data-open="false">
             <div class="dev1-helper-panel">
               <div class="dev1-helper-header">
                 <div class="dev1-helper-title">${this.translate('title')}</div>
                 <div class="dev1-helper-feedback" aria-live="polite"></div>
-                <button class="dev1-helper-btn dev1-helper-md" type="button" aria-label="${this.translate('md_tooltip')}" data-tip="${this.translate('md_tooltip')}" data-no-drag="true">MD</button>
-                <button class="dev1-helper-btn dev1-helper-highlight" type="button" aria-label="${this.translate('highlight_tooltip')}" data-tip="${this.translate('highlight_tooltip')}" data-no-drag="true">${this.translate('highlight_tool')}</button>
-                <button class="dev1-helper-btn dev1-helper-mhtml" type="button" aria-label="${this.translate('mhtml_tooltip')}" data-tip="${this.translate('mhtml_tooltip')}" data-no-drag="true">MHTML</button>
                 <button class="dev1-helper-btn dev1-helper-open-snapshot" type="button" aria-label="${this.translate('open_web_snapshot_tooltip')}" data-tip="${this.translate('open_web_snapshot_tooltip')}" data-no-drag="true">
                   <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"></path><path d="M10 14L21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>
                 </button>
-                <button class="dev1-helper-btn dev1-helper-close" type="button">×</button>
-                <button class="dev1-helper-btn dev1-helper-min" type="button">−</button>
+                <button class="dev1-helper-btn dev1-helper-close" type="button" aria-label="Close">×</button>
+                <button class="dev1-helper-btn dev1-helper-min" type="button" aria-label="Minimize">−</button>
               </div>
-              <div class="dev1-helper-body"></div>
+              <div class="dev1-helper-body">
+                <!-- Section 1: Annotate & Save -->
+                <div class="dev1-helper-section">
+                  <div class="dev1-helper-section-title">${this.translate('section_archive')}</div>
+                  <div class="dev1-helper-list">
+                    <button class="dev1-helper-card dev1-helper-highlight" type="button" aria-label="${this.translate('highlight_tooltip')}" data-no-drag="true">
+                      <div class="dev1-helper-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 22h9M19 13.5L14.5 9l-9 9V22h4.5l9-9zM11.5 6L16 10.5"/>
+                        </svg>
+                      </div>
+                      <span class="dev1-helper-card-label">${this.translate('highlight_tool')}</span>
+                    </button>
+                    <button class="dev1-helper-card dev1-helper-md" type="button" aria-label="${this.translate('md_tooltip')}" data-no-drag="true">
+                      <div class="dev1-helper-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                          <polyline points="14 2 14 8 20 8"/>
+                          <line x1="16" y1="13" x2="8" y2="13"/>
+                          <line x1="16" y1="17" x2="8" y2="17"/>
+                          <polyline points="10 9 9 9 8 9"/>
+                        </svg>
+                      </div>
+                      <span class="dev1-helper-card-label">${this.translate('save_md')}</span>
+                    </button>
+                    <button class="dev1-helper-card dev1-helper-mhtml" type="button" aria-label="${this.translate('mhtml_tooltip')}" data-no-drag="true">
+                      <div class="dev1-helper-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="21 8 21 21 3 21 3 8"/>
+                          <rect x="1" y="3" width="22" height="5" rx="1"/>
+                          <line x1="10" y1="12" x2="14" y2="12"/>
+                        </svg>
+                      </div>
+                      <span class="dev1-helper-card-label">${this.translate('save_mhtml')}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Section 2: Capture -->
+                <div class="dev1-helper-section">
+                  <div class="dev1-helper-section-title">${this.translate('section_capture')}</div>
+                  <div class="dev1-helper-list">
+                    <button class="dev1-helper-card dev1-helper-screenshot-area" type="button" data-no-drag="true">
+                      <div class="dev1-helper-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"></path>
+                          <path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"></path>
+                        </svg>
+                      </div>
+                      <span class="dev1-helper-card-label">${this.translate('screenshot_area')}</span>
+                    </button>
+                    <button class="dev1-helper-card dev1-helper-screenshot-full" type="button" data-no-drag="true">
+                      <div class="dev1-helper-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect>
+                          <line x1="12" y1="6" x2="12" y2="18"></line>
+                          <polyline points="8 14 12 18 16 14"></polyline>
+                        </svg>
+                      </div>
+                      <span class="dev1-helper-card-label">${this.translate('screenshot_full')}</span>
+                    </button>
+                    <button class="dev1-helper-card dev1-helper-screen-record" type="button" data-no-drag="true">
+                      <div class="dev1-helper-card-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <circle cx="12" cy="12" r="3" fill="currentColor"></circle>
+                        </svg>
+                      </div>
+                      <span class="dev1-helper-card-label">${this.translate('screen_record')}</span>
+                      <div class="dev1-helper-gear" data-no-drag="true">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="dev1-helper-launcher" role="button" tabindex="0" aria-expanded="false" title="${this.translate('title')}">
               <div class="dev1-helper-launcher-icon">
@@ -489,13 +832,17 @@
           </div>`;
         const root = shadow.querySelector('.dev1-helper-root');
         const panel = shadow.querySelector('.dev1-helper-panel');
-        const body = shadow.querySelector('.dev1-helper-body');
         const launcher = shadow.querySelector('.dev1-helper-launcher');
         const minBtn = shadow.querySelector('.dev1-helper-min');
         const mhtmlBtn = shadow.querySelector('.dev1-helper-mhtml');
         const mdBtn = shadow.querySelector('.dev1-helper-md');
         const highlighterBtn = shadow.querySelector('.dev1-helper-highlight');
         const openSnapshotBtn = shadow.querySelector('.dev1-helper-open-snapshot');
+        const areaBtn = shadow.querySelector('.dev1-helper-screenshot-area');
+        const fullBtn = shadow.querySelector('.dev1-helper-screenshot-full');
+        const recordBtn = shadow.querySelector('.dev1-helper-screen-record');
+        const gearBtn = shadow.querySelector('.dev1-helper-gear');
+
         const bindTip = (button) => {
           if (!button) return;
           let tip = null;
@@ -546,17 +893,33 @@
           setOpen(root.dataset.open !== 'true');
         });
         minBtn.addEventListener('click', () => setOpen(false));
-        bindTip(mhtmlBtn);
-        bindTip(mdBtn);
-        bindTip(highlighterBtn);
         bindTip(openSnapshotBtn);
         mhtmlBtn.addEventListener('click', () => this._saveCurrentMhtml(mhtmlBtn));
         mdBtn.addEventListener('click', () => { this._collapsePanel(); this._showMdSettingsPanel(launcher); });
         highlighterBtn.addEventListener('click', () => this._toggleHighlighter(highlighterBtn));
         openSnapshotBtn.addEventListener('click', () => this._openWebSnapshotPage());
+        areaBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this._collapsePanel();
+          this.startAreaScreenshot();
+        });
+        fullBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this._collapsePanel();
+          this.startLongScreenshot();
+        });
+        recordBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this._collapsePanel();
+          this.startScreenRecording();
+        });
+        gearBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          this._showRecordingSettings(gearBtn);
+        });
         this._bindDrag(host, launcher, { skipInteractive: false });
         this._bindDrag(host, panel.querySelector('.dev1-helper-header'), { skipInteractive: true });
-        this._renderScreenshotOptions(body);
         this._prefetchHighlighterToolbarUi();
         requestAnimationFrame(() => this._updateQuadrant(true));
       }
@@ -760,93 +1123,25 @@
 
       _calculateHighlighterLaunchPanelPosition(anchorRect, panel, toolbarUi = null) {
         const margin = 8;
-        const gap = 8;
         const width = Math.max(300, Math.min(360, Number(panel && panel.offsetWidth) || 320));
         const height = Math.max(64, Number(panel && panel.offsetHeight) || 64);
-        const remembered = toolbarUi ? this._normalizeHighlighterToolbarUi(toolbarUi) : null;
-        if (remembered) {
-          const dockPosition = remembered.dockState && remembered.dockState.position !== 'floating'
-            ? remembered.dockState.position
-            : remembered.position;
-          if (dockPosition && dockPosition !== 'floating') {
-            const offset = 12;
-            const center = this._getHighlighterLaunchDockCenter(remembered, dockPosition);
-            if (dockPosition === 'left') return { left: offset, top: Math.max(offset, Math.min(window.innerHeight - height - offset, center - height / 2)) };
-            if (dockPosition === 'right') return { left: Math.max(offset, window.innerWidth - width - offset), top: Math.max(offset, Math.min(window.innerHeight - height - offset, center - height / 2)) };
-            if (dockPosition === 'top') return { left: Math.max(offset, Math.min(window.innerWidth - width - offset, center - width / 2)), top: offset };
-            if (dockPosition === 'bottom') return { left: Math.max(offset, Math.min(window.innerWidth - width - offset, center - width / 2)), top: Math.max(offset, window.innerHeight - height - offset) };
-          }
-          const left = Number(remembered.left);
-          const top = Number(remembered.top);
-          if (Number.isFinite(left) && Number.isFinite(top)) {
-            return {
-              left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
-              top: Math.max(margin, Math.min(window.innerHeight - height - margin, top))
-            };
-          }
-        }
-        const fallbackRect = this._getHighlighterAnchorRect();
-        const rect = anchorRect || fallbackRect || {
-          left: window.innerWidth - 72,
-          right: window.innerWidth - 18,
-          top: window.innerHeight - 72,
-          bottom: window.innerHeight - 18,
-          width: 54,
-          height: 54
+        
+        // Default position: floating to the left of the bottom-right launcher button
+        const rightEdgeOfLauncher = 18;
+        const launcherWidth = 54;
+        const horizontalGap = 8;
+        
+        const left = window.innerWidth - rightEdgeOfLauncher - launcherWidth - horizontalGap - width;
+        const top = window.innerHeight - 18 - (launcherWidth / 2) - (height / 2);
+        
+        return {
+          left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
+          top: Math.max(margin, Math.min(window.innerHeight - height - margin, top))
         };
-        const anchorCenterX = rect.left + rect.width / 2;
-        const anchorCenterY = rect.top + rect.height / 2;
-        const alignRight = anchorCenterX > window.innerWidth / 2;
-        const preferAbove = anchorCenterY > window.innerHeight / 2;
-        let left = alignRight ? rect.right - width : rect.left;
-        let top = preferAbove ? rect.top - height - gap : rect.bottom + gap;
-        if (top < margin && preferAbove) top = rect.bottom + gap;
-        if (top + height > window.innerHeight - margin && !preferAbove) top = rect.top - height - gap;
-        left = Math.max(margin, Math.min(window.innerWidth - width - margin, left));
-        top = Math.max(margin, Math.min(window.innerHeight - height - margin, top));
-        return { left, top };
       }
 
       _showHighlighterLaunchPanel(anchorRect, toolbarUi = null) {
-        if (!this.shadow) return null;
-        this._hideHighlighterLaunchPanel();
-        const remembered = toolbarUi ? this._normalizeHighlighterToolbarUi(toolbarUi) : null;
-        const rememberedPosition = remembered && remembered.dockState && remembered.dockState.position !== 'floating'
-          ? remembered.dockState.position
-          : remembered && remembered.position;
-        const launchToolbar = this._normalizeHighlighterLaunchToolbar(toolbarUi && toolbarUi.toolbar);
-        const panel = document.createElement('div');
-        panel.className = 'dev1-highlighter-launch-panel';
-        if (rememberedPosition === 'left' || rememberedPosition === 'right') {
-          panel.classList.add('dev1-highlighter-launch-vertical');
-        }
-        panel.setAttribute('role', 'status');
-        panel.setAttribute('aria-live', 'polite');
-        panel.innerHTML = `
-          <button class="dev1-highlighter-launch-btn" type="button" aria-label="${this.translate('highlight_tool_launching')}">🎨</button>
-          <button class="dev1-highlighter-launch-btn" type="button" aria-label="${this.translate('highlight_tool_launching')}">🛠️</button>
-          <div class="dev1-highlighter-launch-indicator" aria-label="${this.translate('highlight_tool_launching')}">
-            <span class="dev1-highlighter-launch-swatch" aria-hidden="true"></span>
-            <span class="dev1-highlighter-launch-separator" aria-hidden="true"></span>
-            <span class="dev1-highlighter-launch-tool" aria-hidden="true">✍️</span>
-          </div>
-          <button class="dev1-highlighter-launch-btn" type="button" aria-label="${this.translate('highlight_tool_launching')}">🗑️</button>
-          <button class="dev1-highlighter-launch-btn" type="button" aria-label="${this.translate('highlight_tool_launching')}">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>
-          </button>
-          <div class="dev1-highlighter-launch-drag" aria-hidden="true"></div>
-        `;
-        this.shadow.appendChild(panel);
-        this._applyHighlighterLaunchSwatch(panel.querySelector('.dev1-highlighter-launch-swatch'), launchToolbar.color);
-        const toolEl = panel.querySelector('.dev1-highlighter-launch-tool');
-        if (toolEl) toolEl.textContent = this._getHighlighterLaunchToolIcon(launchToolbar.tool);
-        const pos = this._calculateHighlighterLaunchPanelPosition(anchorRect, panel, remembered);
-        panel.style.left = `${pos.left}px`;
-        panel.style.top = `${pos.top}px`;
-        requestAnimationFrame(() => {
-          if (panel.isConnected) panel.dataset.show = 'true';
-        });
-        return panel;
+        return null;
       }
 
       _hideHighlighterLaunchPanel(options = {}) {
@@ -856,26 +1151,24 @@
         }
         const panel = this.shadow && this.shadow.querySelector('.dev1-highlighter-launch-panel');
         if (!panel) return;
+        panel.dataset.show = 'false';
         const remove = () => {
           try { panel.remove(); } catch (_) { }
         };
-        const delay = Math.max(0, Number(options.delay) || 0);
-        if (delay > 0) {
-          this._highlighterLaunchPanelTimer = setTimeout(() => {
-            this._highlighterLaunchPanelTimer = null;
-            remove();
-          }, delay);
-          return;
-        }
-        remove();
+        const delay = Math.max(0, Number(options.delay) || 0) + 150;
+        this._highlighterLaunchPanelTimer = setTimeout(() => {
+          this._highlighterLaunchPanelTimer = null;
+          remove();
+        }, delay);
       }
 
       async _saveCurrentMhtml(button) {
         if (button && button.disabled) return;
-        const previousText = button ? button.textContent : '';
+        const labelEl = button ? button.querySelector('.dev1-helper-card-label') : null;
+        const previousText = labelEl ? labelEl.textContent : '';
         if (button) {
           button.disabled = true;
-          button.textContent = '...';
+          if (labelEl) labelEl.textContent = '...';
         }
         this._setHeaderFeedback(this.translate('mhtml_saving'), 0);
         const previousVisibility = this.host ? this.host.style.visibility : '';
@@ -895,7 +1188,9 @@
           if (this.host) this.host.style.visibility = previousVisibility;
           if (button) {
             button.disabled = false;
-            button.textContent = previousText || 'MHTML';
+            if (labelEl) {
+              labelEl.textContent = previousText || 'MHTML';
+            }
           }
         }
       }
@@ -903,10 +1198,11 @@
 
       async _saveCurrentMd(button) {
         if (button && button.disabled) return;
-        const previousText = button ? button.textContent : '';
+        const labelEl = button ? button.querySelector('.dev1-helper-card-label') : null;
+        const previousText = labelEl ? labelEl.textContent : '';
         if (button) {
           button.disabled = true;
-          button.textContent = '...';
+          if (labelEl) labelEl.textContent = '...';
         }
         this._setHeaderFeedback(this.translate('md_saving'), 0);
         const previousVisibility = this.host ? this.host.style.visibility : '';
@@ -926,7 +1222,9 @@
           if (this.host) this.host.style.visibility = previousVisibility;
           if (button) {
             button.disabled = false;
-            button.textContent = previousText || 'MD';
+            if (labelEl) {
+              labelEl.textContent = previousText || 'MD';
+            }
           }
         }
       }
@@ -946,15 +1244,41 @@
 
       async _toggleHighlighter(button) {
         if (button && button.disabled) return;
-        const previousText = button ? button.textContent : '';
+        const labelEl = button ? button.querySelector('.dev1-helper-card-label') : null;
+        const previousText = labelEl ? labelEl.textContent : '';
         const anchorRect = this._getHighlighterAnchorRect();
         const toolbarUi = await (this._highlighterToolbarUiPrefetch || this._readStoredHighlighterToolbarUi());
+        
+        const isLoaded = typeof window.__dev1SnapshotHighlighter !== 'undefined' && window.__dev1SnapshotHighlighter.loaded === true;
+        let targetVisible = true;
+        if (isLoaded) {
+          const currentlyVisible = window.__dev1SnapshotHighlighter.isVisible();
+          targetVisible = !currentlyVisible;
+          
+          const localConfig = {
+            ...this.config,
+            lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
+            source: 'snapshot_helper_highlighter',
+            highlighterAnchorRect: anchorRect,
+            highlighterAnchorMode: 'snapshot-helper-launcher'
+          };
+          
+          if (targetVisible) {
+            window.__dev1SnapshotHighlighter.show(localConfig);
+          } else {
+            window.__dev1SnapshotHighlighter.hide();
+          }
+        } else {
+          this._showHighlighterLaunchPanel(anchorRect, toolbarUi);
+        }
+
         const shouldCollapseOptimistically = !this._highlighterVisibleGuess;
-        this._showHighlighterLaunchPanel(anchorRect, toolbarUi);
         if (shouldCollapseOptimistically) this._collapsePanel();
         if (button) {
           button.disabled = true;
-          button.textContent = '...';
+          if (labelEl) {
+            labelEl.textContent = '...';
+          }
         }
         try {
           const response = await sendRuntimeMessage({
@@ -963,11 +1287,12 @@
             item: {
               ...this.config,
               highlighterAnchorRect: anchorRect,
-              highlighterAnchorMode: 'snapshot-helper-launcher'
+              highlighterAnchorMode: 'snapshot-helper-launcher',
+              forceState: isLoaded ? (targetVisible ? 'show' : 'hide') : undefined
             }
           }, 30000);
           if (!response || response.success !== true) {
-            this._hideHighlighterLaunchPanel();
+            if (!isLoaded) this._hideHighlighterLaunchPanel();
             if (response && response.pdf === true) {
               if (shouldCollapseOptimistically) this._setPanelOpen(true);
               this._setHeaderFeedback(this.translate('highlight_tool_unavailable_pdf'), 4200);
@@ -976,20 +1301,22 @@
             throw new Error(response?.error || this.translate('highlight_tool_failed'));
           }
           this._highlighterVisibleGuess = response.visible !== false;
-          this._hideHighlighterLaunchPanel();
+          if (!isLoaded) this._hideHighlighterLaunchPanel();
           if (response.visible !== false) this._collapsePanel();
           else if (shouldCollapseOptimistically) this._setPanelOpen(true);
           this._setHeaderFeedback(response.visible === false
             ? this.translate('highlight_tool_hidden')
             : this.translate('highlight_tool_ready'));
         } catch (error) {
-          this._hideHighlighterLaunchPanel();
+          if (!isLoaded) this._hideHighlighterLaunchPanel();
           if (shouldCollapseOptimistically) this._setPanelOpen(true);
           this._setHeaderFeedback(`${this.translate('highlight_tool_failed')}: ${error?.message || error}`, 5000);
         } finally {
           if (button) {
             button.disabled = false;
-            button.textContent = previousText || this.translate('highlight_tool');
+            if (labelEl) {
+              labelEl.textContent = previousText || this.translate('highlight_tool');
+            }
           }
         }
       }
@@ -1076,6 +1403,7 @@
       }
 
       destroy() {
+        this._removeUrlChangeListener();
         if (typeof this.activeSessionCleanup === 'function') {
           try { this.activeSessionCleanup(); } catch (_) { }
           this.activeSessionCleanup = null;
@@ -1344,129 +1672,7 @@
     }
 
     // Screenshot Features
-    _renderScreenshotOptions(container) {
-      const createOption = (key, icon, onClick) => {
-        const btn = document.createElement('button');
-        btn.style.cssText = `
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 12px;
-        width: 140px;
-        height: 140px;
-        border: 1px solid ${this.darkModeEnabled ? '#3b3b3b' : '#cbd5e1'};
-        border-radius: 16px;
-        background: ${this.darkModeEnabled ? '#2d2d2d' : '#e2ebf0'};
-        color: ${this.darkModeEnabled ? '#e2e8f0' : '#475569'};
-        cursor: pointer;
-        transition: all 0.2s ease;
-      `;
-
-        const iconDiv = document.createElement('div');
-        iconDiv.style.cssText = `
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
-        background: ${this.darkModeEnabled ? '#374151' : '#c3dafe'};
-        color: ${this.darkModeEnabled ? '#60a5fa' : '#3b82f6'};
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      `;
-        iconDiv.innerHTML = icon;
-
-        const label = document.createElement('span');
-        label.textContent = (this.t && this.t(key)) || key;
-        label.style.fontSize = '14px';
-        label.style.fontWeight = '500';
-
-        btn.appendChild(iconDiv);
-        btn.appendChild(label);
-
-        btn.addEventListener('mouseenter', () => {
-          btn.style.transform = 'translateY(-2px)';
-          btn.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)';
-          btn.style.borderColor = '#3b82f6';
-        });
-
-        btn.addEventListener('mouseleave', () => {
-          btn.style.transform = 'translateY(0)';
-          btn.style.boxShadow = 'none';
-          btn.style.borderColor = this.darkModeEnabled ? '#3b3b3b' : '#cbd5e1';
-        });
-
-        btn.addEventListener('click', (event) => {
-          event.preventDefault();
-          this._collapsePanel();
-          onClick(event);
-        });
-
-        return btn;
-      };
-
-      const row = document.createElement('div');
-      row.style.cssText = 'display: flex; gap: 24px; margin-top: 20px; flex-wrap: wrap; justify-content: center;';
-
-      // Area Screenshot Icon (Crop)
-      const areaIcon = '<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"></path><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"></path></svg>';
-
-      // Long Screenshot Icon (Scroll)
-      const longIcon = '<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><line x1="12" y1="6" x2="12" y2="18"></line><polyline points="8 14 12 18 16 14"></polyline></svg>';
-
-      // Screen Recording Icon (Video Camera)
-      const recordIcon = '<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3" fill="currentColor"></circle></svg>';
-
-      row.appendChild(createOption('screenshot_area', areaIcon, () => this.startAreaScreenshot()));
-      row.appendChild(createOption('screenshot_full', longIcon, () => this.startLongScreenshot()));
-
-      // 录屏按钮（带设置齿轮）
-      const recordBtn = createOption('screen_record', recordIcon, () => this.startScreenRecording());
-      recordBtn.style.position = 'relative';
-
-      // 齿轮设置按钮
-      const gearBtn = document.createElement('div');
-      gearBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
-      gearBtn.style.cssText = `
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
-        background: ${this.darkModeEnabled ? '#374151' : '#cbd5e1'};
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.15s ease;
-        z-index: 10;
-      `;
-      gearBtn.title = (this.t && this.t('recording_settings')) || '录制设置';
-
-      gearBtn.addEventListener('mouseenter', (e) => {
-        e.stopPropagation();
-        gearBtn.style.background = this.darkModeEnabled ? '#4b5563' : '#94a3b8';
-        gearBtn.style.transform = 'rotate(45deg)';
-      });
-      gearBtn.addEventListener('mouseleave', (e) => {
-        e.stopPropagation();
-        gearBtn.style.background = this.darkModeEnabled ? '#374151' : '#cbd5e1';
-        gearBtn.style.transform = 'rotate(0deg)';
-      });
-
-      gearBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        console.log('Gear button clicked');
-        this._showRecordingSettings(gearBtn);
-      });
-
-      recordBtn.appendChild(gearBtn);
-      row.appendChild(recordBtn);
-
-      container.appendChild(row);
-    }
+    // Method replaced by inline HTML template structure inside _renderPanel
 
     _getScopedStorage() {
       return window.__dev1TabScopedStorage || null;
@@ -1481,6 +1687,10 @@
     }
 
     _removeMdSettingsPanel() {
+      if (this._mdSaveTimer) {
+        clearTimeout(this._mdSaveTimer);
+        this._mdSaveTimer = null;
+      }
       const settings = this._getMdSettingsPanel();
       if (settings) {
         if (typeof settings._closeHelpPopover === 'function') {
@@ -1494,6 +1704,122 @@
       }
       this._removeMarkdownSourceHighlight();
       this._mdSettingsAnchor = null;
+      this._mdTextarea = null;
+      this._mdNotesArea = null;
+      this._mdArticleArea = null;
+    }
+
+    _setupUrlChangeListener() {
+      if (this._urlChangeListener) return;
+      this._urlChangeListener = async () => {
+        const newUrl = String(location.href || '').trim();
+        if (this.config && this.config.url && this.config.url !== newUrl) {
+          // 1. 如果面板处于打开状态，清除 pending saveTimer 并立即保存旧页面数据
+          if (this._getMdSettingsPanel() && this._mdTextarea && this._mdNotesArea && this._mdArticleArea) {
+            if (this._mdSaveTimer) {
+              clearTimeout(this._mdSaveTimer);
+              this._mdSaveTimer = null;
+            }
+            const oldUrl = this.config.url;
+            const tabId = this.config.existingTabId;
+            const scoped = this._getScopedStorage();
+            if (scoped && tabId != null) {
+              try {
+                await scoped.setScoped(tabId, 'md_content', oldUrl, this._mdTextarea.value);
+                await scoped.setScoped(tabId, 'md_notes', oldUrl, this._mdNotesArea.value);
+                await scoped.setScoped(tabId, 'md_article', oldUrl, this._mdArticleArea.value);
+              } catch (e) { console.error(e); }
+            }
+          }
+
+          // 2. 更新 config 的 URL 为新 URL
+          this.config.url = newUrl;
+
+          // 3. 如果面板处于打开状态，从 scoped 存储加载新页面数据，并触发提取新文章正文（如果新页面没有缓存数据）
+          if (this._getMdSettingsPanel() && this._mdTextarea && this._mdNotesArea && this._mdArticleArea) {
+            const tabId = this.config.existingTabId;
+            const scoped = this._getScopedStorage();
+            let newContent = null;
+            let newNotes = '';
+            let newArticle = '';
+            let metadata = null;
+            if (scoped && tabId != null) {
+              try {
+                newContent = await scoped.getScoped(tabId, 'md_content', newUrl);
+                const storedNotes = await scoped.getScoped(tabId, 'md_notes', newUrl);
+                if (storedNotes != null) newNotes = storedNotes;
+                const storedArticle = await scoped.getScoped(tabId, 'md_article', newUrl);
+                if (storedArticle != null) newArticle = storedArticle;
+              } catch (e) { console.error(e); }
+            }
+
+            // 如果新页面没有缓存正文，则抓取新页面的正文
+            if (!newArticle) {
+              try {
+                const response = await sendRuntimeMessage({ action: 'dev1SnapshotHelperGetArticleContent' }, 30000);
+                if (response && response.success) {
+                  newArticle = response.article;
+                  metadata = response.metadata;
+                } else {
+                  newArticle = '[正文提取失败]';
+                }
+              } catch (e) {
+                newArticle = '[正文提取超时或出错]';
+              }
+            }
+
+            if (newContent == null) {
+              const defaultTemplate = `---\ntitle: "{{title}}"\nsource: "{{url}}"\nauthor: "{{author}}"\npublished: "{{published}}"\ncreated: "{{created}}"\ndescription: "{{description}}"\ntags:\n  - clippings\n---\n\n{{content}}`;
+              const titleVal = (metadata && metadata.title) || this.config.title || document.title || '';
+              const urlVal = newUrl;
+              const authorVal = (metadata && metadata.author) || '';
+              const publishedVal = (metadata && metadata.published) || '';
+              const createdVal = new Date().toISOString().split('T')[0];
+              const descVal = (metadata && metadata.description) || '';
+
+              newContent = defaultTemplate
+                .replace(/\{\{title\}\}/g, titleVal)
+                .replace(/\{\{url\}\}/g, urlVal)
+                .replace(/\{\{author\}\}/g, authorVal)
+                .replace(/\{\{published\}\}/g, publishedVal)
+                .replace(/\{\{created\}\}/g, createdVal)
+                .replace(/\{\{description\}\}/g, descVal);
+            }
+
+            // 更新文本区域的内容
+            this._mdTextarea.value = newContent || '';
+            this._mdNotesArea.value = newNotes || '';
+            this._mdArticleArea.value = newArticle || '';
+
+            // 重置选区记忆
+            this._mdTextarea.selectionStart = this._mdTextarea.selectionEnd = 0;
+            if (this._mdTextarea.__dev1MdLastSelection) {
+              this._mdTextarea.__dev1MdLastSelection = { start: 0, end: 0 };
+            }
+            this._mdNotesArea.selectionStart = this._mdNotesArea.selectionEnd = 0;
+            if (this._mdNotesArea.__dev1MdLastSelection) {
+              this._mdNotesArea.__dev1MdLastSelection = { start: 0, end: 0 };
+            }
+            this._mdArticleArea.selectionStart = this._mdArticleArea.selectionEnd = 0;
+            if (this._mdArticleArea.__dev1MdLastSelection) {
+              this._mdArticleArea.__dev1MdLastSelection = { start: 0, end: 0 };
+            }
+          }
+        }
+      };
+
+      window.addEventListener('popstate', this._urlChangeListener);
+      window.addEventListener('hashchange', this._urlChangeListener);
+      window.addEventListener('dev1SnapshotHighlighterUrlChange', this._urlChangeListener);
+    }
+
+    _removeUrlChangeListener() {
+      if (this._urlChangeListener) {
+        window.removeEventListener('popstate', this._urlChangeListener);
+        window.removeEventListener('hashchange', this._urlChangeListener);
+        window.removeEventListener('dev1SnapshotHighlighterUrlChange', this._urlChangeListener);
+        this._urlChangeListener = null;
+      }
     }
 
     _isMarkdownSourceCandidateVisible(element, options = {}) {
@@ -3858,6 +4184,7 @@
       `;
       textarea.value = initialContent;
       this._bindMarkdownTextareaSelectionMemory(textarea);
+      this._mdTextarea = textarea;
 
       // 2. 你的笔记
       const notesLabel = document.createElement('div');
@@ -3883,6 +4210,7 @@
       `;
       notesArea.value = initialNotes;
       notesArea.placeholder = '在这里写你的笔记、想法、摘要…';
+      this._mdNotesArea = notesArea;
 
       tab1Content.appendChild(templateLabel);
       tab1Content.appendChild(textarea);
@@ -3917,6 +4245,7 @@
       articleArea.value = initialArticle;
       articleArea.placeholder = '提取的正文内容...';
       this._bindMarkdownTextareaSelectionMemory(articleArea);
+      this._mdArticleArea = articleArea;
 
       tab2Content.appendChild(articleLabel);
       tab2Content.appendChild(articleArea);
@@ -4081,18 +4410,18 @@
       const saveContent = async () => {
         try {
           if (scoped && tabId != null) {
-            await scoped.setScoped(tabId, 'md_content', currentUrl, textarea.value);
-            await scoped.setScoped(tabId, 'md_notes', currentUrl, notesArea.value);
-            await scoped.setScoped(tabId, 'md_article', currentUrl, articleArea.value);
+            const activeUrl = this._getCurrentUrl();
+            await scoped.setScoped(tabId, 'md_content', activeUrl, textarea.value);
+            await scoped.setScoped(tabId, 'md_notes', activeUrl, notesArea.value);
+            await scoped.setScoped(tabId, 'md_article', activeUrl, articleArea.value);
           }
         } catch(e) { console.error(e); }
       };
 
       // Auto-save event listeners with 300ms debounce
-      let saveTimer = null;
       const autoSave = () => {
-        if (saveTimer) clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => {
+        if (this._mdSaveTimer) clearTimeout(this._mdSaveTimer);
+        this._mdSaveTimer = setTimeout(() => {
           saveContent().catch(console.error);
         }, 300);
       };
@@ -4344,6 +4673,14 @@
     }
 
     startAreaScreenshot(options = {}) {
+      try {
+        if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+            window.__dev1SnapshotHighlighter._instance && 
+            typeof window.__dev1SnapshotHighlighter._instance._suppressCursor === 'function') {
+          window.__dev1SnapshotHighlighter._instance._suppressCursor('screenshot');
+        }
+      } catch (_) {}
+
       // 截图开始前缓存当前主题，避免截图期间主题检测被覆盖层干扰
       this._cachedTheme = this.detectPageTheme();
       this._isScreenshotting = true;
@@ -4420,6 +4757,13 @@
         this._removeZoomInvariantContainer();
 
         if (rect.width < 5 || rect.height < 5) {
+          try {
+            if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+                window.__dev1SnapshotHighlighter._instance && 
+                typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+              window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+            }
+          } catch (_) {}
           // 选择太小，清除截图状态
           this._isScreenshotting = false;
           return;
@@ -4431,6 +4775,14 @@
           options.onSelect(rect);
           return;
         }
+
+        try {
+          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+              window.__dev1SnapshotHighlighter._instance && 
+              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+          }
+        } catch (_) {}
 
         // Default: Capture immediate area
         try {
@@ -4463,6 +4815,14 @@
         document.removeEventListener('contextmenu', onContextMenu);
         this.activeSessionCleanup = null;
         this._isScreenshotting = false;
+
+        try {
+          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+              window.__dev1SnapshotHighlighter._instance && 
+              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+          }
+        } catch (_) {}
       };
 
       this.activeSessionCleanup = cancelSelection;
@@ -4496,6 +4856,14 @@
 
     // 屏幕录制功能 - 先选择区域再录制
     startScreenRecording() {
+      try {
+        if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+            window.__dev1SnapshotHighlighter._instance && 
+            typeof window.__dev1SnapshotHighlighter._instance._suppressCursor === 'function') {
+          window.__dev1SnapshotHighlighter._instance._suppressCursor('screenshot');
+        }
+      } catch (_) {}
+
       // Close settings panel
       this._removeRecordingSettingsPanel();
 
@@ -4582,6 +4950,14 @@
         document.removeEventListener('contextmenu', onContextMenu);
         this._removeZoomInvariantContainer();
 
+        try {
+          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+              window.__dev1SnapshotHighlighter._instance && 
+              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+          }
+        } catch (_) {}
+
         if (rect.width < 50 || rect.height < 50) {
           this._isScreenshotting = false;
           return;
@@ -4603,6 +4979,14 @@
         document.removeEventListener('contextmenu', onContextMenu);
         this.activeSessionCleanup = null;
         this._isScreenshotting = false;
+
+        try {
+          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+              window.__dev1SnapshotHighlighter._instance && 
+              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+          }
+        } catch (_) {}
       };
 
       this.activeSessionCleanup = cancelSelection;
@@ -5347,6 +5731,14 @@
     }
 
     async _startManualScrollSession(rect) {
+      try {
+        if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+            window.__dev1SnapshotHighlighter._instance && 
+            typeof window.__dev1SnapshotHighlighter._instance._suppressCursor === 'function') {
+          window.__dev1SnapshotHighlighter._instance._suppressCursor('screenshot');
+        }
+      } catch (_) {}
+
       // Color constants for status indication
       const COLORS = {
         IDLE: '#9ca3af',      // Gray - default/ready state
@@ -6358,6 +6750,14 @@
         if (scrollTimer) clearTimeout(scrollTimer);
         // 长截图结束，清除截图状态
         this._isScreenshotting = false;
+
+        try {
+          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+              window.__dev1SnapshotHighlighter._instance && 
+              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+          }
+        } catch (_) {}
       };
 
       this.activeSessionCleanup = cleanup;

@@ -732,13 +732,13 @@
       this.currentToolName = this.getToolNameForId(this.currentTool, toolbar.toolName || '');
       this._colorPickerViewMode = toolbar.colorPickerViewMode === 'list' ? 'list' : 'grid';
       this._toolPickerViewMode = toolbar.toolPickerViewMode === 'list' ? 'list' : 'grid';
-      this.presentationPenStyle = toolbar.presentationPenStyle || 'solid';
-      let loadedDelay = toolbar.presentationPenDisappearDelay !== undefined ? Number(toolbar.presentationPenDisappearDelay) : 2000;
+      this.presentationPenStyle = toolbar.presentationPenStyle || 'dashed';
+      let loadedDelay = toolbar.presentationPenDisappearDelay !== undefined ? Number(toolbar.presentationPenDisappearDelay) : 200;
       let immediately = toolbar.presentationPenDisappearImmediately !== undefined 
         ? !!toolbar.presentationPenDisappearImmediately 
         : (loadedDelay === 0);
       if (loadedDelay === 0) {
-        loadedDelay = 2000;
+        loadedDelay = 200;
       } else if (loadedDelay > 0 && loadedDelay <= 10) {
         loadedDelay = loadedDelay * 1000;
       }
@@ -750,7 +750,12 @@
         : '';
       this.recentColors = this.normalizeRecentColors(state.recentColors);
       this.recentTools = this.normalizeRecentTools(state.recentTools);
-      this.toolbarUi = this.normalizeToolbarUi(state.toolbarUi);
+      this.toolbarUi = this.normalizeToolbarUi({
+        ...state.toolbarUi,
+        left: null,
+        top: null,
+        userMoved: false
+      });
       return true;
     }
 
@@ -765,8 +770,8 @@
       this.currentToolName = this.t('classicHighlight');
       this.recentColors = [];
       this.recentTools = [];
-      this.presentationPenStyle = 'solid';
-      this.presentationPenDisappearDelay = 2000;
+      this.presentationPenStyle = 'dashed';
+      this.presentationPenDisappearDelay = 200;
       this.presentationPenDisappearImmediately = false;
       this.presentationPenAutoRecognize = true;
       this._rgbPickerLastColor = '';
@@ -792,8 +797,8 @@
           rgbPickerLastColor: this._rgbPickerLastColor || '',
           colorPickerViewMode: this._colorPickerViewMode === 'list' ? 'list' : 'grid',
           toolPickerViewMode: this._toolPickerViewMode === 'list' ? 'list' : 'grid',
-          presentationPenStyle: this.presentationPenStyle || 'solid',
-          presentationPenDisappearDelay: this.presentationPenDisappearDelay !== undefined ? this.presentationPenDisappearDelay : 2000,
+          presentationPenStyle: this.presentationPenStyle || 'dashed',
+          presentationPenDisappearDelay: this.presentationPenDisappearDelay !== undefined ? this.presentationPenDisappearDelay : 200,
           presentationPenDisappearImmediately: this.presentationPenDisappearImmediately !== undefined ? this.presentationPenDisappearImmediately : false,
           presentationPenAutoRecognize: this.presentationPenAutoRecognize !== undefined ? this.presentationPenAutoRecognize : true
         },
@@ -1173,7 +1178,14 @@
     closeTransientPanelByKey(key) {
       const el = this[key];
       if (el) this.untrackPanelPosition(el);
-      if (el && el.parentNode) el.remove();
+      if (el && el.parentNode) {
+        el.dataset.open = 'false';
+        el.style.pointerEvents = 'none';
+        const targetEl = el;
+        setTimeout(() => {
+          try { targetEl.remove(); } catch (_) {}
+        }, 150);
+      }
       this[key] = null;
       this.releaseCursorForPanelKey(key);
     }
@@ -1272,27 +1284,37 @@
       const toolbarWidth = Math.max(160, Number(size.width) || 316);
       const toolbarHeight = Math.max(34, Number(size.height) || 64);
       const anchorCenterX = anchorRect.left + anchorRect.width / 2;
-      const anchorCenterY = anchorRect.top + anchorRect.height / 2;
-      const alignRight = anchorCenterX > window.innerWidth / 2;
-      const preferAbove = anchorCenterY > window.innerHeight / 2;
-      let left = alignRight ? anchorRect.right - toolbarWidth : anchorRect.left;
-      let top = preferAbove ? anchorRect.top - toolbarHeight - gap : anchorRect.bottom + gap;
-      if (top < margin && preferAbove) top = anchorRect.bottom + gap;
-      if (top + toolbarHeight > window.innerHeight - margin && !preferAbove) top = anchorRect.top - toolbarHeight - gap;
+      const alignLeft = anchorCenterX > window.innerWidth / 2;
+      let left = alignLeft ? anchorRect.left - toolbarWidth - gap : anchorRect.right + gap;
+      let top = anchorRect.top + (anchorRect.height / 2) - (toolbarHeight / 2);
       return this.clampToolbarPointForSize(left, top, { width: toolbarWidth, height: toolbarHeight }, margin);
     }
 
     setToolbarFixedPositionOnElement(toolbar, left, top) {
       if (!toolbar) return;
       toolbar.style.setProperty('position', 'fixed', 'important');
-      toolbar.style.setProperty('left', `${left}px`, 'important');
-      toolbar.style.setProperty('top', `${top}px`, 'important');
-      toolbar.style.setProperty('right', 'auto', 'important');
-      toolbar.style.setProperty('bottom', 'auto', 'important');
-      toolbar.style.setProperty('transform', 'none', 'important');
+      const anchorRect = this.getConfiguredAnchorRect();
+      const anchorCenterX = anchorRect ? (anchorRect.left + anchorRect.width / 2) : window.innerWidth;
+      const useRightBottom = anchorCenterX > window.innerWidth / 2;
+      const toolbarWidth = Math.max(160, toolbar.offsetWidth || toolbar.getBoundingClientRect().width || 320);
+      const toolbarHeight = Math.max(34, toolbar.offsetHeight || toolbar.getBoundingClientRect().height || 64);
+      if (useRightBottom) {
+        const right = window.innerWidth - left - toolbarWidth;
+        const bottom = window.innerHeight - top - toolbarHeight;
+        toolbar.style.setProperty('right', `${right}px`, 'important');
+        toolbar.style.setProperty('bottom', `${bottom}px`, 'important');
+        toolbar.style.setProperty('left', 'auto', 'important');
+        toolbar.style.setProperty('top', 'auto', 'important');
+      } else {
+        toolbar.style.setProperty('left', `${left}px`, 'important');
+        toolbar.style.setProperty('top', `${top}px`, 'important');
+        toolbar.style.setProperty('right', 'auto', 'important');
+        toolbar.style.setProperty('bottom', 'auto', 'important');
+      }
+      toolbar.style.setProperty('transform', 'none');
       toolbar.style.setProperty('display', 'flex', 'important');
-      toolbar.style.setProperty('opacity', '1', 'important');
-      toolbar.style.setProperty('pointer-events', 'auto', 'important');
+      toolbar.style.setProperty('opacity', '1');
+      toolbar.style.setProperty('pointer-events', 'auto');
     }
 
     setToolbarDockPositionOnElement(toolbar, position) {
@@ -1301,32 +1323,32 @@
       const center = this.getDockAlongCenter(position);
       toolbar.style.setProperty('position', 'fixed', 'important');
       toolbar.style.setProperty('display', 'flex', 'important');
-      toolbar.style.setProperty('opacity', '1', 'important');
-      toolbar.style.setProperty('pointer-events', 'auto', 'important');
+      toolbar.style.setProperty('opacity', '1');
+      toolbar.style.setProperty('pointer-events', 'auto');
       if (position === 'left') {
         toolbar.style.setProperty('left', `${offset}px`, 'important');
         toolbar.style.setProperty('right', 'auto', 'important');
         toolbar.style.setProperty('top', `${Math.max(offset, Math.min(window.innerHeight - offset, center))}px`, 'important');
         toolbar.style.setProperty('bottom', 'auto', 'important');
-        toolbar.style.setProperty('transform', 'translateY(-50%)', 'important');
+        toolbar.style.setProperty('transform', 'translateY(-50%)');
       } else if (position === 'right') {
         toolbar.style.setProperty('left', 'auto', 'important');
         toolbar.style.setProperty('right', `${offset}px`, 'important');
         toolbar.style.setProperty('top', `${Math.max(offset, Math.min(window.innerHeight - offset, center))}px`, 'important');
         toolbar.style.setProperty('bottom', 'auto', 'important');
-        toolbar.style.setProperty('transform', 'translateY(-50%)', 'important');
+        toolbar.style.setProperty('transform', 'translateY(-50%)');
       } else if (position === 'top') {
         toolbar.style.setProperty('left', `${Math.max(offset, Math.min(window.innerWidth - offset, center))}px`, 'important');
         toolbar.style.setProperty('right', 'auto', 'important');
         toolbar.style.setProperty('top', `${offset}px`, 'important');
         toolbar.style.setProperty('bottom', 'auto', 'important');
-        toolbar.style.setProperty('transform', 'translateX(-50%)', 'important');
+        toolbar.style.setProperty('transform', 'translateX(-50%)');
       } else {
         toolbar.style.setProperty('left', `${Math.max(offset, Math.min(window.innerWidth - offset, center))}px`, 'important');
         toolbar.style.setProperty('right', 'auto', 'important');
         toolbar.style.setProperty('top', 'auto', 'important');
         toolbar.style.setProperty('bottom', `${offset}px`, 'important');
-        toolbar.style.setProperty('transform', 'translateX(-50%)', 'important');
+        toolbar.style.setProperty('transform', 'translateX(-50%)');
       }
     }
 
@@ -1334,7 +1356,29 @@
       if (!toolbar) return;
       this.toolbarUi = this.normalizeToolbarUi(this.toolbarUi);
       toolbar.style.setProperty('transition', 'none', 'important');
+      
+      const state = this.getToolbarDockState();
+      if (state.position && state.position !== 'floating') {
+        this.applyToolbarOrientation(state.position);
+        this.setToolbarDockPositionOnElement(toolbar, state.position);
+        if (state.collapsed) {
+          toolbar.dataset.open = 'false';
+          toolbar.dataset.dockPosition = state.position;
+          const toggle = this.createDockToggle();
+          toggle.dataset.open = 'true';
+          toggle.dataset.dockPosition = state.position;
+          this.positionDockToggle(state.position);
+        } else {
+          toolbar.dataset.open = 'true';
+          toolbar.dataset.dockPosition = state.position;
+          this.hideDockToggle();
+        }
+        return;
+      }
+      
       this.applyFloatingToolbarLayout();
+      toolbar.dataset.open = 'true';
+      toolbar.dataset.dockPosition = 'floating';
       const estimatedSize = this.getEstimatedToolbarSize('floating');
       const anchorRect = this.getConfiguredAnchorRect();
       if (anchorRect && !this.toolbarUi.userMoved) {
@@ -1359,16 +1403,29 @@
       if (!toolbar) return;
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (toolbar && toolbar.isConnected) toolbar.style.removeProperty('transition');
+          if (toolbar && toolbar.isConnected) {
+            toolbar.style.removeProperty('transition');
+            toolbar.removeAttribute('data-entering');
+          }
         });
       });
     }
 
     createPermanentToolbar() {
       if (this.toolbar && document.body.contains(this.toolbar)) return this.toolbar;
+      
+      let skipEnteringAnimation = false;
+      try {
+        const helperHost = document.querySelector('#dev1-snapshot-helper-host');
+        const launchPanel = helperHost && helperHost.shadowRoot && helperHost.shadowRoot.querySelector('.dev1-highlighter-launch-panel');
+        if (launchPanel && launchPanel.getAttribute('data-show') === 'true') {
+          skipEnteringAnimation = true;
+        }
+      } catch (_) {}
+
       const toolbar = document.createElement('div');
       toolbar.id = TOOLBAR_ID;
-      toolbar.className = 'permanent-toolbar';
+      toolbar.className = 'permanent-toolbar no-transition';
       toolbar.dataset.dev1SnapshotHighlighterUi = 'true';
       this.applyPickerTheme(toolbar);
       const dragHandle = document.createElement('div');
@@ -1393,19 +1450,38 @@
       toolbar.appendChild(backBtn);
       toolbar.appendChild(dragHandle);
       this.toolbar = toolbar;
+      toolbar.dataset.open = 'true';
+      this.createDockToggle();
+      if (!skipEnteringAnimation) {
+        toolbar.dataset.entering = 'true';
+      }
       this.applyInitialToolbarPlacement(toolbar);
       document.body.appendChild(toolbar);
       this.applyToolbarPosition();
+      
+      // Force initial coordinate positioning instantly before enabling transition
+      toolbar.offsetHeight;
+      toolbar.classList.remove('no-transition');
+      
       this.restoreToolbarInitialTransition(toolbar);
       this.makeToolbarDraggable(toolbar);
       return toolbar;
     }
 
     removeToolbar() {
-      if (this.toolbar && this.toolbar.parentNode) this.toolbar.remove();
-      this.toolbar = null;
+      const toolbar = this.toolbar;
+      if (!toolbar) return;
       this.removeDockToggle();
       this.disableToolbarDockOutsideClickCollapse();
+      if (toolbar.parentNode) {
+        toolbar.dataset.exiting = "true";
+        setTimeout(() => {
+          try {
+            if (toolbar.parentNode) toolbar.remove();
+          } catch (_) {}
+        }, 150);
+      }
+      this.toolbar = null;
     }
 
     async returnToSnapshotHelperPanel() {
@@ -1426,9 +1502,21 @@
       if (!this.toolbar) return;
       this.toolbarUi = this.normalizeToolbarUi(this.toolbarUi);
 
+      const state = this.getToolbarDockState();
+      if (state.position && state.position !== 'floating') {
+        if (state.collapsed) {
+          this.collapseToolbarToDock(state.position, { skipSave: true });
+        } else {
+          this.expandToolbarFromDock({ position: state.position, skipSave: true });
+        }
+        return;
+      }
+
       this.hideDockToggle();
       this.disableToolbarDockOutsideClickCollapse();
       this.applyFloatingToolbarLayout();
+      this.toolbar.dataset.open = 'true';
+      this.toolbar.dataset.dockPosition = 'floating';
       const anchorRect = this.getConfiguredAnchorRect();
       if (anchorRect && !this.toolbarUi.userMoved) {
         const position = this.calculateToolbarPositionNearAnchor(anchorRect, this.toolbar);
@@ -1441,8 +1529,8 @@
       const left = Number(this.toolbarUi.left);
       const top = Number(this.toolbarUi.top);
       if (Number.isFinite(left) && Number.isFinite(top)) {
-        const toolbarWidth = Math.max(160, this.toolbar.offsetWidth || this.toolbar.getBoundingClientRect().width || 220);
-        const toolbarHeight = Math.max(34, this.toolbar.offsetHeight || this.toolbar.getBoundingClientRect().height || 34);
+        const toolbarWidth = Math.max(160, this.toolbar.offsetWidth || this.toolbar.getBoundingClientRect().width || 320);
+        const toolbarHeight = Math.max(34, this.toolbar.offsetHeight || this.toolbar.getBoundingClientRect().height || 64);
         this.setToolbarFixedPosition(
           Math.max(8, Math.min(window.innerWidth - toolbarWidth - 8, left)),
           Math.max(8, Math.min(window.innerHeight - toolbarHeight - 8, top))
@@ -1462,53 +1550,71 @@
     setToolbarFixedPosition(left, top) {
       if (!this.toolbar) return;
       this.toolbar.style.setProperty('position', 'fixed', 'important');
-      this.toolbar.style.setProperty('left', `${left}px`, 'important');
-      this.toolbar.style.setProperty('top', `${top}px`, 'important');
-      this.toolbar.style.setProperty('right', 'auto', 'important');
-      this.toolbar.style.setProperty('bottom', 'auto', 'important');
-      this.toolbar.style.setProperty('transform', 'none', 'important');
+      const anchorRect = this.getConfiguredAnchorRect();
+      const anchorCenterX = anchorRect ? (anchorRect.left + anchorRect.width / 2) : window.innerWidth;
+      const useRightBottom = anchorCenterX > window.innerWidth / 2;
+      const toolbarWidth = Math.max(160, this.toolbar.offsetWidth || this.toolbar.getBoundingClientRect().width || 320);
+      const toolbarHeight = Math.max(34, this.toolbar.offsetHeight || this.toolbar.getBoundingClientRect().height || 64);
+      if (useRightBottom) {
+        const right = window.innerWidth - left - toolbarWidth;
+        const bottom = window.innerHeight - top - toolbarHeight;
+        this.toolbar.style.setProperty('right', `${right}px`, 'important');
+        this.toolbar.style.setProperty('bottom', `${bottom}px`, 'important');
+        this.toolbar.style.setProperty('left', 'auto', 'important');
+        this.toolbar.style.setProperty('top', 'auto', 'important');
+      } else {
+        this.toolbar.style.setProperty('left', `${left}px`, 'important');
+        this.toolbar.style.setProperty('top', `${top}px`, 'important');
+        this.toolbar.style.setProperty('right', 'auto', 'important');
+        this.toolbar.style.setProperty('bottom', 'auto', 'important');
+      }
+      this.toolbar.style.setProperty('transform', 'none');
       this.toolbar.style.setProperty('display', 'flex', 'important');
-      this.toolbar.style.setProperty('opacity', '1', 'important');
-      this.toolbar.style.setProperty('pointer-events', 'auto', 'important');
+      this.toolbar.style.setProperty('opacity', '1');
+      this.toolbar.style.setProperty('pointer-events', 'auto');
     }
 
     getConfiguredAnchorRect() {
       const rect = this.config && this.config.highlighterAnchorRect;
-      if (!rect || typeof rect !== 'object') return null;
+      const fallback = {
+        left: window.innerWidth - 18 - 54,
+        top: window.innerHeight - 18 - 54,
+        right: window.innerWidth - 18,
+        bottom: window.innerHeight - 18,
+        width: 54,
+        height: 54
+      };
+      if (!rect || typeof rect !== 'object') return fallback;
       const left = Number(rect.left);
       const top = Number(rect.top);
       const right = Number(rect.right);
       const bottom = Number(rect.bottom);
       const width = Number(rect.width);
       const height = Number(rect.height);
-      if (![left, top, right, bottom, width, height].every(Number.isFinite)) return null;
-      if (width <= 0 || height <= 0) return null;
+      if (![left, top, right, bottom, width, height].every(Number.isFinite)) return fallback;
+      if (width <= 0 || height <= 0) return fallback;
       return { left, top, right, bottom, width, height };
     }
 
     calculateToolbarPositionNearAnchor(anchorRect, toolbar) {
       const margin = 8;
       const gap = 8;
-      const toolbarWidth = Math.max(160, toolbar.offsetWidth || toolbar.getBoundingClientRect().width || 220);
-      const toolbarHeight = Math.max(34, toolbar.offsetHeight || toolbar.getBoundingClientRect().height || 34);
+      const toolbarWidth = Math.max(160, toolbar.offsetWidth || toolbar.getBoundingClientRect().width || 320);
+      const toolbarHeight = Math.max(34, toolbar.offsetHeight || toolbar.getBoundingClientRect().height || 64);
       const anchorCenterX = anchorRect.left + anchorRect.width / 2;
-      const anchorCenterY = anchorRect.top + anchorRect.height / 2;
-      const alignRight = anchorCenterX > window.innerWidth / 2;
-      const preferAbove = anchorCenterY > window.innerHeight / 2;
-      let left = alignRight ? anchorRect.right - toolbarWidth : anchorRect.left;
-      let top = preferAbove ? anchorRect.top - toolbarHeight - gap : anchorRect.bottom + gap;
-      if (top < margin && preferAbove) top = anchorRect.bottom + gap;
-      if (top + toolbarHeight > window.innerHeight - margin && !preferAbove) top = anchorRect.top - toolbarHeight - gap;
+      const alignLeft = anchorCenterX > window.innerWidth / 2;
+      let left = alignLeft ? anchorRect.left - toolbarWidth - gap : anchorRect.right + gap;
+      let top = anchorRect.top + (anchorRect.height / 2) - (toolbarHeight / 2);
       left = Math.max(margin, Math.min(window.innerWidth - toolbarWidth - margin, left));
       top = Math.max(margin, Math.min(window.innerHeight - toolbarHeight - margin, top));
       return { left, top };
     }
 
     getToolbarSize(toolbar = this.toolbar) {
-      if (!toolbar) return { width: 220, height: 64 };
+      if (!toolbar) return { width: 320, height: 64 };
       const rect = toolbar.getBoundingClientRect();
       return {
-        width: Math.max(80, toolbar.offsetWidth || rect.width || 220),
+        width: Math.max(80, toolbar.offsetWidth || rect.width || 320),
         height: Math.max(40, toolbar.offsetHeight || rect.height || 64)
       };
     }
@@ -1580,32 +1686,32 @@
       const center = this.getDockAlongCenter(position);
       this.toolbar.style.setProperty('position', 'fixed', 'important');
       this.toolbar.style.setProperty('display', 'flex', 'important');
-      this.toolbar.style.setProperty('opacity', '1', 'important');
-      this.toolbar.style.setProperty('pointer-events', 'auto', 'important');
+      this.toolbar.style.setProperty('opacity', '1');
+      this.toolbar.style.setProperty('pointer-events', 'auto');
       if (position === 'left') {
         this.toolbar.style.setProperty('left', `${offset}px`, 'important');
         this.toolbar.style.setProperty('right', 'auto', 'important');
         this.toolbar.style.setProperty('top', `${Math.max(offset, Math.min(window.innerHeight - offset, center))}px`, 'important');
         this.toolbar.style.setProperty('bottom', 'auto', 'important');
-        this.toolbar.style.setProperty('transform', 'translateY(-50%)', 'important');
+        this.toolbar.style.setProperty('transform', 'translateY(-50%)');
       } else if (position === 'right') {
         this.toolbar.style.setProperty('left', 'auto', 'important');
         this.toolbar.style.setProperty('right', `${offset}px`, 'important');
         this.toolbar.style.setProperty('top', `${Math.max(offset, Math.min(window.innerHeight - offset, center))}px`, 'important');
         this.toolbar.style.setProperty('bottom', 'auto', 'important');
-        this.toolbar.style.setProperty('transform', 'translateY(-50%)', 'important');
+        this.toolbar.style.setProperty('transform', 'translateY(-50%)');
       } else if (position === 'top') {
         this.toolbar.style.setProperty('left', `${Math.max(offset, Math.min(window.innerWidth - offset, center))}px`, 'important');
         this.toolbar.style.setProperty('right', 'auto', 'important');
         this.toolbar.style.setProperty('top', `${offset}px`, 'important');
         this.toolbar.style.setProperty('bottom', 'auto', 'important');
-        this.toolbar.style.setProperty('transform', 'translateX(-50%)', 'important');
+        this.toolbar.style.setProperty('transform', 'translateX(-50%)');
       } else {
         this.toolbar.style.setProperty('left', `${Math.max(offset, Math.min(window.innerWidth - offset, center))}px`, 'important');
         this.toolbar.style.setProperty('right', 'auto', 'important');
         this.toolbar.style.setProperty('top', 'auto', 'important');
         this.toolbar.style.setProperty('bottom', `${offset}px`, 'important');
-        this.toolbar.style.setProperty('transform', 'translateX(-50%)', 'important');
+        this.toolbar.style.setProperty('transform', 'translateX(-50%)');
       }
     }
 
@@ -1690,14 +1796,47 @@
           try { delete this.config.highlighterAnchorRect; } catch (_) { this.config.highlighterAnchorRect = null; }
           const finalLeft = Number.isFinite(drag.nextLeft) ? drag.nextLeft : drag.originLeft;
           const finalTop = Number.isFinite(drag.nextTop) ? drag.nextTop : drag.originTop;
-          this.applyFloatingToolbarLayout();
-          this.setToolbarFixedPosition(finalLeft, finalTop);
-          this.toolbarUi.left = finalLeft;
-          this.toolbarUi.top = finalTop;
-          this.toolbarUi.userMoved = true;
-          this.setToolbarDockState('floating', false);
-          this.hideDockToggle();
-          this.disableToolbarDockOutsideClickCollapse();
+          
+          const rect = toolbar.getBoundingClientRect();
+          const dockPos = this.findToolbarDockPosition(rect);
+          
+          // Add no-transition class to ensure snapping coordinate adjustments are instant
+          toolbar.classList.add('no-transition');
+          if (this.toolbarDockToggle) this.toolbarDockToggle.classList.add('no-transition');
+          
+          if (dockPos) {
+            const dockAlong = this.buildDockAlong(dockPos, rect);
+            this.setToolbarDockState(dockPos, false, dockAlong);
+            this.applyToolbarOrientation(dockPos);
+            this.setToolbarDockPosition(dockPos);
+            this.hideDockToggle();
+            
+            toolbar.offsetHeight; // trigger reflow
+            toolbar.classList.remove('no-transition');
+            if (this.toolbarDockToggle) this.toolbarDockToggle.classList.remove('no-transition');
+            
+            toolbar.dataset.dockPosition = dockPos;
+            toolbar.dataset.open = 'true';
+            
+            this.enableToolbarDockOutsideClickCollapse();
+          } else {
+            this.applyFloatingToolbarLayout();
+            this.setToolbarFixedPosition(finalLeft, finalTop);
+            this.toolbarUi.left = finalLeft;
+            this.toolbarUi.top = finalTop;
+            this.toolbarUi.userMoved = true;
+            this.setToolbarDockState('floating', false);
+            this.hideDockToggle();
+            
+            toolbar.offsetHeight; // trigger reflow
+            toolbar.classList.remove('no-transition');
+            if (this.toolbarDockToggle) this.toolbarDockToggle.classList.remove('no-transition');
+            
+            toolbar.dataset.dockPosition = 'floating';
+            toolbar.dataset.open = 'true';
+            
+            this.disableToolbarDockOutsideClickCollapse();
+          }
           this.repositionTrackedPanels();
           this.requestSave(true);
         } else {
@@ -1743,7 +1882,7 @@
     createDockToggle() {
       if (this.toolbarDockToggle && document.body.contains(this.toolbarDockToggle)) return this.toolbarDockToggle;
       const toggle = document.createElement('div');
-      toggle.className = 'permanent-toolbar-indicator permanent-toolbar-dock-toggle';
+      toggle.className = 'permanent-toolbar-indicator permanent-toolbar-dock-toggle no-transition';
       toggle.dataset.dev1SnapshotHighlighterUi = 'true';
       this.applyPickerTheme(toggle);
       toggle.setAttribute('role', 'button');
@@ -1770,6 +1909,10 @@
       document.body.appendChild(toggle);
       this.toolbarDockToggle = toggle;
       this.updatePermanentToolbarIndicator();
+      
+      toggle.offsetHeight; // force layout
+      toggle.classList.remove('no-transition');
+      
       return toggle;
     }
 
@@ -1792,37 +1935,42 @@
       toggle.dataset.dockPosition = position;
       toggle.classList.toggle('permanent-toolbar-dock-toggle-vertical', position === 'left' || position === 'right');
       toggle.style.setProperty('display', 'inline-flex', 'important');
-      toggle.style.setProperty('opacity', '1', 'important');
-      toggle.style.setProperty('pointer-events', 'auto', 'important');
+      toggle.style.setProperty('opacity', '1');
+      toggle.style.setProperty('pointer-events', 'auto');
       if (position === 'left') {
         toggle.style.setProperty('left', `${offset}px`, 'important');
         toggle.style.setProperty('right', 'auto', 'important');
         toggle.style.setProperty('top', `${Math.max(offset, Math.min(window.innerHeight - offset, center))}px`, 'important');
         toggle.style.setProperty('bottom', 'auto', 'important');
-        toggle.style.setProperty('transform', 'translateY(-50%)', 'important');
+        toggle.style.setProperty('transform', 'translateY(-50%)');
       } else if (position === 'right') {
         toggle.style.setProperty('left', 'auto', 'important');
         toggle.style.setProperty('right', `${offset}px`, 'important');
         toggle.style.setProperty('top', `${Math.max(offset, Math.min(window.innerHeight - offset, center))}px`, 'important');
         toggle.style.setProperty('bottom', 'auto', 'important');
-        toggle.style.setProperty('transform', 'translateY(-50%)', 'important');
+        toggle.style.setProperty('transform', 'translateY(-50%)');
       } else if (position === 'top') {
         toggle.style.setProperty('left', `${Math.max(offset, Math.min(window.innerWidth - offset, center))}px`, 'important');
         toggle.style.setProperty('right', 'auto', 'important');
         toggle.style.setProperty('top', `${offset}px`, 'important');
         toggle.style.setProperty('bottom', 'auto', 'important');
-        toggle.style.setProperty('transform', 'translateX(-50%)', 'important');
+        toggle.style.setProperty('transform', 'translateX(-50%)');
       } else {
         toggle.style.setProperty('left', `${Math.max(offset, Math.min(window.innerWidth - offset, center))}px`, 'important');
         toggle.style.setProperty('right', 'auto', 'important');
         toggle.style.setProperty('top', 'auto', 'important');
         toggle.style.setProperty('bottom', `${offset}px`, 'important');
-        toggle.style.setProperty('transform', 'translateX(-50%)', 'important');
+        toggle.style.setProperty('transform', 'translateX(-50%)');
       }
     }
 
     collapseToolbarToDock(position, options = {}) {
       if (!this.toolbar || !position || position === 'floating') return;
+      
+      // Add no-transition to prevent jumping during positions alignment
+      this.toolbar.classList.add('no-transition');
+      if (this.toolbarDockToggle) this.toolbarDockToggle.classList.add('no-transition');
+      
       const currentRect = this.toolbar.getBoundingClientRect();
       const dockAlong = this.toolbarUi.dockAlong || this.buildDockAlong(position, currentRect);
       this.setToolbarDockState(position, true, dockAlong);
@@ -1830,8 +1978,22 @@
       this.applyToolbarOrientation(position);
       this.setToolbarDockPosition(position);
       this.positionDockToggle(position);
-      this.toolbar.style.setProperty('display', 'none', 'important');
-      this.toolbar.style.setProperty('pointer-events', 'none', 'important');
+      
+      // Trigger reflow to apply coordinate styling without transition
+      this.toolbar.offsetHeight;
+      if (this.toolbarDockToggle) this.toolbarDockToggle.offsetHeight;
+      
+      this.toolbar.classList.remove('no-transition');
+      if (this.toolbarDockToggle) this.toolbarDockToggle.classList.remove('no-transition');
+      
+      // Update datasets to run CSS transitions
+      this.toolbar.dataset.dockPosition = position;
+      this.toolbar.dataset.open = 'false';
+      
+      const toggle = this.createDockToggle();
+      toggle.dataset.dockPosition = position;
+      toggle.dataset.open = 'true';
+
       this.disableToolbarDockOutsideClickCollapse();
       this.updatePermanentToolbarIndicator();
       if (!options.skipSave) this.requestSave(true);
@@ -1842,14 +2004,35 @@
       const fallback = this.getToolbarDockState().position || 'bottom';
       const position = options.position && options.position !== 'floating' ? options.position : fallback;
       if (!position || position === 'floating') return;
+      
+      // Add no-transition to prevent coordinate flying animation
+      this.toolbar.classList.add('no-transition');
+      if (this.toolbarDockToggle) this.toolbarDockToggle.classList.add('no-transition');
+      
       const dockAlong = this.toolbarUi.dockAlong || { side: position, center: this.getDockAlongCenter(position) };
       this.setToolbarDockState(position, false, dockAlong);
       this.applyToolbarOrientation(position);
       this.setToolbarDockPosition(position);
-      this.hideDockToggle();
-      this.toolbar.style.setProperty('display', 'flex', 'important');
-      this.toolbar.style.setProperty('opacity', '1', 'important');
-      this.toolbar.style.setProperty('pointer-events', 'auto', 'important');
+      
+      // Reposition dock toggle so they align correctly
+      this.positionDockToggle(position);
+      
+      // Trigger reflow
+      this.toolbar.offsetHeight;
+      if (this.toolbarDockToggle) this.toolbarDockToggle.offsetHeight;
+      
+      this.toolbar.classList.remove('no-transition');
+      if (this.toolbarDockToggle) this.toolbarDockToggle.classList.remove('no-transition');
+      
+      // Update datasets to run CSS transitions
+      this.toolbar.dataset.dockPosition = position;
+      this.toolbar.dataset.open = 'true';
+      
+      if (this.toolbarDockToggle) {
+        this.toolbarDockToggle.dataset.dockPosition = position;
+        this.toolbarDockToggle.dataset.open = 'false';
+      }
+
       this.enableToolbarDockOutsideClickCollapse();
       this.updatePermanentToolbarIndicator();
       if (!options.skipSave) this.requestSave(true);
@@ -2431,10 +2614,16 @@
     }
 
     createPanel(className, anchor) {
+      try {
+        const cleanClass = className.split(' ')[0];
+        document.querySelectorAll(`.${cleanClass}`).forEach(el => el.remove());
+      } catch (_) {}
+
       const panel = document.createElement('div');
       panel.className = `dev1-snapshot-highlighter-panel ${className}`;
       panel.dataset.dev1SnapshotHighlighterUi = 'true';
       panel.dataset.anchorId = anchor ? (anchor.id || anchor.className || '') : '';
+      panel.dataset.open = 'false';
       return panel;
     }
 
@@ -2599,22 +2788,23 @@
         panel.style.maxHeight = `${nextHeight}px`;
       }
 
-      const panelRect = panel.getBoundingClientRect();
-      let left = rect.left + rect.width / 2 - panelRect.width / 2;
-      let top = shouldOpenBelow ? rect.bottom + gap : rect.top - panelRect.height - gap;
+      const panelWidth = panel.offsetWidth || panel.getBoundingClientRect().width || 320;
+      const panelHeight = panel.offsetHeight || panel.getBoundingClientRect().height || 420;
+      let left = rect.left + rect.width / 2 - panelWidth / 2;
+      let top = shouldOpenBelow ? rect.bottom + gap : rect.top - panelHeight - gap;
       let placement = shouldOpenBelow ? 'bottom' : 'top';
       if (isHorizontalPlacement) {
         const availableLeft = Math.max(0, rect.left - margin - gap);
         const availableRight = Math.max(0, window.innerWidth - rect.right - margin - gap);
         let shouldOpenRight = resolvedSide === 'right';
-        if (shouldOpenRight && availableRight < panelRect.width && availableLeft > availableRight) shouldOpenRight = false;
-        if (!shouldOpenRight && availableLeft < panelRect.width && availableRight > availableLeft) shouldOpenRight = true;
-        left = shouldOpenRight ? rect.right + gap : rect.left - panelRect.width - gap;
-        top = rect.top + rect.height / 2 - panelRect.height / 2;
+        if (shouldOpenRight && availableRight < panelWidth && availableLeft > availableRight) shouldOpenRight = false;
+        if (!shouldOpenRight && availableLeft < panelWidth && availableRight > availableLeft) shouldOpenRight = true;
+        left = shouldOpenRight ? rect.right + gap : rect.left - panelWidth - gap;
+        top = rect.top + rect.height / 2 - panelHeight / 2;
         placement = shouldOpenRight ? 'right' : 'left';
       }
-      left = Math.max(margin, Math.min(window.innerWidth - panelRect.width - margin, left));
-      top = Math.max(margin, Math.min(window.innerHeight - panelRect.height - margin, top));
+      left = Math.max(margin, Math.min(window.innerWidth - panelWidth - margin, left));
+      top = Math.max(margin, Math.min(window.innerHeight - panelHeight - margin, top));
       panel.style.left = `${left}px`;
       panel.style.top = `${top}px`;
       panel.dataset.placement = placement;
@@ -2634,6 +2824,11 @@
       this._panelPositioners.add(positioner);
       this.ensurePanelRepositionEvents();
       positioner();
+      requestAnimationFrame(() => {
+        if (panel.isConnected) {
+          panel.dataset.open = 'true';
+        }
+      });
     }
 
     untrackPanelPosition(panel) {
@@ -4473,10 +4668,8 @@
           this.showToast(this.t('noSelection'));
           return;
         }
-        this.showBatchDeleteConfirmDialog(() => {
-          this.executeBatchDelete();
-          this.exitBatchDeleteMode();
-        });
+        this.executeBatchDelete();
+        this.exitBatchDeleteMode();
       });
       this.batchCleanup = cleanup;
     }
@@ -4519,83 +4712,7 @@
       this.requestSave(true);
     }
 
-    showBatchDeleteConfirmDialog(onConfirm) {
-      this.darkModeEnabled = this.detectPageTheme();
-      const existing = document.getElementById('dev1-snapshot-highlighter-batch-confirm-dialog');
-      if (existing) existing.remove();
-      const count = this.getBatchDeleteSelectionCount();
-      const dialog = document.createElement('div');
-      dialog.id = 'dev1-snapshot-highlighter-batch-confirm-dialog';
-      dialog.dataset.dev1SnapshotHighlighterUi = 'true';
-      dialog.classList.toggle('dark-theme', !!this.darkModeEnabled);
-      dialog.classList.toggle('light-theme', !this.darkModeEnabled);
-      const message = document.createElement('div');
-      message.className = 'dev1-batch-confirm-message';
-      message.textContent = this.t('confirmDeleteItems').replace('{count}', String(count));
-      const row = document.createElement('div');
-      row.className = 'dev1-batch-confirm-actions';
-      const confirm = document.createElement('button');
-      confirm.type = 'button';
-      confirm.className = 'danger';
-      confirm.textContent = this.t('confirm');
-      const cancel = document.createElement('button');
-      cancel.type = 'button';
-      cancel.textContent = this.t('cancel');
-      row.appendChild(confirm);
-      row.appendChild(cancel);
-      dialog.appendChild(message);
-      dialog.appendChild(row);
-      document.body.appendChild(dialog);
-      const positionDialog = () => {
-        const bar = document.getElementById('dev1-snapshot-highlighter-batch-bar');
-        const rect = bar ? bar.getBoundingClientRect() : null;
-        const dialogRect = dialog.getBoundingClientRect();
-        const margin = 12;
-        if (!rect) {
-          dialog.style.left = '50%';
-          dialog.style.bottom = '150px';
-          dialog.style.top = 'auto';
-          dialog.style.transform = 'translateX(-50%)';
-          return;
-        }
-        const centerX = rect.left + rect.width / 2;
-        const left = Math.max(margin, Math.min(window.innerWidth - dialogRect.width - margin, centerX - dialogRect.width / 2));
-        const above = rect.top > window.innerHeight / 2;
-        let top = above ? rect.top - dialogRect.height - 12 : rect.bottom + 12;
-        if (top < margin) top = rect.bottom + 12;
-        if (top + dialogRect.height > window.innerHeight - margin) top = rect.top - dialogRect.height - 12;
-        dialog.style.left = `${left}px`;
-        dialog.style.top = `${Math.max(margin, Math.min(window.innerHeight - dialogRect.height - margin, top))}px`;
-        dialog.style.bottom = 'auto';
-        dialog.style.transform = 'none';
-      };
-      const close = () => {
-        document.removeEventListener('keydown', onKey, true);
-        document.removeEventListener('mousedown', onOutside, true);
-        window.removeEventListener('resize', positionDialog, true);
-        if (dialog.parentNode) dialog.remove();
-      };
-      dialog.__dev1Close = close;
-      const onKey = (event) => {
-        if (event.key === 'Escape') close();
-      };
-      const onOutside = (event) => {
-        if (!dialog.contains(event.target)) close();
-      };
-      confirm.addEventListener('click', (event) => {
-        event.stopPropagation();
-        close();
-        if (typeof onConfirm === 'function') onConfirm();
-      });
-      cancel.addEventListener('click', (event) => {
-        event.stopPropagation();
-        close();
-      });
-      requestAnimationFrame(positionDialog);
-      window.addEventListener('resize', positionDialog, true);
-      document.addEventListener('keydown', onKey, true);
-      setTimeout(() => document.addEventListener('mousedown', onOutside, true), 0);
-    }
+
 
     updateSelectionByStroke(points) {
       if (!Array.isArray(points) || !points.length) return;
@@ -6762,6 +6879,13 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       if (this.currentTool !== 'presentation-pen') return;
       if (!this.visible || this.restoreDisplayOnly) return;
       
+      // Shield drawing if screenshot selection, screen record selection, or long screenshot UI is active
+      if (document.getElementById('screenshot-overlay') || 
+          document.getElementById('screen-record-overlay') || 
+          document.getElementById('screenshot-ui-container')) {
+        return;
+      }
+      
       // Ignore clicks on our UI
       if (this._isPluginUiNode(event)) return;
       
@@ -6816,10 +6940,21 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
     updatePresentationPath() {
       if (!this._presentationCurrentPath || !this._presentationPoints || !this._presentationPoints.length) return;
       const pts = this._presentationPoints;
-      let d = `M ${pts[0].x} ${pts[0].y}`;
-      for (let i = 1; i < pts.length; i++) {
-        d += ` L ${pts[i].x} ${pts[i].y}`;
+      if (pts.length === 1) {
+        this._presentationCurrentPath.setAttribute('d', `M ${pts[0].x} ${pts[0].y} L ${pts[0].x} ${pts[0].y}`);
+        return;
       }
+      if (pts.length === 2) {
+        this._presentationCurrentPath.setAttribute('d', `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`);
+        return;
+      }
+      let d = `M ${pts[0].x} ${pts[0].y}`;
+      for (let i = 1; i < pts.length - 1; i++) {
+        const xc = (pts[i].x + pts[i+1].x) / 2;
+        const yc = (pts[i].y + pts[i+1].y) / 2;
+        d += ` Q ${pts[i].x} ${pts[i].y} ${xc} ${yc}`;
+      }
+      d += ` Q ${pts[pts.length - 2].x} ${pts[pts.length - 2].y} ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`;
       this._presentationCurrentPath.setAttribute('d', d);
     }
 
@@ -7460,6 +7595,16 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
     _ensureCursorVisibleOnWeb() {
       try {
         if (!this.visible || this.restoreDisplayOnly || !this.cursorEnabled || !document.body || this._mdEditModeActive) return;
+        
+        if (document.getElementById('screenshot-overlay') || 
+            document.getElementById('screen-record-overlay') || 
+            document.getElementById('screenshot-ui-container')) {
+          this._suppressCursor('screenshot');
+          return;
+        } else {
+          this._releaseCursor('screenshot');
+        }
+
         if (this._cursorSuppressors.size > 0) return;
         document.body.classList.remove('suppress-cursor');
         if (!document.body.classList.contains('highlighter-cursor')) {
