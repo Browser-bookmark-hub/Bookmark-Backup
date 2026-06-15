@@ -160,8 +160,8 @@
       this.currentUrl = window.location.href;
       this.highlights = new Map();
       this.editFragments = [];
-      this.currentColor = '#FFEB3B';
-      this.currentColorKey = 'yellow';
+      this.currentColor = '#2196F3';
+      this.currentColorKey = 'blue';
       this.currentColorName = '';
       this.currentColorVariant = 'auto';
       this.currentTool = 'highlight';
@@ -347,6 +347,7 @@
           tool_presentation: '演示笔',
           tool_presentation_desc: '用于演示或指示，支持形状识别与自动消失',
           presentationNotice: '给演示用的，录制视频的时候可以指示。',
+          markdownNotice: '在「MD正文」中，只有这里的「MD格式」工具会生效。',
           presentationLineStyle: '线条样式',
           presentationLineSolid: '实线',
           presentationLineDashed: '虚线',
@@ -454,6 +455,7 @@
           tool_presentation: 'Presentation Pen',
           tool_presentation_desc: 'Used for presentation or indicators, supports shape recognition and auto-disappearance',
           presentationNotice: 'For presentations. Can be used as an indicator when recording video.',
+          markdownNotice: 'In "MD Content", only the "MD Format" tools will take effect.',
           presentationLineStyle: 'Line Style',
           presentationLineSolid: 'Solid',
           presentationLineDashed: 'Dashed',
@@ -746,9 +748,9 @@
     resetPageState() {
       this.highlights.clear();
       this.editFragments = [];
-      this.currentColor = '#FFEB3B';
-      this.currentColorKey = 'yellow';
-      this.currentColorName = this.lt('黄色', 'Yellow');
+      this.currentColor = '#2196F3';
+      this.currentColorKey = 'blue';
+      this.currentColorName = this.lt('蓝色', 'Blue');
       this.currentColorVariant = 'auto';
       this.currentTool = 'highlight';
       this.currentToolName = this.t('classicHighlight');
@@ -1359,6 +1361,7 @@
       toolbar.id = TOOLBAR_ID;
       toolbar.className = 'permanent-toolbar';
       toolbar.dataset.dev1SnapshotHighlighterUi = 'true';
+      this.applyPickerTheme(toolbar);
       const dragHandle = document.createElement('div');
       dragHandle.className = 'toolbar-drag-handle';
       dragHandle.dataset.dev1SnapshotHighlighterUi = 'true';
@@ -1733,6 +1736,7 @@
       const toggle = document.createElement('div');
       toggle.className = 'permanent-toolbar-indicator permanent-toolbar-dock-toggle';
       toggle.dataset.dev1SnapshotHighlighterUi = 'true';
+      this.applyPickerTheme(toggle);
       toggle.setAttribute('role', 'button');
       toggle.setAttribute('tabindex', '0');
       toggle.dataset.tooltip = this.t('current');
@@ -1929,7 +1933,7 @@
         return;
       }
       if (raw === 'transparent') return;
-      element.style.background = raw || '#FFEB3B';
+      element.style.background = raw || '#2196F3';
     }
 
     styleRecentColorBadge(badge, item) {
@@ -1992,6 +1996,7 @@
       }
       this.closeTransientPanels();
       const panel = this.createPanel('indicator-details-panel', anchor);
+      this.applyPickerTheme(panel);
       panel.innerHTML = `
         <div class="dev1-panel-title">${this.t('current')}</div>
         <div class="dev1-indicator-row"><span>${this.t('currentColor')}</span><strong>${this.escapeHtml(this.getCurrentColorName())}</strong></div>
@@ -3635,6 +3640,10 @@
         modeBar.appendChild(visual);
         modeBar.appendChild(edit);
         content.appendChild(modeBar);
+        const notice = document.createElement('div');
+        notice.className = 'dev1-dynamic-mhtml-notice';
+        notice.textContent = this.t('markdownNotice');
+        content.appendChild(notice);
         const grid = document.createElement('div');
         grid.className = `dev1-tool-grid ${viewMode === 'list' ? 'list-view' : 'grid-view'}`;
         content.appendChild(grid);
@@ -4131,6 +4140,7 @@
       this.closeTransientPanels();
       this.operationsAnchor = anchor || null;
       const panel = this.createPanel('operations-panel', anchor);
+      this.applyPickerTheme(panel);
       panel.appendChild(this.createOperationButton(this.t('operationClearAll'), () => this.showClearOptionsPanel(), { icon: '🧹' }));
       panel.appendChild(this.createOperationButton(this.t('operationBatchDelete'), () => this.enterBatchDeleteMode(), { icon: '🗑️' }));
       document.body.appendChild(panel);
@@ -4179,6 +4189,7 @@
       }
       const anchor = this.operationsAnchor || this.toolbar;
       const panel = this.createPanel('operations-panel clear-options-panel', anchor);
+      this.applyPickerTheme(panel);
       const title = document.createElement('div');
       title.className = 'dev1-panel-title';
       title.textContent = this.t('clearOptionsTitle');
@@ -4213,6 +4224,7 @@
       }
       const anchor = this.operationsAnchor || this.toolbar;
       const panel = this.createPanel('operations-panel clear-confirm-panel', anchor);
+      this.applyPickerTheme(panel);
       const title = document.createElement('div');
       title.className = 'dev1-panel-title';
       title.textContent = this.t('clearConfirmTitle');
@@ -6364,7 +6376,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         return this.getRainbowRepresentativeColor(raw, element);
       }
       if (this.isTransparentColor(raw)) return this.darkModeEnabled ? '#e5e7eb' : '#334155';
-      return normalizeCssColor(raw) || raw || '#ffeb3b';
+      return normalizeCssColor(raw) || raw || '#2196f3';
     }
 
     getCssColorDataValue(color) {
@@ -9816,54 +9828,20 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
 
     detectPageTheme() {
       try {
-        const themeTokens = [
-          document.documentElement?.dataset?.theme,
-          document.body?.dataset?.theme,
-          document.documentElement?.className,
-          document.body?.className
-        ].map(value => safeString(value).toLowerCase()).join(' ');
-        if (/(^|[\s_-])(dark|night|black|dim)([\s_-]|$)|darkmode|darktheme/.test(themeTokens)) return true;
-        if (/(^|[\s_-])(light|white)([\s_-]|$)|lightmode|lighttheme/.test(themeTokens)) return false;
-        const metaTheme = document.querySelector('meta[name="theme-color"]')?.getAttribute('content');
-        const normalizedMetaTheme = normalizeCssColor(metaTheme);
-        if (normalizedMetaTheme && luminance(normalizedMetaTheme) < 0.36) return true;
-        if (normalizedMetaTheme && luminance(normalizedMetaTheme) > 0.72) return false;
-      } catch (_) { }
-      try {
-        const points = [
-          [Math.floor(window.innerWidth * 0.2), Math.floor(window.innerHeight * 0.2)],
-          [Math.floor(window.innerWidth * 0.5), Math.floor(window.innerHeight * 0.2)],
-          [Math.floor(window.innerWidth * 0.8), Math.floor(window.innerHeight * 0.2)],
-          [Math.floor(window.innerWidth * 0.2), Math.floor(window.innerHeight * 0.5)],
-          [Math.floor(window.innerWidth * 0.5), Math.floor(window.innerHeight * 0.5)],
-          [Math.floor(window.innerWidth * 0.8), Math.floor(window.innerHeight * 0.5)],
-          [Math.floor(window.innerWidth * 0.2), Math.floor(window.innerHeight * 0.8)],
-          [Math.floor(window.innerWidth * 0.5), Math.floor(window.innerHeight * 0.8)],
-          [Math.floor(window.innerWidth * 0.8), Math.floor(window.innerHeight * 0.8)]
-        ];
-        let dark = 0;
-        let seen = 0;
-        points.forEach(([x, y]) => {
-          const stack = typeof document.elementsFromPoint === 'function' ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)];
-          const el = stack.find(candidate => candidate && !this.isUiElement(candidate));
-          if (!el || this.isUiElement(el)) return;
-          const bg = this.findEffectiveBackground(el);
-          if (!bg) return;
-          seen += 1;
-          if (luminance(bg) < 0.36) dark += 1;
-        });
-        if (seen >= 3) return dark / seen > 0.5;
-      } catch (_) { }
-      try {
-        const bg = this.findEffectiveBackground(document.body) || '#ffffff';
-        return luminance(bg) < 0.36;
-      } catch (_) {
-        try {
-          return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        } catch (_) {
-          return false;
+        const html = document.documentElement;
+        const body = document.body || html;
+        const candidates = [body, html];
+        for (const el of candidates) {
+          const bg = window.getComputedStyle(el).backgroundColor || '';
+          const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+          if (!match) continue;
+          const r = Number(match[1]);
+          const g = Number(match[2]);
+          const b = Number(match[3]);
+          return ((0.299 * r + 0.587 * g + 0.114 * b) / 255) < 0.5;
         }
-      }
+      } catch (_) { }
+      return false;
     }
 
     findEffectiveBackground(element) {
