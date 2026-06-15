@@ -298,7 +298,6 @@ function applyBackupHistorySlimmingSettingsToUI(settings) {
     if (settingsBtn) {
         const title = isEn ? 'Compaction settings' : '精简设置';
         settingsBtn.setAttribute('aria-label', title);
-        settingsBtn.setAttribute('title', title);
     }
     syncBackupHistorySlimmingButtonState(normalized);
 }
@@ -309,20 +308,17 @@ function applyBackupHistorySlimmingLocale(lang = 'zh_CN') {
     const settingsBtn = document.getElementById('backupHistorySlimmingSettingsBtn');
     if (settingsBtn) {
         settingsBtn.setAttribute('aria-label', isEn ? 'Compaction settings' : '精简设置');
-        settingsBtn.setAttribute('title', isEn ? 'Compaction settings' : '精简设置');
         syncBackupHistorySlimmingButtonState();
     }
 
     const safetyBtn = document.getElementById('backupHistorySafetyCheckpointBtn');
     if (safetyBtn) {
         safetyBtn.setAttribute('aria-label', isEn ? 'Temporary Safety Snapshot' : '临时安全快照');
-        safetyBtn.setAttribute('title', isEn ? 'Temporary Safety Snapshot' : '临时安全快照');
     }
 
     const webSnapshotBtn = document.getElementById('backupHistoryWebSnapshotBtn');
     if (webSnapshotBtn) {
         webSnapshotBtn.setAttribute('aria-label', isEn ? 'Web Snapshot' : '网页快照');
-        webSnapshotBtn.setAttribute('title', isEn ? 'Web Snapshot' : '网页快照');
     }
 
     const restoreSafetyText = document.getElementById('restoreSafetyCheckpointEntryText');
@@ -335,7 +331,6 @@ function applyBackupHistorySlimmingLocale(lang = 'zh_CN') {
     const restoreSafetyBtn = document.getElementById('restoreSafetyCheckpointEntryBtn');
     if (restoreSafetyBtn) {
         restoreSafetyBtn.setAttribute('aria-label', isEn ? 'Safety Snapshot' : '安全快照');
-        restoreSafetyBtn.setAttribute('title', isEn ? 'Safety Snapshot' : '安全快照');
     }
 }
 
@@ -694,7 +689,6 @@ function applyPopupDeleteHistoryButtonWarningState(recordCount, lang = 'zh_CN') 
     const isEn = lang === 'en';
     const baseLabel = isEn ? 'Delete records' : '删除记录';
     const title = `${baseLabel} (${recordCount})`;
-    clearBtn.setAttribute('title', title);
     clearBtn.setAttribute('aria-label', title);
 }
 
@@ -6286,8 +6280,8 @@ async function showInitOverwriteConfirmModal({ lang, webdavActive, githubActive,
     const confirmText = isEn ? 'Confirm Overwrite' : '确认覆盖';
 
     const promptMessage = isEn
-        ? `⚠️ Current strategy is [Overwrite]. <span style="color: #ff9800; font-weight: bold;">Existing cloud/local backups (if any)</span> may be overwritten!\nTo restore bookmarks instead, please cancel and use the "Restore" panel on the right.`
-        : `⚠️ 当前备份策略为【覆盖】，<span style="color: #ff9800; font-weight: bold;">若云端/本地已有备份</span>，可能将会被覆写！\n如需从其他设备恢复书签，请取消并使用右侧的“恢复”面板。`;
+        ? `⚠️ Current strategy is [Overwrite]. <span style="color: #ff9800; font-weight: bold;">Existing cloud/local backups (if any)</span> may be overwritten! (Recommendation: Go to Settings to change path)\nTo restore bookmarks instead, please cancel and use the "Restore" panel on the right.`
+        : `⚠️ 当前备份策略为【覆盖】，<span style="color: #ff9800; font-weight: bold;">若云端/本地已有备份</span>，可能将会被覆写！ (建议: 进入配置页修改路径)\n如需从其他设备恢复书签，请取消并使用右侧的“恢复”面板。`;
 
     if (!modal || !titleTextEl || !textEl || !cancelBtn || !confirmBtn || !closeBtn) {
         try {
@@ -10015,6 +10009,57 @@ function initializeBackupSettings() {
         });
     }
 
+}
+
+function initializeWebSnapshotShortcutPrompt() {
+    const promptEl = document.getElementById('webSnapshotShortcutPrompt');
+    const closeBtn = document.getElementById('closeWebSnapshotShortcutPrompt');
+    const keyEl = document.getElementById('webSnapshotShortcutKey');
+    if (!promptEl || !closeBtn || !keyEl) return;
+
+    chrome.storage.local.get(['preferredLang', 'webSnapshotShortcutPromptDismissed'], (result) => {
+        const lang = result.preferredLang || 'zh_CN';
+        const isEn = lang === 'en';
+        
+        try {
+            if (typeof chrome !== 'undefined' && chrome.commands && typeof chrome.commands.getAll === 'function') {
+                chrome.commands.getAll((commands) => {
+                    const cmd = commands.find(c => c.name === 'open_web_snapshot_view');
+                    let shortcut = (cmd && cmd.shortcut) ? cmd.shortcut : 'Alt+Shift+X';
+                    if (!shortcut) {
+                        shortcut = isEn ? 'Not Set' : '未设置';
+                    }
+                    keyEl.textContent = shortcut;
+                    
+                    const promptTextSpan = promptEl.querySelector('.prompt-text');
+                    if (promptTextSpan) {
+                        promptTextSpan.innerHTML = isEn 
+                            ? `"Page Archive" Shortcut: <kbd id="webSnapshotShortcutKey">${shortcut}</kbd>`
+                            : `「页面存档」快捷键: <kbd id="webSnapshotShortcutKey">${shortcut}</kbd>`;
+                    }
+                });
+            } else {
+                keyEl.textContent = 'Alt+Shift+X';
+            }
+        } catch (e) {
+            console.warn('获取快捷键出错:', e);
+            keyEl.textContent = 'Alt+Shift+X';
+        }
+
+        const dismissed = result.webSnapshotShortcutPromptDismissed === true;
+        if (!dismissed) {
+            promptEl.style.display = 'inline-flex';
+        } else {
+            promptEl.style.display = 'none';
+        }
+        
+        closeBtn.setAttribute('aria-label', isEn ? 'Dismiss' : '关闭');
+        closeBtn.setAttribute('title', isEn ? 'Dismiss' : '关闭');
+        closeBtn.addEventListener('click', () => {
+            promptEl.style.display = 'none';
+            chrome.storage.local.set({ webSnapshotShortcutPromptDismissed: true });
+        });
+    });
 }
 
 
@@ -19250,6 +19295,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initializeGitHubRepoToggle();
     initializeOpenSourceInfo(); // 初始化开源信息功能
     initializeBackupSettings(); // 初始化备份设置区域
+    initializeWebSnapshotShortcutPrompt(); // 初始化网页快照快捷键提示
 
     // 在确定按钮存在后调用初始化函数
     // 确保在DOM完全加载后执行

@@ -416,6 +416,8 @@
             snapshotHelperHintLine1: '辅助工具：区域截图、长截图、屏幕录制、MHTML / MD 高亮工具。',
             snapshotHelperHintLine2: '保存位置：当次网页快照时间戳目录。（若队列是从「所有窗口Tab页面」的则不会注入。）',
             snapshotHelperShortcutHint: '也可以通过快捷键「{shortcut}」直接在任意页面打开/关闭工具箱。',
+            snapshotHelperStorageHint: '辅助工具所做的用户修改暂存于本地，当对应标签页(tabid)关闭或浏览器重启时，相关缓存数据将自动释放。',
+            archiveOrgLabel: '其他存档链接：',
             snapshotHelperEnabledStatus: '辅助工具已启用',
             snapshotHelperDisabledStatus: '辅助工具已关闭',
             snapshotHelperPartialStatus: '部分页面未能启用辅助工具',
@@ -632,6 +634,8 @@
             snapshotHelperHintLine1: 'Helper tools: area screenshot, long screenshot, screen recording, and MHTML / MD highlight tools.',
             snapshotHelperHintLine2: 'Save location: the current web-snapshot timestamp folder. (Queues from "All Window Tabs" are not injected.)',
             snapshotHelperShortcutHint: 'You can also press "{shortcut}" on any page to open/close the toolbox directly.',
+            snapshotHelperStorageHint: 'User modifications in helper tools are stored locally and will be automatically released when the corresponding tab (tabid) is closed or the browser is restarted.',
+            archiveOrgLabel: 'Other archive link: ',
             snapshotHelperEnabledStatus: 'Helper tools enabled',
             snapshotHelperDisabledStatus: 'Helper tools disabled',
             snapshotHelperPartialStatus: 'Some pages could not enable helper tools',
@@ -774,7 +778,8 @@
         return [
             `<span class="dev1-export-note-line">${escapeHtml(t('snapshotHelperHintLine1'))}</span>`,
             `<span class="dev1-export-note-line">${escapeHtml(t('snapshotHelperHintLine2'))}</span>`,
-            `<span class="dev1-export-note-line dev1-snapshot-helper-shortcut-line" data-dev1-snapshot-helper-shortcut-hint>${escapeHtml(shortcutHint)}</span>`
+            `<span class="dev1-export-note-line dev1-snapshot-helper-shortcut-line" data-dev1-snapshot-helper-shortcut-hint>${escapeHtml(shortcutHint)}</span>`,
+            `<span class="dev1-export-note-line" style="color: var(--text-secondary); opacity: 0.85; margin-top: 2px;">${escapeHtml(t('snapshotHelperStorageHint'))}</span>`
         ].join('');
     }
 
@@ -7355,6 +7360,16 @@
                         <div class="dev1-export-note">
                             <i class="fas fa-toolbox"></i>
                             <span class="dev1-export-note-lines">${renderSnapshotHelperHintHtml()}</span>
+                        </div>
+                    </div>
+                    <div class="dev1-format-row dev1-export-note-row">
+                        <div class="dev1-export-note">
+                            <i class="fas fa-archive"></i>
+                            <span class="dev1-export-note-lines">
+                                <span class="dev1-export-note-line">
+                                    ${escapeHtml(t('archiveOrgLabel'))}<a class="dev1-export-note-link" href="https://web.archive.org/" target="_blank" rel="noopener noreferrer">web.archive.org</a>
+                                </span>
+                            </span>
                         </div>
                     </div>
                 </section>

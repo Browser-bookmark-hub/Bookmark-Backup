@@ -654,6 +654,134 @@
             .dev1-helper-root.pos-bottom-left #recording-settings-panel { bottom: 64px; left: 0; transform-origin: bottom left; }
             .dev1-helper-root.pos-top-right #recording-settings-panel { top: 64px; right: 0; transform-origin: top right; }
             .dev1-helper-root.pos-top-left #recording-settings-panel { top: 64px; left: 0; transform-origin: top left; }
+            #md-settings-panel {
+              position: fixed;
+              z-index: 2147483648;
+              background: var(--panel-bg) !important;
+              backdrop-filter: var(--backdrop-filter) !important;
+              -webkit-backdrop-filter: var(--backdrop-filter) !important;
+              border-radius: 20px !important;
+              box-shadow: var(--panel-shadow) !important;
+              border: 1px solid var(--panel-border) !important;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif !important;
+              color: var(--text-main) !important;
+              overflow: hidden;
+              display: flex;
+              flex-direction: column;
+              box-sizing: border-box !important;
+              animation: dev1-panel-fade-in 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            }
+            #md-settings-panel .md-settings-btn {
+              width: 26px !important;
+              height: 26px !important;
+              border: 0 !important;
+              border-radius: 7px !important;
+              background: transparent !important;
+              color: var(--text-muted) !important;
+              cursor: pointer !important;
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+              transition: all 0.2s ease !important;
+              padding: 0 !important;
+            }
+            #md-settings-panel .md-settings-btn:hover {
+              background: var(--btn-min-hover) !important;
+              color: var(--text-main) !important;
+            }
+            #md-settings-panel .md-settings-close:hover {
+              background: var(--btn-close-hover) !important;
+              color: #ef4444 !important;
+            }
+            #md-settings-panel textarea {
+              width: 100% !important;
+              box-sizing: border-box !important;
+              padding: 10px !important;
+              border: 1px solid var(--card-border) !important;
+              border-radius: 10px !important;
+              background: var(--card-bg) !important;
+              color: var(--text-main) !important;
+              font-size: 12px !important;
+              resize: none !important;
+              text-align: left !important;
+              line-height: 1.5 !important;
+              transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s !important;
+            }
+            #md-settings-panel textarea:hover {
+              border-color: var(--accent-color) !important;
+            }
+            #md-settings-panel textarea:focus {
+              outline: none !important;
+              border-color: var(--accent-color) !important;
+              box-shadow: 0 0 0 2px var(--accent-glow) !important;
+              background: var(--card-bg-hover) !important;
+            }
+            #md-settings-panel textarea::placeholder {
+              color: var(--text-muted) !important;
+              opacity: 0.7 !important;
+            }
+            #md-settings-panel .md-btn {
+              flex: 1 !important;
+              padding: 8px 0 !important;
+              border: 0 !important;
+              border-radius: 8px !important;
+              cursor: pointer !important;
+              font-size: 13px !important;
+              font-weight: 600 !important;
+              outline: none !important;
+              display: flex !important;
+              align-items: center !important;
+              justify-content: center !important;
+            }
+            #md-settings-panel .md-btn-secondary {
+              background: var(--card-bg) !important;
+              color: var(--text-main) !important;
+              border: 1px solid var(--card-border) !important;
+              transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            }
+            #md-settings-panel .md-btn-secondary:hover {
+              background: var(--card-bg-hover) !important;
+              border-color: var(--accent-color) !important;
+              transform: translateY(-0.5px) !important;
+            }
+            #md-settings-panel .md-btn-secondary:active {
+              transform: scale(0.98) !important;
+            }
+            #md-settings-panel .md-btn-primary {
+              background: var(--accent-color) !important;
+              color: #ffffff !important;
+              border: 1px solid transparent !important;
+              transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+              box-shadow: 0 2px 6px var(--accent-glow) !important;
+            }
+            #md-settings-panel .md-btn-primary:hover {
+              opacity: 0.95 !important;
+              transform: translateY(-0.5px) !important;
+              box-shadow: 0 4px 12px var(--accent-glow) !important;
+            }
+            #md-settings-panel .md-btn-primary:active {
+              transform: scale(0.98) !important;
+            }
+            #md-settings-panel .md-help-popover {
+              position: absolute;
+              top: 44px !important;
+              left: 12px !important;
+              right: 12px !important;
+              z-index: 2147483649 !important;
+              padding: 12px !important;
+              border-radius: 12px !important;
+              border: 1px solid var(--panel-border) !important;
+              background: var(--panel-bg) !important;
+              backdrop-filter: var(--backdrop-filter) !important;
+              -webkit-backdrop-filter: var(--backdrop-filter) !important;
+              color: var(--text-main) !important;
+              box-shadow: var(--panel-shadow) !important;
+              font-size: 12px !important;
+              line-height: 1.55 !important;
+              font-weight: 400 !important;
+              box-sizing: border-box !important;
+              animation: dev1-panel-fade-in 0.15s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+            }
             .dev1-helper-header {
               display: flex;
               align-items: center;
@@ -3978,7 +4106,6 @@
       if (existing) { this._removeMdSettingsPanel(); return; }
 
       this._mdSettingsAnchor = anchor;
-      const isDark = this.darkModeEnabled;
       const rect = anchor.getBoundingClientRect();
       const PANEL_WIDTH = 340;
       const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
@@ -4004,12 +4131,13 @@
         left: ${left}px;
         width: ${PANEL_WIDTH}px;
         height: ${PANEL_HEIGHT}px;
-        background: ${isDark ? '#2d2d2d' : '#f8fafc'};
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
         border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        box-shadow: var(--panel-shadow);
         z-index: 2147483648;
         font-family: system-ui, -apple-system, sans-serif;
-        color: ${isDark ? '#e5e7eb' : '#1e293b'};
+        color: var(--text-main);
         overflow: hidden;
         display: flex;
         flex-direction: column;
@@ -4035,7 +4163,6 @@
         } catch (e) {}
       }
 
-      // 如果当前没有缓存的正文内容，则向 background 抓取
       if (!initialArticle) {
         try {
             const response = await sendRuntimeMessage({ action: 'dev1SnapshotHelperGetArticleContent' }, 30000);
@@ -4072,8 +4199,9 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 10px 14px;
-        background: ${isDark ? '#374151' : '#e2e8f0'};
+        padding: 12px 14px;
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--panel-border);
         font-size: 13px;
         font-weight: 600;
         cursor: move;
@@ -4083,38 +4211,30 @@
       header.innerHTML = `
         <span style="display:flex; align-items:center; gap:4px; min-width:0;">
           <span>Markdown 模板设置</span>
-          <button type="button" class="md-settings-help" data-no-drag="true" style="
-            width: 24px; height: 24px; border: 0; background: transparent;
-            color: inherit; cursor: pointer; border-radius: 6px; opacity: .78;
-            display: inline-flex; align-items: center; justify-content: center;
-            font-size: 12px; line-height: 1; font-weight: 700; padding: 0; flex: 0 0 24px;
+          <button type="button" class="md-settings-help md-settings-btn" data-no-drag="true" style="
+            font-size: 12px; line-height: 1; font-weight: 700; flex: 0 0 26px;
           " title="说明" aria-label="说明">?</button>
         </span>
-        <div style="display: flex; gap: 4px; align-items: center;">
-          <button type="button" class="md-settings-pin" style="
-            width: 24px; height: 24px; border: 0; background: transparent;
-            color: inherit; cursor: pointer; border-radius: 6px;
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button type="button" class="md-settings-pin md-settings-btn" style="
             display: flex; align-items: center; justify-content: center;
           " title="取消置顶">
             <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="currentColor" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16 11V7a4 4 0 0 0-8 0v4L5 14h14l-3-3z"></path><path d="M12 14v7"></path>
             </svg>
           </button>
-          <button type="button" class="md-settings-close" style="
-            width: 24px; height: 24px; border: 0; background: transparent;
-            color: inherit; cursor: pointer; border-radius: 6px;
+          <button type="button" class="md-settings-close md-settings-btn" style="
             display: flex; align-items: center; justify-content: center;
             font-size: 16px; line-height: 1;
           ">×</button>
         </div>
       `;
 
-      // --- 选项卡切换栏 ---
       const tabContainer = document.createElement('div');
       tabContainer.style.cssText = `
         display: flex;
-        border-bottom: 1px solid ${isDark ? '#3b3b3b' : '#cbd5e1'};
-        background: ${isDark ? '#242424' : '#f1f5f9'};
+        border-bottom: 1px solid var(--panel-border);
+        background: var(--header-bg);
         flex-shrink: 0;
       `;
 
@@ -4123,8 +4243,8 @@
       tab1.textContent = '模板与笔记';
       tab1.style.cssText = `
         flex: 1; padding: 10px 0; border: 0; background: transparent;
-        color: ${isDark ? '#e5e7eb' : '#1e293b'}; font-size: 13px; font-weight: 500;
-        cursor: pointer; border-bottom: 2px solid #3b82f6; transition: all 0.2s;
+        color: var(--text-main); font-size: 13px; font-weight: 550;
+        cursor: pointer; border-bottom: 2px solid var(--accent-color); transition: all 0.2s;
         outline: none;
       `;
 
@@ -4133,7 +4253,7 @@
       tab2.textContent = '正文';
       tab2.style.cssText = `
         flex: 1; padding: 10px 0; border: 0; background: transparent;
-        color: ${isDark ? '#9ca3af' : '#64748b'}; font-size: 13px; font-weight: 500;
+        color: var(--text-muted); font-size: 13px; font-weight: 550;
         cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
         outline: none;
       `;
@@ -4141,15 +4261,15 @@
       tabContainer.appendChild(tab1);
       tabContainer.appendChild(tab2);
 
-      // --- Body 和 选项卡内容容器 ---
       const body = document.createElement('div');
       body.style.cssText = `
-        padding: 14px;
+        padding: 16px;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 12px;
         flex: 1;
         overflow: hidden;
+        box-sizing: border-box;
       `;
 
       const tab1Content = document.createElement('div');
@@ -4183,13 +4303,14 @@
           border: 0;
           border-radius: 6px;
           background: transparent;
-          color: ${isDark ? '#cbd5e1' : '#475569'};
+          color: var(--text-muted);
           cursor: pointer;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           padding: 0;
           flex: 0 0 22px;
+          transition: all 0.2s ease;
         `;
         btn.innerHTML = `
           <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -4222,12 +4343,15 @@
               box-sizing: border-box;
               padding: 0 8px;
               border-radius: 7px;
-              background: ${isDark ? '#111827' : '#0f172a'};
-              color: #fff;
-              font: 11px/24px system-ui, -apple-system, sans-serif;
+              background: var(--panel-bg);
+              backdrop-filter: var(--backdrop-filter);
+              -webkit-backdrop-filter: var(--backdrop-filter);
+              border: 1px solid var(--panel-border);
+              color: var(--text-main);
+              font: 11px/22px system-ui, -apple-system, sans-serif;
               white-space: nowrap;
               pointer-events: none;
-              box-shadow: 0 8px 22px rgba(15, 23, 42, 0.24);
+              box-shadow: var(--panel-shadow);
             `;
             document.documentElement.appendChild(sourceTip);
             const rect = btn.getBoundingClientRect();
@@ -4242,14 +4366,6 @@
             sourceTip.style.top = `${Math.max(8, top)}px`;
           }, 120);
         };
-        btn.addEventListener('mouseover', () => {
-          btn.style.background = isDark ? '#4b5563' : '#cbd5e1';
-          showSourceTip();
-        });
-        btn.addEventListener('mouseout', () => {
-          btn.style.background = 'transparent';
-          removeSourceTip();
-        });
         btn.addEventListener('focus', showSourceTip);
         btn.addEventListener('blur', removeSourceTip);
         btn.addEventListener('click', (event) => {
@@ -4270,7 +4386,7 @@
           gap: 4px;
           font-size: 11px;
           font-weight: 600;
-          color: ${isDark ? '#9ca3af' : '#64748b'};
+          color: var(--text-muted);
           margin-bottom: -6px;
           flex-shrink: 0;
         `;
@@ -4281,7 +4397,6 @@
         return label;
       };
 
-      // 1. 导出模板
       let textarea = null;
       const templateLabel = createSourceLabel(
         '1. 导出模板（可自定义）',
@@ -4295,25 +4410,14 @@
         width: 100%;
         flex: 2;
         min-height: 150px;
-        box-sizing: border-box;
-        padding: 10px;
-        border: 1px solid ${isDark ? '#4b5563' : '#cbd5e1'};
-        border-radius: 6px;
-        background: ${isDark ? '#1f2937' : '#f0f4f8'};
-        color: ${isDark ? '#f3f4f6' : '#0f172a'};
         font-family: monospace;
-        font-size: 12px;
-        resize: none;
-        text-align: left;
-        line-height: 1.5;
       `;
       textarea.value = initialContent;
       this._bindMarkdownTextareaSelectionMemory(textarea);
       this._mdTextarea = textarea;
 
-      // 2. 你的笔记
       const notesLabel = document.createElement('div');
-      notesLabel.style.cssText = `font-size: 11px; font-weight: 600; color: ${isDark ? '#9ca3af' : '#64748b'}; margin-bottom: -6px; margin-top: 4px; flex-shrink: 0;`;
+      notesLabel.style.cssText = `font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: -6px; margin-top: 4px; flex-shrink: 0;`;
       notesLabel.textContent = '2. 你的笔记（自由输入，插入到正文前）';
 
       const notesArea = document.createElement('textarea');
@@ -4321,20 +4425,10 @@
         width: 100%;
         flex: 1;
         min-height: 80px;
-        box-sizing: border-box;
-        padding: 10px;
-        border: 1px solid ${isDark ? '#4b5563' : '#cbd5e1'};
-        border-radius: 6px;
-        background: ${isDark ? '#1f2937' : '#f0f4f8'};
-        color: ${isDark ? '#f3f4f6' : '#0f172a'};
         font-family: system-ui, -apple-system, sans-serif;
-        font-size: 12px;
-        resize: none;
-        text-align: left;
-        line-height: 1.5;
       `;
       notesArea.value = initialNotes;
-      notesArea.placeholder = '在这里写你的笔记、想法、摘要…';
+      notesArea.placeholder = '在这里 write 你的笔记、想法、摘要…';
       this._mdNotesArea = notesArea;
 
       tab1Content.appendChild(templateLabel);
@@ -4342,7 +4436,6 @@
       tab1Content.appendChild(notesLabel);
       tab1Content.appendChild(notesArea);
 
-      // 3. 正文
       let articleArea = null;
       const articleLabel = createSourceLabel(
         '正文（提取结果）',
@@ -4355,17 +4448,7 @@
       articleArea.style.cssText = `
         width: 100%;
         flex: 1;
-        box-sizing: border-box;
-        padding: 10px;
-        border: 1px solid ${isDark ? '#4b5563' : '#cbd5e1'};
-        border-radius: 6px;
-        background: ${isDark ? '#1f2937' : '#f0f4f8'};
-        color: ${isDark ? '#f3f4f6' : '#0f172a'};
         font-family: system-ui, -apple-system, sans-serif;
-        font-size: 12px;
-        resize: none;
-        text-align: left;
-        line-height: 1.5;
       `;
       articleArea.value = initialArticle;
       articleArea.placeholder = '提取的正文内容...';
@@ -4375,20 +4458,19 @@
       tab2Content.appendChild(articleLabel);
       tab2Content.appendChild(articleArea);
 
-      // Tab switching logic
       const switchTab = (activeTab) => {
         if (activeTab === 1) {
-          tab1.style.borderBottomColor = '#3b82f6';
-          tab1.style.color = isDark ? '#e5e7eb' : '#1e293b';
+          tab1.style.borderBottomColor = 'var(--accent-color)';
+          tab1.style.color = 'var(--text-main)';
           tab2.style.borderBottomColor = 'transparent';
-          tab2.style.color = isDark ? '#9ca3af' : '#64748b';
+          tab2.style.color = 'var(--text-muted)';
           tab1Content.style.display = 'flex';
           tab2Content.style.display = 'none';
         } else {
           tab1.style.borderBottomColor = 'transparent';
-          tab1.style.color = isDark ? '#9ca3af' : '#64748b';
-          tab2.style.borderBottomColor = '#3b82f6';
-          tab2.style.color = isDark ? '#e5e7eb' : '#1e293b';
+          tab1.style.color = 'var(--text-muted)';
+          tab2.style.borderBottomColor = 'var(--accent-color)';
+          tab2.style.color = 'var(--text-main)';
           tab1Content.style.display = 'none';
           tab2Content.style.display = 'flex';
         }
@@ -4397,27 +4479,20 @@
       tab1.addEventListener('click', () => switchTab(1));
       tab2.addEventListener('click', () => switchTab(2));
 
-      // 4. 底部按钮
       const btnGroup = document.createElement('div');
       btnGroup.style.cssText = `display: flex; gap: 8px; margin-top: auto; flex-shrink: 0;`;
 
       const refreshBtn = document.createElement('button');
       refreshBtn.type = 'button';
+      refreshBtn.className = 'md-btn md-btn-secondary';
       refreshBtn.textContent = '重新获取';
-      refreshBtn.style.cssText = `
-        flex: 1; padding: 6px 0; border: 0; border-radius: 6px; cursor: pointer;
-        background: ${isDark ? '#4b5563' : '#cbd5e1'}; color: inherit; font-size: 12px; font-weight: 500;
-        outline: none;
-      `;
+      refreshBtn.style.cssText = `outline: none;`;
 
       const downloadBtn = document.createElement('button');
       downloadBtn.type = 'button';
+      downloadBtn.className = 'md-btn md-btn-primary';
       downloadBtn.textContent = '导出';
-      downloadBtn.style.cssText = `
-        flex: 1; padding: 6px 0; border: 0; border-radius: 6px; cursor: pointer;
-        background: ${isDark ? '#2563eb' : '#3b82f6'}; color: #fff; font-size: 12px; font-weight: 500;
-        outline: none;
-      `;
+      downloadBtn.style.cssText = `outline: none;`;
 
       btnGroup.appendChild(refreshBtn);
       btnGroup.appendChild(downloadBtn);
@@ -4434,8 +4509,6 @@
 
       const closeBtn = header.querySelector('.md-settings-close');
       closeBtn.addEventListener('click', () => this._removeMdSettingsPanel());
-      closeBtn.addEventListener('mouseover', () => closeBtn.style.background = isDark ? '#4b5563' : '#cbd5e1');
-      closeBtn.addEventListener('mouseout', () => closeBtn.style.background = 'transparent');
 
       const helpBtn = header.querySelector('.md-settings-help');
       let helpPopover = null;
@@ -4458,22 +4531,7 @@
           return;
         }
         helpPopover = document.createElement('div');
-        helpPopover.style.cssText = `
-          position: absolute;
-          top: 44px;
-          left: 12px;
-          right: 12px;
-          z-index: 2;
-          padding: 10px 12px;
-          border-radius: 8px;
-          border: 1px solid ${isDark ? '#4b5563' : '#cbd5e1'};
-          background: ${isDark ? '#111827' : '#f0f4f8'};
-          color: ${isDark ? '#e5e7eb' : '#0f172a'};
-          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.22);
-          font-size: 12px;
-          line-height: 1.55;
-          font-weight: 400;
-        `;
+        helpPopover.className = 'md-help-popover';
         helpPopover.innerHTML = `
           <div>1. 可以拖动图片进入模板、笔记或正文输入框；有 http/https 链接的图片会保留链接，本地或临时图片会临时存储并在导出时转为 Base64。</div>
           <div style="margin-top:6px;">2. 如果处于「队列批量处理」，这里的改变会临时存储，跟随 URL；Tab 页关闭后对应临时存储会清除。</div>
@@ -4492,17 +4550,8 @@
       };
       if (helpBtn) {
         helpBtn.addEventListener('click', toggleHelpPopover);
-        helpBtn.addEventListener('mouseover', () => {
-          helpBtn.style.opacity = '1';
-          helpBtn.style.background = isDark ? '#4b5563' : '#cbd5e1';
-        });
-        helpBtn.addEventListener('mouseout', () => {
-          helpBtn.style.opacity = '.78';
-          helpBtn.style.background = 'transparent';
-        });
       }
 
-      // --- 置顶按钮 ---
       let isPinned = true;
       const pinBtn = header.querySelector('.md-settings-pin');
       const updatePinUI = () => {
@@ -4518,10 +4567,7 @@
         isPinned = !isPinned;
         updatePinUI();
       });
-      pinBtn.addEventListener('mouseover', () => pinBtn.style.background = isDark ? '#4b5563' : '#cbd5e1');
-      pinBtn.addEventListener('mouseout', () => pinBtn.style.background = 'transparent');
 
-      // 点击外部关闭（仅在非置顶时生效）
       const outsideHandler = (e) => {
         if (isPinned) return;
         const target = (e.composedPath && e.composedPath()[0]) || e.target;
@@ -4543,7 +4589,6 @@
         } catch(e) { console.error(e); }
       };
 
-      // Auto-save event listeners with 300ms debounce
       const autoSave = () => {
         if (this._mdSaveTimer) clearTimeout(this._mdSaveTimer);
         this._mdSaveTimer = setTimeout(() => {
@@ -4587,7 +4632,6 @@
         this._saveCurrentMd(anchor);
       });
 
-      // Listen to resize and scroll to reposition the panel dynamically
       const onResizeOrScroll = () => {
         this._repositionMdSettingsPanel();
       };

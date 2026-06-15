@@ -5583,6 +5583,65 @@ if (browserAPI?.tabs?.onRemoved && typeof browserAPI.tabs.onRemoved.addListener 
     });
 }
 
+// One-time startup tab storage Garbage Collection
+async function dev1RunTabStorageGarbageCollection() {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.tabs) return;
+    try {
+        if (chrome.storage.session) {
+            const sessionResult = await new Promise(resolve => chrome.storage.session.get(['tabStorageGCRun'], resolve));
+            if (sessionResult && sessionResult.tabStorageGCRun) {
+                return;
+            }
+        }
+    } catch (_) {}
+
+    try {
+        const tabs = await new Promise(resolve => chrome.tabs.query({}, resolve));
+        const activeTabIds = new Set((tabs || []).map(t => t.id).filter(id => id != null));
+
+        const allStorage = await browserAPI.storage.local.get(null);
+        if (!allStorage) return;
+
+        const keysToRemove = [];
+        const scopedPrefix = 'dev1_scoped_';
+        const autoRestorePrefix = 'dev1_autorest_highlighter_';
+
+        Object.keys(allStorage).forEach(key => {
+            if (key.startsWith(scopedPrefix)) {
+                const part = key.substring(scopedPrefix.length);
+                const match = part.match(/^(\d+)_/);
+                if (match) {
+                    const tabId = parseInt(match[1], 10);
+                    if (!activeTabIds.has(tabId)) {
+                        keysToRemove.push(key);
+                    }
+                }
+            } else if (key.startsWith(autoRestorePrefix)) {
+                const part = key.substring(autoRestorePrefix.length);
+                const match = part.match(/^(\d+)_/);
+                if (match) {
+                    const tabId = parseInt(match[1], 10);
+                    if (!activeTabIds.has(tabId)) {
+                        keysToRemove.push(key);
+                    }
+                }
+            }
+        });
+
+        if (keysToRemove.length > 0) {
+            await browserAPI.storage.local.remove(keysToRemove);
+            console.log(`[GC] Cleaned up ${keysToRemove.length} orphaned tab-scoped storage keys.`);
+        }
+
+        if (chrome.storage.session) {
+            await new Promise(resolve => chrome.storage.session.set({ tabStorageGCRun: true }, resolve));
+        }
+    } catch (_) {}
+}
+
+// Execute GC when service worker starts
+dev1RunTabStorageGarbageCollection().catch(() => {});
+
 if (browserAPI?.windows?.onRemoved && typeof browserAPI.windows.onRemoved.addListener === 'function') {
     browserAPI.windows.onRemoved.addListener(async (windowId) => {
         const reviewWindowId = dev1NormalizeWindowId(windowId);
