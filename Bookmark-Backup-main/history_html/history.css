@@ -11426,3 +11426,37 @@ a.tree-label.tree-bookmark-link:hover {
     line-height: 1.4;
     font-size: 13px;
 }
+
+/* ==================== 清除历史弹窗深色模式与样式适配 ==================== */
+#clearBackupHistoryOptions {
+    background: var(--bg-secondary);
+}
+
+[data-theme="dark"] #clearBackupHistoryOptions {
+    background: rgba(0, 0, 0, 0.2) !important;
+    border: 1px solid var(--border-color);
+}
+
+#clearHistoryExportFirstBtn {
+    background: var(--accent-light);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    border-style: solid;
+    border-width: 1px;
+    transition: all 0.2s ease;
+}
+
+#clearHistoryExportFirstBtn:hover:not(:disabled) {
+    background: var(--accent-hover);
+    color: #fff;
+    border-color: var(--accent-hover);
+}
+
+#clearHistorySecondConfirmCancelBtn {
+    transition: all 0.2s ease;
+}
+
+[data-theme="dark"] .clear-history-version-warning {
+    color: #ffb74d;
+    background: rgba(255, 152, 0, 0.18);
+}

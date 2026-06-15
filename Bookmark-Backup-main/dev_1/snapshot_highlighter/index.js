@@ -143,11 +143,11 @@
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
-  function contrastText(background, fallback = '#000000') {
+  function contrastText(background, fallback = '#0f172a') {
     if (safeString(background).startsWith('special:')) return '#ffffff';
     if (background === 'transparent') return fallback;
     const lum = luminance(background);
-    return lum > 0.58 ? '#000000' : '#ffffff';
+    return lum > 0.38 ? '#0f172a' : '#ffffff';
   }
 
   class SnapshotHighlighter {
@@ -163,7 +163,7 @@
       this.currentColor = '#FFEB3B';
       this.currentColorKey = 'yellow';
       this.currentColorName = '';
-      this.currentColorVariant = '';
+      this.currentColorVariant = 'auto';
       this.currentTool = 'highlight';
       this.currentToolName = '';
       this.recentColors = [];
@@ -206,6 +206,7 @@
       this._batchContainedHighlightIdsByEditId = new Map();
       this.darkModeEnabled = this.detectPageTheme();
       this.frameOverlayLayer = null;
+      this.htmlOverlayLayer = null;
       this.groupFrameOverlays = new Map();
       this.groupFrameGeometries = new Map();
       this._globalDefsSvg = null;
@@ -273,7 +274,7 @@
           clearVisual: '清除视觉模式',
           clearEdit: '清除编辑模式',
           batchDelete: '批量删除',
-          batchTip: '点击 或 画斜线 进行批量选择',
+          batchTip: '点击 或 划线 进行批量选择',
           batchExit: '退出',
           deleteSelectedNow: '删除所选',
           deleteSelected: '删除选中',
@@ -293,7 +294,7 @@
           confirmDeleteItems: '删除 {count} 个选中项目？',
           clickWord: '点击',
           orWord: '或',
-          drawSlash: '画斜线',
+          drawSlash: '划线',
           forBatchSelect: '进行批量选择',
           highlightDisabled: '已暂时屏蔽高亮',
           mdEditModeTitle: 'MD 编辑模式',
@@ -313,6 +314,7 @@
           clearRecent: '清空最近',
           whiteText: '白色字体',
           blackText: '黑色字体',
+          autoText: '自动',
           rgbValueLabel: 'RGB',
           hexValueLabel: 'HEX',
           colorPickerNote: '从色轮选择或输入 RGB / HEX',
@@ -419,6 +421,7 @@
           clearRecent: 'Clear Recent',
           whiteText: 'White Text',
           blackText: 'Black Text',
+          autoText: 'Auto',
           rgbValueLabel: 'RGB',
           hexValueLabel: 'HEX',
           colorPickerNote: 'Pick from wheel or enter RGB / HEX',
@@ -711,7 +714,7 @@
       });
       const toolbar = state.toolbar || {};
       if (toolbar.color) this.currentColor = toolbar.color;
-      this.currentColorVariant = toolbar.colorVariant || '';
+      this.currentColorVariant = toolbar.colorVariant || 'auto';
       this.currentColorKey = toolbar.colorNameKey || this.getColorNameKeyForValue(this.currentColor, this.currentColorVariant, toolbar.colorName || '');
       this.currentColorName = this.getColorNameForValue(this.currentColor, this.currentColorVariant, toolbar.colorName || '', this.currentColorKey);
       if (toolbar.tool) this.currentTool = toolbar.tool;
@@ -746,7 +749,7 @@
       this.currentColor = '#FFEB3B';
       this.currentColorKey = 'yellow';
       this.currentColorName = this.lt('黄色', 'Yellow');
-      this.currentColorVariant = '';
+      this.currentColorVariant = 'auto';
       this.currentTool = 'highlight';
       this.currentToolName = this.t('classicHighlight');
       this.recentColors = [];
@@ -2319,7 +2322,7 @@
         color: this.currentColor,
         key: this.currentColorKey || this.getColorNameKeyForValue(this.currentColor, this.currentColorVariant, this.currentColorName || ''),
         name: this.getCurrentColorName(),
-        variant: this.currentColorVariant || ''
+        variant: this.currentColorVariant || 'auto'
       }, { trackRecent: false });
     }
 
@@ -2688,8 +2691,10 @@
       const activeColor = context && context.color ? context.color : this.currentColor;
       const activeVariant = context && context.variant != null ? context.variant : this.currentColorVariant;
       const activeKey = context && context.colorKey ? context.colorKey : this.currentColorKey;
+      const normVariant = (variant === 'auto' || !variant) ? 'auto' : variant;
+      const normActiveVariant = (activeVariant === 'auto' || !activeVariant) ? 'auto' : activeVariant;
       return (safeString(color).toLowerCase() === safeString(activeColor).toLowerCase()
-        && safeString(variant || '') === safeString(activeVariant || ''))
+        && safeString(normVariant) === safeString(normActiveVariant))
         || (!!colorKey && colorKey === activeKey);
     }
 
@@ -2697,11 +2702,11 @@
       const resolvedVariant = this.resolveColorVariant(item.color, item.variant || '');
       const colorKey = item.key || this.getColorNameKeyForValue(item.color, resolvedVariant, item.name || '');
       if (context && context.highlightId) {
-        this.applyColorItemToHighlight(context.highlightId, { ...item, key: colorKey, variant: resolvedVariant });
+        this.applyColorItemToHighlight(context.highlightId, { ...item, key: colorKey, variant: item.variant || '' });
         if (typeof closeColorPicker === 'function') closeColorPicker();
         return;
       }
-      this.selectColor({ ...item, key: colorKey, variant: resolvedVariant });
+      this.selectColor({ ...item, key: colorKey, variant: item.variant || '' });
       if (typeof closeColorPicker === 'function') closeColorPicker();
     }
 
@@ -2886,19 +2891,20 @@
 
       const variantBar = document.createElement('div');
       variantBar.className = 'dev1-color-variant-bar';
-      const contextVariant = pickerContext && (pickerContext.variant === 'white' || pickerContext.variant === 'black')
+      const contextVariant = pickerContext && (pickerContext.variant === 'white' || pickerContext.variant === 'black' || pickerContext.variant === 'auto')
         ? pickerContext.variant
         : '';
-      const pageIsDark = this.detectPageTheme();
-      const preferredVariant = contextVariant || (this.currentColorVariant === 'white' || this.currentColorVariant === 'black'
+      const preferredVariant = contextVariant || (this.currentColorVariant === 'white' || this.currentColorVariant === 'black' || this.currentColorVariant === 'auto'
         ? this.currentColorVariant
-        : (pageIsDark ? 'white' : 'black'));
+        : 'auto');
       let activeVariant = preferredVariant;
       const blackBtn = this.createVariantButton(this.t('blackText'), 'black');
       const whiteBtn = this.createVariantButton(this.t('whiteText'), 'white');
+      const autoBtn = this.createVariantButton(this.t('autoText'), 'auto');
       const refreshVariantButtons = () => {
         blackBtn.classList.toggle('active', activeVariant === 'black');
         whiteBtn.classList.toggle('active', activeVariant === 'white');
+        autoBtn.classList.toggle('active', activeVariant === 'auto');
       };
       const grid = document.createElement('div');
       grid.className = 'dev1-color-grid';
@@ -2907,7 +2913,7 @@
         grid.innerHTML = '';
         (category.colors || []).forEach(item => {
           const explicitVariant = this.normalizeColorVariant(item.variant || '');
-          if (explicitVariant && explicitVariant !== activeVariant) return;
+          if (activeVariant !== 'auto' && explicitVariant && explicitVariant !== activeVariant) return;
           const color = safeString(item.color).toLowerCase();
           if (activeVariant === 'white' && color === '#ffffff') return;
           if (activeVariant === 'black' && color === '#000000') return;
@@ -2925,8 +2931,13 @@
         activeVariant = 'white';
         renderGrid();
       });
+      autoBtn.addEventListener('click', () => {
+        activeVariant = 'auto';
+        renderGrid();
+      });
       variantBar.appendChild(whiteBtn);
       variantBar.appendChild(blackBtn);
+      variantBar.appendChild(autoBtn);
       content.appendChild(variantBar);
       content.appendChild(grid);
       renderGrid();
@@ -2935,7 +2946,7 @@
     createVariantButton(label, variant) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = `dev1-color-variant-btn ${variant === 'white' ? 'white-text' : 'black-text'}`;
+      btn.className = `dev1-color-variant-btn ${variant === 'white' ? 'white-text' : (variant === 'black' ? 'black-text' : 'auto-text')}`;
       btn.dataset.variant = variant;
       btn.textContent = label;
       return btn;
@@ -3176,7 +3187,7 @@
       btn.dataset.variant = resolvedVariant;
       if (this.isRainbowColor(color)) btn.dataset.rainbowOption = 'true';
       const accent = this.applyOptionAccent(btn, color);
-      if (this.isColorSelectionActive(color, resolvedVariant, colorKey, pickerContext)) {
+      if (this.isColorSelectionActive(color, item.variant || '', colorKey, pickerContext)) {
         btn.classList.add('active');
       }
       const preview = document.createElement('span');
@@ -3185,7 +3196,7 @@
       const sample = document.createElement('span');
       sample.className = 'color-sample';
       sample.textContent = 'Aa';
-      sample.style.color = resolvedVariant === 'white' ? '#ffffff' : '#000000';
+      sample.style.color = resolvedVariant === 'white' ? '#ffffff' : '#0f172a';
       preview.appendChild(sample);
       const label = document.createElement('span');
       label.className = 'color-name';
@@ -3193,7 +3204,7 @@
       btn.appendChild(preview);
       btn.appendChild(label);
       const commit = () => {
-        this.commitColorSelection({ ...item, key: colorKey, variant: resolvedVariant }, closeColorPicker, pickerContext);
+        this.commitColorSelection({ ...item, key: colorKey, variant: item.variant || '' }, closeColorPicker, pickerContext);
       };
       btn.addEventListener('click', commit);
       btn.addEventListener('keydown', (event) => {
@@ -3228,10 +3239,10 @@
     selectColor(item) {
       const resolvedVariant = this.resolveColorVariant(item.color, item.variant || '');
       this.currentColor = item.color;
-      this.currentColorVariant = resolvedVariant;
+      this.currentColorVariant = item.variant === 'auto' ? 'auto' : resolvedVariant;
       this.currentColorKey = item.key || this.getColorNameKeyForValue(item.color, resolvedVariant, item.name || '');
       this.currentColorName = this.getColorNameForItem(item);
-      this.pushRecentColor({ ...item, variant: resolvedVariant });
+      this.pushRecentColor({ ...item, variant: item.variant || '' });
       this.updatePermanentToolbarIndicator();
       this.updateCursorStyle();
       if (this.activeColorPicker) {
@@ -3278,7 +3289,7 @@
       if (!raw || raw.startsWith('special:')) return '';
       if (raw === 'transparent') return this.detectPageTheme() ? 'white' : 'black';
       try {
-        return luminance(raw) < 0.5 ? 'white' : 'black';
+        return luminance(raw) <= 0.38 ? 'white' : 'black';
       } catch (_) {
         return '';
       }
@@ -4268,6 +4279,7 @@
     }
 
     enterBatchDeleteMode() {
+      this.darkModeEnabled = this.detectPageTheme();
       this.closeTransientPanels();
       if (this.batchCleanup) {
         this.exitBatchDeleteMode();
@@ -4281,11 +4293,15 @@
       const overlay = document.createElement('div');
       overlay.id = 'dev1-snapshot-highlighter-batch-overlay';
       overlay.dataset.dev1SnapshotHighlighterUi = 'true';
+      overlay.classList.toggle('dark-theme', !!this.darkModeEnabled);
+      overlay.classList.toggle('light-theme', !this.darkModeEnabled);
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       overlay.appendChild(svg);
       const bar = document.createElement('div');
       bar.id = 'dev1-snapshot-highlighter-batch-bar';
       bar.dataset.dev1SnapshotHighlighterUi = 'true';
+      bar.classList.toggle('dark-theme', !!this.darkModeEnabled);
+      bar.classList.toggle('light-theme', !this.darkModeEnabled);
       const tip = document.createElement('span');
       tip.className = 'dev1-batch-tip';
       tip.innerHTML = `${this.escapeHtml(this.t('clickWord'))} <strong>${this.escapeHtml(this.t('orWord'))}</strong> <em>${this.escapeHtml(this.t('drawSlash'))}</em> ${this.escapeHtml(this.t('forBatchSelect'))}`;
@@ -4483,12 +4499,15 @@
     }
 
     showBatchDeleteConfirmDialog(onConfirm) {
+      this.darkModeEnabled = this.detectPageTheme();
       const existing = document.getElementById('dev1-snapshot-highlighter-batch-confirm-dialog');
       if (existing) existing.remove();
       const count = this.getBatchDeleteSelectionCount();
       const dialog = document.createElement('div');
       dialog.id = 'dev1-snapshot-highlighter-batch-confirm-dialog';
       dialog.dataset.dev1SnapshotHighlighterUi = 'true';
+      dialog.classList.toggle('dark-theme', !!this.darkModeEnabled);
+      dialog.classList.toggle('light-theme', !this.darkModeEnabled);
       const message = document.createElement('div');
       message.className = 'dev1-batch-confirm-message';
       message.textContent = this.t('confirmDeleteItems').replace('{count}', String(count));
@@ -4983,7 +5002,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         afterText,
         toolId: tool.id,
         color: this.currentColor,
-        textColorOverride: this.currentColorVariant === 'white' || this.currentColorVariant === 'black' ? this.currentColorVariant : (this.detectPageTheme() ? 'white' : 'black'),
+        textColorOverride: this.currentColorVariant === 'white' || this.currentColorVariant === 'black' || this.currentColorVariant === 'auto' ? this.currentColorVariant : 'auto',
         selectedText,
         pageUrl: this.currentUrl,
         pageTitle: document.title || '',
@@ -5094,7 +5113,8 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       const color = colorOverride || this.currentColor || '#1976d2';
       const renderColor = this.getRenderableColor(color);
       const colorVariant = variantOverride || this.currentColorVariant || '';
-      const variant = colorVariant === 'white' ? '#ffffff' : (colorVariant === 'black' ? '#111827' : renderColor);
+      const resolvedVariant = this.resolveColorVariant(color, colorVariant);
+      const variant = resolvedVariant === 'white' ? '#ffffff' : '#0f172a';
       const isRainbow = this.isRainbowColor(color);
       const rainbow = isRainbow ? this.buildRainbowGradient(color, { textContent: text || source || '' }) : '';
       const textStyle = isRainbow
@@ -5106,7 +5126,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         case 'md-edit-italic': return `<em style="${textStyle}">${escaped}</em>`;
         case 'md-edit-bold-italic': return `<strong style="${textStyle}"><em>${escaped}</em></strong>`;
         case 'md-edit-strikethrough': return `<del style="${textStyle}text-decoration-color:${renderColor};text-decoration-thickness:2px;">${escaped}</del>`;
-        case 'md-edit-mark': return `<mark style="background:${softBg};color:${colorVariant === 'white' ? '#fff' : '#111827'};border-radius:3px;padding:1px 3px;">${escaped}</mark>`;
+        case 'md-edit-mark': return `<mark style="background:${softBg};color:${resolvedVariant === 'white' ? '#ffffff' : '#0f172a'};border-radius:3px;padding:1px 3px;">${escaped}</mark>`;
         case 'md-edit-code-inline': return `<code style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:${this.darkModeEnabled ? 'rgba(45,45,45,.92)' : 'rgba(244,244,244,.96)'};border:1px solid ${rgbaFromHex(renderColor, 0.45)};border-radius:4px;padding:1px 4px;${textStyle}">${escaped}</code>`;
         case 'md-edit-sup': return `<sup style="${textStyle}">${escaped}</sup>`;
         case 'md-edit-sub': return `<sub style="${textStyle}">${escaped}</sub>`;
@@ -5493,14 +5513,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       const colorName = this.getCurrentColorName();
       const colorNameKey = this.currentColorKey || this.getColorNameKeyForValue(color, this.currentColorVariant, colorName);
       const toolStyle = this.currentTool || 'highlight';
-      let textColorOverride = this.currentColorVariant === 'white' || this.currentColorVariant === 'black' ? this.currentColorVariant : '';
-      if (!textColorOverride) {
-        try {
-          textColorOverride = this.detectPageTheme() ? 'white' : 'black';
-        } catch (_) {
-          textColorOverride = '';
-        }
-      }
+      let textColorOverride = this.currentColorVariant === 'white' || this.currentColorVariant === 'black' || this.currentColorVariant === 'auto' ? this.currentColorVariant : 'auto';
       this.cacheGroupLineBoxesFromRange(id, range);
       this._creatingHighlightGroupId = id;
       let segments = [];
@@ -5652,9 +5665,9 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         element.dataset.colorKey = this.getColorNameKeyForValue(color, textColorOverride || '', element.dataset.colorName || '');
       }
       if (textColorOverride) element.dataset.textColorOverride = textColorOverride;
-      const variantColor = textColorOverride === 'white' ? '#ffffff' : (textColorOverride === 'black' ? '#000000' : '');
+      const variantColor = textColorOverride === 'white' ? '#ffffff' : (textColorOverride === 'black' ? '#0f172a' : '');
       const originalTextColor = safeString(element.dataset.originalColor || '');
-      const textColor = variantColor || contrastText(color, originalTextColor || (this.darkModeEnabled ? '#ffffff' : '#000000'));
+      const textColor = variantColor || contrastText(color, originalTextColor || (this.darkModeEnabled ? '#ffffff' : '#0f172a'));
       const renderColor = this.getRenderableColor(color, element);
       const rgba = /^#[0-9a-f]{6}$/i.test(renderColor) ? rgbaFromHex(renderColor, 0.32) : renderColor;
       const isRainbow = this.isRainbowColor(color);
@@ -5731,6 +5744,55 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         element.style.setProperty('--rb-angle', `${Math.abs(seed) % 360}deg`);
         element.style.setProperty('--rb-grad', rainbowGradient);
         element.style.setProperty('--rb-grad-soft', rainbowSoft || rainbowGradient);
+      }
+      const gid = element.getAttribute('data-highlight-id');
+      const isMultiLine = this.isMultiLineHighlightGroup(gid);
+      const overlayTools = new Set([
+        'box', 'filled-box', 'rounded-box', 'dashed-box', 'double-box',
+        'brackets-corner', 'brackets-round', 'brackets-angle', 'brackets-book',
+        'brackets-cjk', 'brackets-curly', 'brackets-square',
+        'running-line', 'ripple',
+        'blur', 'mosaic', 'callout', 'sticker', 'neon-blink', 'neon-flicker', 'liquidglass',
+        'highlight', 'marker', 'pastel', 'neon', 'transparent', 'highlighter-pen',
+        'pill', 'glow', 'rainbow', 'spotlight', 'gradient'
+      ]);
+      if (isMultiLine && overlayTools.has(tool)) {
+        element.style.setProperty('background', 'transparent', 'important');
+        element.style.setProperty('background-color', 'transparent', 'important');
+        element.style.setProperty('background-image', 'none', 'important');
+        element.style.setProperty('border', 'none', 'important');
+        element.style.setProperty('border-width', '0', 'important');
+        element.style.setProperty('border-radius', '0', 'important');
+        element.style.setProperty('box-shadow', 'none', 'important');
+        element.style.setProperty('padding', '0', 'important');
+        element.style.setProperty('margin', '0', 'important');
+        element.style.setProperty('backdrop-filter', 'none', 'important');
+        element.style.setProperty('webkit-backdrop-filter', 'none', 'important');
+        element.style.setProperty('animation', 'none', 'important');
+        element.style.setProperty('transform', 'none', 'important');
+        element.style.setProperty('text-shadow', 'none', 'important');
+        element.style.setProperty('mix-blend-mode', 'normal', 'important');
+        element.style.setProperty('isolation', 'auto', 'important');
+        
+        if (tool === 'sticker' || tool === 'liquidglass') {
+          element.style.setProperty('color', 'transparent', 'important');
+          element.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+        } else {
+          element.style.setProperty('color', originalTextColor || 'inherit', 'important');
+        }
+
+        if (tool === 'running-line') {
+          this.ensureRunningLineLayers(element, renderColor, color);
+        } else if (tool === 'ripple') {
+          this.ensureRippleStructure(element, renderColor, color);
+        } else if (tool === 'neon-blink' || tool === 'neon-flicker') {
+          element.querySelectorAll(':scope > .neon-fog, :scope > .neon-frame').forEach(node => node.remove());
+        } else if (/^brackets-/.test(tool)) {
+          element.removeAttribute('data-bracket-dom');
+        }
+
+        if (gid) this.applyGroupFrameOverlayIfNeeded(gid, tool, color);
+        return;
       }
       const lineTools = new Set(['underline', 'double-underline', 'wavy', 'dotted', 'dashed', 'thick-underline', 'strikethrough']);
       if (this.applyMarkdownLikeToolStyle(element, color, tool, textColor, rgba)) {
@@ -7772,6 +7834,101 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       }
     }
 
+    getMonoGradientId(color, isTransparent) {
+      try {
+        const svg = this.ensureGlobalDefs();
+        const defs = svg.querySelector('defs');
+        const cleanColor = color.replace(/[^a-zA-Z0-9]/g, '');
+        const id = `dev1MonoGrad_${cleanColor}_${isTransparent ? 't' : 'o'}`;
+        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
+        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+        gradient.setAttribute('id', id);
+        gradient.setAttribute('x1', '0%');
+        gradient.setAttribute('y1', '0%');
+        gradient.setAttribute('x2', '100%');
+        gradient.setAttribute('y2', '0%');
+        
+        const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop1.setAttribute('offset', '0%');
+        stop1.setAttribute('stop-color', color);
+        stop1.setAttribute('stop-opacity', '0.85');
+        
+        const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop2.setAttribute('offset', '100%');
+        stop2.setAttribute('stop-color', color);
+        stop2.setAttribute('stop-opacity', isTransparent ? '0.14' : '0.2');
+        
+        gradient.appendChild(stop1);
+        gradient.appendChild(stop2);
+        defs.appendChild(gradient);
+        return id;
+      } catch (_) {
+        return '';
+      }
+    }
+
+    getSpotlightGradientId(color, isTransparent) {
+      try {
+        const svg = this.ensureGlobalDefs();
+        const defs = svg.querySelector('defs');
+        const cleanColor = color.replace(/[^a-zA-Z0-9]/g, '');
+        const id = `dev1SpotGrad_${cleanColor}_${isTransparent ? 't' : 'o'}`;
+        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
+        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+        gradient.setAttribute('id', id);
+        gradient.setAttribute('cx', '50%');
+        gradient.setAttribute('cy', '50%');
+        gradient.setAttribute('r', '70%');
+        
+        const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop1.setAttribute('offset', '0%');
+        stop1.setAttribute('stop-color', color);
+        stop1.setAttribute('stop-opacity', isTransparent ? '0.18' : '0.35');
+        
+        const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop2.setAttribute('offset', '100%');
+        stop2.setAttribute('stop-color', color);
+        stop2.setAttribute('stop-opacity', '0');
+        
+        gradient.appendChild(stop1);
+        gradient.appendChild(stop2);
+        defs.appendChild(gradient);
+        return id;
+      } catch (_) {
+        return '';
+      }
+    }
+
+    getRainbowRadialGradientId(seedVal = 0) {
+      try {
+        const svg = this.ensureGlobalDefs();
+        const defs = svg.querySelector('defs');
+        const seed = Math.abs(Number(seedVal) || 0);
+        const id = `dev1RbRadialGradSeed_${seed}`;
+        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
+        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+        gradient.setAttribute('id', id);
+        gradient.setAttribute('cx', '50%');
+        gradient.setAttribute('cy', '50%');
+        gradient.setAttribute('r', '70%');
+        const steps = 18;
+        const phase = seed ? seed % 360 : 0;
+        for (let i = 0; i < steps; i += 1) {
+          const t = i / (steps - 1);
+          const hue = Math.round((phase + t * 360) % 360);
+          const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+          stop.setAttribute('offset', `${(t * 100).toFixed(2)}%`);
+          stop.setAttribute('stop-color', `hsl(${hue}, 82%, 64%)`);
+          stop.setAttribute('stop-opacity', String((1 - t) * 0.35));
+          gradient.appendChild(stop);
+        }
+        defs.appendChild(gradient);
+        return id;
+      } catch (_) {
+        return 'dev1RbRadialGradSeed_0';
+      }
+    }
+
     ensureSharedResizeObserver() {
       if (this._sharedRO) return this._sharedRO;
       try {
@@ -7929,6 +8086,20 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       this.frameOverlayLayer = svg;
       this.updateFrameOverlayLayerSize();
       return svg;
+    }
+
+    ensureHtmlOverlayLayer() {
+      if (this.htmlOverlayLayer && document.body.contains(this.htmlOverlayLayer)) return this.htmlOverlayLayer;
+      const div = document.createElement('div');
+      div.setAttribute('id', 'html-overlay-layer');
+      div.style.position = 'absolute';
+      div.style.left = '0';
+      div.style.top = '0';
+      div.style.pointerEvents = 'none';
+      div.style.setProperty('z-index', '2147483602', 'important');
+      document.body.appendChild(div);
+      this.htmlOverlayLayer = div;
+      return div;
     }
 
     updateFrameOverlayLayerSize() {
@@ -8143,7 +8314,9 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
         'brackets-corner', 'brackets-round', 'brackets-angle', 'brackets-book',
         'brackets-cjk', 'brackets-curly', 'brackets-square',
         'running-line', 'ripple',
-        'blur', 'mosaic', 'callout', 'sticker', 'neon-blink', 'neon-flicker', 'liquidglass'
+        'blur', 'mosaic', 'callout', 'sticker', 'neon-blink', 'neon-flicker', 'liquidglass',
+        'highlight', 'marker', 'pastel', 'neon', 'transparent', 'highlighter-pen',
+        'pill', 'glow', 'rainbow', 'spotlight', 'gradient'
       ]);
       if (!gid || !overlayTools.has(tool)) {
         this.removeGroupFrameOverlay(gid);
@@ -8270,8 +8443,17 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       }
       const renderColor = this.getRenderableColor(color, elems[0]);
       const isRainbow = this.isRainbowColor(color);
+      const isTransparent = this.isTransparentColor(color);
       const stroke = isRainbow ? `url(#${this.getRainbowGradientId(this.ensureRainbowSeed(elems[0], color))})` : renderColor;
-      const mergedFrameTools = new Set(['box', 'filled-box', 'rounded-box', 'dashed-box', 'double-box']);
+      const solidTools = new Set([
+        'highlight', 'marker', 'pastel', 'neon', 'transparent', 'highlighter-pen',
+        'rainbow', 'gradient', 'spotlight', 'glow'
+      ]);
+      const isSolidTool = solidTools.has(tool);
+      const mergedFrameTools = new Set([
+        'box', 'filled-box', 'rounded-box', 'dashed-box', 'double-box', 'pill',
+        ...solidTools
+      ]);
       const pathLines = tool === 'running-line'
         ? [runningLineRect]
         : (distinctLines > 1 && mergedFrameTools.has(tool)
@@ -8280,7 +8462,7 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
             left: line.left - 5 * invZoom,
             right: line.right + 5 * invZoom,
             top: line.top - 3 * invZoom,
-            bottom: line.bottom + 3 * invZoom
+            bottom: line.bottom - 3 * invZoom
           })));
       const bracketMap = {
         'brackets-corner': ['「', '」'],
@@ -8335,22 +8517,98 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
         return;
       }
       const makePath = (className, inset = 0) => {
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        let path;
+        const isRect = pathLines.length === 1;
+        if (isRect) {
+          path = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          const rectLine = pathLines[0];
+          const x = rectLine.left + inset;
+          const y = rectLine.top + inset;
+          const w = Math.max(0, rectLine.right - rectLine.left - 2 * inset);
+          const h = Math.max(0, rectLine.bottom - rectLine.top - 2 * inset);
+          path.setAttribute('x', String(x));
+          path.setAttribute('y', String(y));
+          path.setAttribute('width', String(w));
+          path.setAttribute('height', String(h));
+          if (tool === 'rounded-box') {
+            const rx = 6 * invZoom;
+            const ry = 6 * invZoom;
+            path.setAttribute('rx', String(rx));
+            path.setAttribute('ry', String(ry));
+          } else if (tool === 'pill') {
+            const r = h / 2;
+            path.setAttribute('rx', String(r));
+            path.setAttribute('ry', String(r));
+          }
+        } else {
+          path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', inset ? this.buildSteppedOutlinePath(pathLines.map(line => ({
+            left: line.left + inset,
+            right: line.right - inset,
+            top: line.top + inset,
+            bottom: line.bottom - inset
+          }))) : d);
+        }
         path.classList.add('frame-overlay-path', className);
-        path.setAttribute('d', inset ? this.buildSteppedOutlinePath(pathLines.map(line => ({
-          left: line.left + inset,
-          right: line.right - inset,
-          top: line.top + inset,
-          bottom: line.bottom - inset
-        }))) : d);
-        path.setAttribute('fill', tool === 'filled-box' ? (isRainbow ? this.buildRainbowGradient(color, elems[0], 0.22) : this.hexToRgba(renderColor, 0.18)) : 'none');
-        path.setAttribute('stroke', stroke);
-        path.setAttribute('stroke-width', tool === 'running-line' ? '2' : '2');
+        
+        let fillVal = 'none';
+        let fillOpacityVal = '1';
+        let strokeVal = stroke;
+        let strokeWidthVal = '2';
+        let strokeOpacityVal = '1';
+        
+        if (isSolidTool) {
+          strokeVal = 'none';
+          strokeWidthVal = '0';
+          if (tool === 'gradient') {
+            fillVal = isRainbow
+              ? `url(#${this.getRainbowGradientId(this.ensureRainbowSeed(elems[0], color))})`
+              : `url(#${this.getMonoGradientId(renderColor, isTransparent)})`;
+            fillOpacityVal = isRainbow ? '0.3' : '1';
+          } else if (tool === 'spotlight') {
+            fillVal = isRainbow
+              ? `url(#${this.getRainbowRadialGradientId(this.ensureRainbowSeed(elems[0], color))})`
+              : `url(#${this.getSpotlightGradientId(renderColor, isTransparent)})`;
+            fillOpacityVal = '1';
+          } else if (tool === 'glow') {
+            fillVal = stroke;
+            fillOpacityVal = '0.08';
+            strokeVal = stroke;
+            strokeWidthVal = '1';
+            strokeOpacityVal = '0.3';
+            path.style.filter = `drop-shadow(0 0 ${4 * invZoom}px ${renderColor}) drop-shadow(0 0 ${8 * invZoom}px ${renderColor})`;
+          } else {
+            fillVal = stroke;
+            const opacities = {
+              highlight: '0.3',
+              marker: '0.4',
+              pastel: '0.2',
+              neon: '0.35',
+              transparent: '0.12',
+              'highlighter-pen': '0.28',
+              rainbow: '0.3'
+            };
+            fillOpacityVal = opacities[tool] || '0.3';
+          }
+        } else {
+          if (tool === 'filled-box') {
+            fillVal = isRainbow ? this.buildRainbowGradient(color, elems[0], 0.22) : this.hexToRgba(renderColor, 0.18);
+          } else if (['box', 'rounded-box', 'dashed-box', 'double-box', 'pill'].includes(tool)) {
+            fillVal = isRainbow ? this.buildRainbowGradient(color, elems[0], 0.12) : this.hexToRgba(renderColor, 0.08);
+          }
+          if (tool === 'dashed-box') {
+            path.setAttribute('stroke-dasharray', '8 5');
+          }
+        }
+        
+        path.setAttribute('fill', fillVal);
+        path.setAttribute('fill-opacity', fillOpacityVal);
+        path.setAttribute('stroke', strokeVal);
+        path.setAttribute('stroke-width', strokeWidthVal);
+        path.setAttribute('stroke-opacity', strokeOpacityVal);
         path.setAttribute('stroke-linejoin', 'round');
         path.setAttribute('stroke-linecap', 'round');
         path.setAttribute('vector-effect', 'non-scaling-stroke');
-        if (tool === 'rounded-box') path.setAttribute('data-rounded', 'true');
-        if (tool === 'dashed-box') path.setAttribute('stroke-dasharray', '8 5');
         node.appendChild(path);
       };
       makePath(`tool-${tool}`);
@@ -8373,17 +8631,18 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
     }
 
     _renderRippleMergedBoxOverlay(gid, svg, rect, color, invZoom = 1) {
-      if (!svg || !rect) return;
+      if (!rect) return;
+      const htmlContainer = this.ensureHtmlOverlayLayer();
       let node = this.groupFrameOverlays.get(gid);
-      if (!node || node.ownerSVGElement !== svg || node.tagName !== 'foreignObject' || node.getAttribute('data-kind') !== 'ripple') {
+      if (!node || node.parentNode !== htmlContainer || node.tagName !== 'DIV' || node.getAttribute('data-kind') !== 'ripple') {
         if (node && node.parentNode) node.parentNode.removeChild(node);
-        node = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+        node = document.createElement('div');
         node.setAttribute('data-highlight-id', gid);
         node.setAttribute('data-kind', 'ripple');
-        node.setAttribute('pointer-events', 'none');
+        node.style.position = 'absolute';
         node.style.pointerEvents = 'none';
         node.style.overflow = 'visible';
-        svg.appendChild(node);
+        htmlContainer.appendChild(node);
         const box = document.createElement('div');
         box.className = 'ripple-merged-box';
         const inner = document.createElement('div');
@@ -8392,15 +8651,19 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
         box.appendChild(inner);
         node.appendChild(box);
         this.groupFrameOverlays.set(gid, node);
+        
+        const nowS = (typeof performance !== 'undefined' && performance.now) ? performance.now() / 1000 : Date.now() / 1000;
+        box.style.setProperty('--ripple-delay-2s', `-${(nowS % 2).toFixed(3)}s`);
+        box.style.setProperty('--ripple-delay-2p4s', `-${(nowS % 2.4).toFixed(3)}s`);
+        inner.style.setProperty('--ripple-delay-2s', `-${(nowS % 2).toFixed(3)}s`);
+        inner.style.setProperty('--ripple-delay-2p4s', `-${(nowS % 2.4).toFixed(3)}s`);
       }
       const width = Math.max(1, rect.right - rect.left);
       const height = Math.max(1, rect.bottom - rect.top);
-      node.style.pointerEvents = 'none';
-      node.style.overflow = 'visible';
-      node.setAttribute('x', rect.left.toFixed(2));
-      node.setAttribute('y', rect.top.toFixed(2));
-      node.setAttribute('width', width.toFixed(2));
-      node.setAttribute('height', height.toFixed(2));
+      node.style.left = `${rect.left.toFixed(2)}px`;
+      node.style.top = `${rect.top.toFixed(2)}px`;
+      node.style.width = `${width.toFixed(2)}px`;
+      node.style.height = `${height.toFixed(2)}px`;
       const box = node.querySelector('.ripple-merged-box');
       const inner = node.querySelector('.ripple-merged-box-inner');
       if (!box || !inner) return;
@@ -8453,11 +8716,6 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       const rgbValue = `${Math.round(rgb[0])}, ${Math.round(rgb[1])}, ${Math.round(rgb[2])}`;
       box.style.setProperty('--ripple-rgb', rgbValue);
       inner.style.setProperty('--ripple-rgb', rgbValue);
-      const nowS = (typeof performance !== 'undefined' && performance.now) ? performance.now() / 1000 : Date.now() / 1000;
-      box.style.setProperty('--ripple-delay-2s', `-${(nowS % 2).toFixed(3)}s`);
-      box.style.setProperty('--ripple-delay-2p4s', `-${(nowS % 2.4).toFixed(3)}s`);
-      inner.style.setProperty('--ripple-delay-2s', `-${(nowS % 2).toFixed(3)}s`);
-      inner.style.setProperty('--ripple-delay-2p4s', `-${(nowS % 2.4).toFixed(3)}s`);
       if (isRainbow) {
         this._ensureRippleGlobalSyncInit();
         const grad = this.buildRainbowGradient(color, this.getGroupElements(gid)[0], 0.3);
@@ -8482,18 +8740,19 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
     }
 
     _renderEffectMergedBoxOverlay(gid, svg, rect, color, invZoom = 1, toolId = 'blur') {
-      if (!svg || !rect) return;
+      if (!rect) return;
+      const htmlContainer = this.ensureHtmlOverlayLayer();
       const kind = `effect-${toolId}`;
       let node = this.groupFrameOverlays.get(gid);
-      if (!node || node.ownerSVGElement !== svg || node.tagName !== 'foreignObject' || node.getAttribute('data-kind') !== kind) {
+      if (!node || node.parentNode !== htmlContainer || node.tagName !== 'DIV' || node.getAttribute('data-kind') !== kind) {
         if (node && node.parentNode) node.parentNode.removeChild(node);
-        node = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+        node = document.createElement('div');
         node.setAttribute('data-highlight-id', gid);
         node.setAttribute('data-kind', kind);
-        node.setAttribute('pointer-events', 'none');
+        node.style.position = 'absolute';
         node.style.pointerEvents = 'none';
         node.style.overflow = 'visible';
-        svg.appendChild(node);
+        htmlContainer.appendChild(node);
         const container = document.createElement('div');
         container.className = 'effect-merged-box';
         const inner = document.createElement('div');
@@ -8504,12 +8763,10 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       }
       const width = Math.max(1, rect.right - rect.left);
       const height = Math.max(1, rect.bottom - rect.top);
-      node.style.pointerEvents = 'none';
-      node.style.overflow = 'visible';
-      node.setAttribute('x', rect.left.toFixed(2));
-      node.setAttribute('y', rect.top.toFixed(2));
-      node.setAttribute('width', width.toFixed(2));
-      node.setAttribute('height', height.toFixed(2));
+      node.style.left = `${rect.left.toFixed(2)}px`;
+      node.style.top = `${rect.top.toFixed(2)}px`;
+      node.style.width = `${width.toFixed(2)}px`;
+      node.style.height = `${height.toFixed(2)}px`;
       const container = node.querySelector('.effect-merged-box');
       const inner = node.querySelector('.effect-merged-box-inner');
       if (!container || !inner) return;
@@ -8780,6 +9037,10 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
         try { this.frameOverlayLayer.parentNode.removeChild(this.frameOverlayLayer); } catch (_) { }
       }
       this.frameOverlayLayer = null;
+      if (this.htmlOverlayLayer && this.htmlOverlayLayer.parentNode) {
+        try { this.htmlOverlayLayer.parentNode.removeChild(this.htmlOverlayLayer); } catch (_) { }
+      }
+      this.htmlOverlayLayer = null;
       this.queryAllDeep(`${HIGHLIGHT_SELECTOR}.group-overlay-active, ${HIGHLIGHT_SELECTOR}.ripple-overlay-active`).forEach(el => {
         el.classList.remove('group-overlay-active', 'ripple-overlay-active');
       });

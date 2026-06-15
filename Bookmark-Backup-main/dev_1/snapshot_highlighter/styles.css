@@ -1390,6 +1390,13 @@
   box-shadow: 0 12px 34px rgba(15,23,42,.22) !important;
 }
 
+#dev1-snapshot-highlighter-batch-bar.dark-theme {
+  background: rgba(30, 41, 59, .98) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, .15) !important;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .45) !important;
+}
+
 .highlight-color-picker,
 .highlight-tool-picker {
   width: min(600px, calc(100vw - 28px)) !important;
@@ -1521,6 +1528,12 @@
   background: #000000 !important;
   color: #ffffff !important;
   border-color: #000000 !important;
+}
+
+.dev1-color-variant-btn.auto-text {
+  background: linear-gradient(135deg, #f3f4f6, #e5e7eb) !important;
+  color: #1f2937 !important;
+  border-color: #cbd5e1 !important;
 }
 
 .dev1-color-variant-btn.active,
@@ -2473,7 +2486,6 @@
 
 .dev1-batch-tip strong,
 .dev1-batch-tip em {
-  color: #16a34a !important;
   font-style: normal !important;
   font-weight: 800 !important;
 }
@@ -2489,6 +2501,25 @@
   color: #182033 !important;
   box-shadow: 0 12px 34px rgba(15,23,42,.24) !important;
   text-align: center !important;
+}
+
+#dev1-snapshot-highlighter-batch-confirm-dialog.dark-theme {
+  background: rgba(30, 41, 59, .98) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, .15) !important;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .48) !important;
+}
+
+#dev1-snapshot-highlighter-batch-confirm-dialog.dark-theme .dev1-batch-confirm-actions button {
+  background: rgba(15, 23, 42, .52) !important;
+  color: #f8fafc !important;
+  border-color: rgba(255, 255, 255, .15) !important;
+}
+
+#dev1-snapshot-highlighter-batch-confirm-dialog.dark-theme .dev1-batch-confirm-actions button.danger {
+  background: #ef4444 !important;
+  border-color: #ef4444 !important;
+  color: #ffffff !important;
 }
 
 .dev1-batch-confirm-message {
@@ -2564,6 +2595,12 @@
     border-color: #000000 !important;
   }
 
+  .dev1-snapshot-highlighter-panel:not(.light-theme) .dev1-color-variant-btn.auto-text {
+    background: linear-gradient(135deg, #1e293b, #0f172a) !important;
+    color: #f1f5f9 !important;
+    border-color: #334155 !important;
+  }
+
   .dev1-snapshot-highlighter-panel:not(.light-theme) .color-option[data-rainbow-option="true"]:hover,
   .dev1-snapshot-highlighter-panel:not(.light-theme) .color-option[data-rainbow-option="true"].active,
   .dev1-snapshot-highlighter-panel:not(.light-theme) .color-option.dev1-rainbow-accent-option:hover,
@@ -2608,7 +2645,9 @@
 }
 
 #frame-overlay-layer,
-.frame-overlay-layer {
+.frame-overlay-layer,
+#html-overlay-layer,
+.html-overlay-layer {
   position: absolute !important;
   left: 0 !important;
   top: 0 !important;
@@ -2618,6 +2657,7 @@
   pointer-events: none !important;
   z-index: 2147483602 !important;
   contain: none !important;
+  will-change: transform !important;
 }
 
 #frame-overlay-layer path,
@@ -2714,7 +2754,23 @@
 .custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-mosaic,
 .custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-liquidglass,
 .custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-callout,
-.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-sticker {
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-sticker,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-box,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-filled-box,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-rounded-box,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-dashed-box,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-double-box,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-highlight,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-marker,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-pastel,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-neon,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-transparent,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-highlighter-pen,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-pill,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-glow,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-rainbow,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-spotlight,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-gradient {
   background: transparent !important;
   background-image: none !important;
   border: none !important;
@@ -2747,7 +2803,11 @@
 .custom-highlight.dev1-snapshot-highlight.group-overlay-active[class*="tool-brackets-"] .hl-bracket-left,
 .custom-highlight.dev1-snapshot-highlight.group-overlay-active[class*="tool-brackets-"] .hl-bracket-right,
 .custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-liquidglass::before,
-.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-liquidglass::after {
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-liquidglass::after,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-neon-blink::before,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-neon-blink::after,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-neon-flicker::before,
+.custom-highlight.dev1-snapshot-highlight.group-overlay-active.tool-neon-flicker::after {
   content: none !important;
   display: none !important;
 }
@@ -3086,7 +3146,9 @@
 }
 
 .custom-highlight.dev1-snapshot-highlight.tool-ripple > .ripple-box .ripple-edge::before,
-.custom-highlight.dev1-snapshot-highlight.tool-ripple > .ripple-box .ripple-edge::after {
+.custom-highlight.dev1-snapshot-highlight.tool-ripple > .ripple-box .ripple-edge::after,
+.ripple-merged-box-inner .ripple-edge::before,
+.ripple-merged-box-inner .ripple-edge::after {
   content: "" !important;
   position: absolute !important;
   inset: 0 !important;
@@ -3121,6 +3183,7 @@
 }
 
 .custom-highlight.dev1-snapshot-highlight.tool-ripple.ripple-overlay-active > .ripple-box {
+  display: inline !important;
   background: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
@@ -3231,6 +3294,14 @@
   transition: background-color .6s ease, filter .6s ease, opacity .3s ease, border-color .3s ease !important;
 }
 
+.ripple-merged-box-inner .ripple-edge::before {
+  animation-delay: var(--ripple-delay-2s, 0s), var(--ripple-delay-2s, 0s), var(--ripple-delay-2s, 0s) !important;
+}
+
+.ripple-merged-box-inner .ripple-edge::after {
+  animation-delay: calc(var(--ripple-delay-2p4s, 0s) + .4s), calc(var(--ripple-delay-2p4s, 0s) + .4s), calc(var(--ripple-delay-2p4s, 0s) + .4s) !important;
+}
+
 .ripple-merged-box {
   width: 100% !important;
   height: 100% !important;
@@ -3257,7 +3328,7 @@
   top: 50% !important;
   left: 50% !important;
   border-radius: 50% !important;
-  transform: translate(-50%, -50%) scale(0) !important;
+  transform: translate(-50%, -50%) scale(0);
   pointer-events: none !important;
   mix-blend-mode: screen !important;
   opacity: .9 !important;
