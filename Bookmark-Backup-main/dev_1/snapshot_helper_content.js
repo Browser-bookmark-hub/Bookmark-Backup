@@ -91,6 +91,9 @@
         screen_record_stop: '停止',
         processing: '处理中...',
         screen_record_error: '录屏失败',
+        screen_record_tab_only: '为了精准录制框选区域，请在弹出的共享窗口中选择「Chrome 标签页」（或「当前标签页」）进行录制！',
+        recording_settings_info_title: '录制说明',
+        got_it: '知道了',
         loading: '加载中...',
         video_record_success: '录制完成',
         video_csp_restricted: '由于网站限制，无法预览',
@@ -169,6 +172,9 @@
         screen_record_stop: 'Stop',
         processing: 'Processing...',
         screen_record_error: 'Screen recording failed',
+        screen_record_tab_only: 'To crop the recording area accurately, please select "Chrome Tab" (or "Current Tab") in the sharing dialog!',
+        recording_settings_info_title: 'Recording Instructions',
+        got_it: 'Got it',
         loading: 'Loading...',
         video_record_success: 'Recording complete',
         video_csp_restricted: 'Preview unavailable due to site restrictions',
@@ -278,6 +284,89 @@
         this._urlChangeListener = null;
         this.t = (key) => this.translate(key);
         this._setupUrlChangeListener();
+
+        this._supportedCodecsCache = null;
+        this._codecCheckPromise = null;
+      }
+
+      async _checkAllCodecsSupport() {
+        const webCodecsSupported = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined' && typeof Mp4Muxer.Muxer === 'function';
+        const isChinese = (this.config && this.config.lang) !== 'en';
+        if (!webCodecsSupported) {
+          const candidates = [
+            { value: 'video/webm;codecs=vp9', label: 'VP9' },
+            { value: 'video/webm;codecs=vp8', label: 'VP8' }
+          ];
+          const supported = [];
+          for (const item of candidates) {
+            if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(item.value)) {
+              supported.push(item);
+            }
+          }
+          this._supportedCodecsCache = supported;
+          return;
+        }
+
+        const candidates = [
+          { value: 'avc1.640033', label: isChinese ? 'H.264 High 5.1 (推荐)' : 'H.264 High 5.1 (Recommended)' },
+          { value: 'hvc1.1.6.L153.B0', label: 'HEVC (H.265)' },
+          { value: 'av01.0.05M.08', label: isChinese ? 'AV1 (高画质/低体积)' : 'AV1 (High Quality / Low Size)' },
+          { value: 'avc1.42001f', label: isChinese ? 'H.264 Baseline (兼容)' : 'H.264 Baseline (Compatible)' },
+          { value: 'video/webm;codecs=vp9', label: 'VP9' },
+          { value: 'video/webm;codecs=vp8', label: 'VP8' }
+        ];
+
+        const checkCodecSupport = async (codec) => {
+          if (codec.startsWith('video/webm')) {
+            return typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(codec);
+          }
+          
+          let testCodec = codec;
+          
+          const config = {
+            codec: testCodec,
+            width: 1280,
+            height: 720,
+            bitrate: 5000000,
+            framerate: 30
+          };
+          
+          try {
+            const res = await VideoEncoder.isConfigSupported(config);
+            if (!res.supported) return false;
+            
+            const encoder = new VideoEncoder({
+              output: () => {},
+              error: () => {}
+            });
+            try {
+              encoder.configure(config);
+              encoder.close();
+              return true;
+            } catch (err) {
+              console.warn(`Codec ${codec} configuration check failed:`, err);
+              try { encoder.close(); } catch (_) {}
+              return false;
+            }
+          } catch (_) {
+            return false;
+          }
+        };
+
+        const supported = [];
+        for (const item of candidates) {
+          if (await checkCodecSupport(item.value)) {
+            supported.push(item);
+          }
+        }
+        
+        if (supported.length === 0) {
+          supported.push({ value: 'avc1.640033', label: isChinese ? 'H.264 High 5.1 (推荐)' : 'H.264 High 5.1 (Recommended)' });
+          supported.push({ value: 'avc1.42001f', label: isChinese ? 'H.264 Baseline (兼容)' : 'H.264 Baseline (Compatible)' });
+        }
+
+        this._supportedCodecsCache = supported;
+        console.log('Detected supported screen recording codecs:', supported.map(c => c.value));
       }
 
       translate(key) {
@@ -532,6 +621,39 @@
             .dev1-helper-root.pos-bottom-left .dev1-helper-panel { bottom: 64px; left: 0; transform-origin: bottom left; }
             .dev1-helper-root.pos-top-right .dev1-helper-panel { top: 64px; right: 0; transform-origin: top right; }
             .dev1-helper-root.pos-top-left .dev1-helper-panel { top: 64px; left: 0; transform-origin: top left; }
+            @keyframes dev1-panel-fade-in {
+              from {
+                opacity: 0;
+                transform: translateY(10px) scale(0.98);
+              }
+              to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+              }
+            }
+            #recording-settings-panel {
+              position: absolute;
+              z-index: 10;
+              width: 300px;
+              max-width: min(300px, calc(100vw - 36px));
+              border-radius: 20px;
+              background: var(--panel-bg);
+              backdrop-filter: var(--backdrop-filter);
+              -webkit-backdrop-filter: var(--backdrop-filter);
+              color: var(--text-main);
+              border: 1px solid var(--panel-border);
+              box-shadow: var(--panel-shadow);
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+              box-sizing: border-box;
+              padding: 16px;
+              font-size: 13px;
+              pointer-events: auto !important;
+              animation: dev1-panel-fade-in 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            }
+            .dev1-helper-root.pos-bottom-right #recording-settings-panel { bottom: 64px; right: 0; transform-origin: bottom right; }
+            .dev1-helper-root.pos-bottom-left #recording-settings-panel { bottom: 64px; left: 0; transform-origin: bottom left; }
+            .dev1-helper-root.pos-top-right #recording-settings-panel { top: 64px; right: 0; transform-origin: top right; }
+            .dev1-helper-root.pos-top-left #recording-settings-panel { top: 64px; left: 0; transform-origin: top left; }
             .dev1-helper-header {
               display: flex;
               align-items: center;
@@ -1453,6 +1575,9 @@
         if (root) root.dataset.open = open ? 'true' : 'false';
         if (launcher) launcher.setAttribute('aria-expanded', open ? 'true' : 'false');
         if (open) this._updateQuadrant(true);
+        if (!open) {
+          this._removeRecordingSettingsPanel();
+        }
       }
 
     // ===== Zoom-Invariant Fixed Layer for Screenshot/Recording UI =====
@@ -4475,8 +4600,12 @@
     }
 
     // 显示录屏设置面板
-    _showRecordingSettings(anchor) {
+    async _showRecordingSettings(anchor) {
       console.log('_showRecordingSettings called');
+
+      if (!this._codecCheckPromise) {
+        this._codecCheckPromise = this._checkAllCodecsSupport();
+      }
 
       // 移除已存在的设置面板
       const existing = this._getRecordingSettingsPanel();
@@ -4485,43 +4614,50 @@
       const t = (key, fallback) => (this.t && this.t(key)) || fallback;
       const isDark = this.darkModeEnabled;
 
-      const rect = anchor.getBoundingClientRect();
-      const PANEL_WIDTH = 280;
-      const PANEL_HEIGHT = 300;
-
-      // 计算面板位置，与 launcher 居中对齐
-      let left = rect.left - (PANEL_WIDTH / 2) + (rect.width / 2);
-      if (left + PANEL_WIDTH > window.innerWidth) left = window.innerWidth - PANEL_WIDTH - 10;
-      if (left < 10) left = 10;
-
-      // 默认尝试在下方显示
-      let top = rect.bottom + 10;
-      if (top + PANEL_HEIGHT > window.innerHeight) {
-        // 如果下方空间不够，尝试在上方显示
-        top = rect.top - PANEL_HEIGHT - 10;
-        if (top < 10) {
-          // 如果上方和下方都不够，那就限制在视口内
-          top = Math.max(10, window.innerHeight - PANEL_HEIGHT - 10);
+      const root = this.shadow && this.shadow.querySelector('.dev1-helper-root');
+      let positionStyle = 'bottom: 64px; right: 0;';
+      if (root) {
+        if (root.classList.contains('pos-bottom-left')) {
+          positionStyle = 'bottom: 64px; left: 0;';
+        } else if (root.classList.contains('pos-top-right')) {
+          positionStyle = 'top: 64px; right: 0;';
+        } else if (root.classList.contains('pos-top-left')) {
+          positionStyle = 'top: 64px; left: 0;';
         }
       }
 
       const panel = document.createElement('div');
       panel.id = 'recording-settings-panel';
-      panel.style.cssText = `
-        position: fixed;
-        top: ${top}px;
-        left: ${left}px;
-        width: 280px;
-        padding: 16px;
-        background: ${isDark ? '#1f1f1f' : '#f0f4f8'};
-        border: 1px solid ${isDark ? '#3b3b3b' : '#cbd5e1'};
-        border-radius: 12px;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-        z-index: 2147483648;
-        font-size: 13px;
-        color: ${isDark ? '#e2e8f0' : '#1e293b'};
-      `;
-      console.log('Panel position:', { top, left });
+      if (!root) {
+        const rect = anchor.getBoundingClientRect();
+        const PANEL_WIDTH = 280;
+        const PANEL_HEIGHT = 370;
+        let left = rect.left - (PANEL_WIDTH / 2) + (rect.width / 2);
+        if (left + PANEL_WIDTH > window.innerWidth) left = window.innerWidth - PANEL_WIDTH - 10;
+        if (left < 10) left = 10;
+        let top = rect.bottom + 10;
+        if (top + PANEL_HEIGHT > window.innerHeight) {
+          top = rect.top - PANEL_HEIGHT - 10;
+          if (top < 10) top = Math.max(10, window.innerHeight - PANEL_HEIGHT - 10);
+        }
+        panel.style.cssText = `
+          position: fixed;
+          top: ${top}px;
+          left: ${left}px;
+          width: 280px;
+          padding: 16px;
+          background: ${isDark ? 'var(--panel-bg, #1f1f1f)' : 'var(--panel-bg, #f0f4f8)'};
+          border: 1px solid var(--panel-border, ${isDark ? '#3b3b3b' : '#cbd5e1'});
+          border-radius: 20px;
+          box-shadow: var(--panel-shadow, 0 10px 40px rgba(0,0,0,0.3));
+          z-index: 2147483648;
+          font-size: 13px;
+          color: var(--text-main, ${isDark ? '#e2e8f0' : '#1e293b'});
+          pointer-events: auto !important;
+          backdrop-filter: var(--backdrop-filter);
+          -webkit-backdrop-filter: var(--backdrop-filter);
+        `;
+      }
 
       let closeHandler = null;
       const closePanel = () => {
@@ -4531,10 +4667,153 @@
 
       // 标题
       const title = document.createElement('div');
-      title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;';
+      title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; position: relative;';
+      
       const titleLabel = document.createElement('div');
       titleLabel.style.cssText = 'display: flex; align-items: center; gap: 8px; flex: 1;';
-      titleLabel.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>' + t('recording_settings', '录制设置');
+      
+      const iconSpan = document.createElement('span');
+      iconSpan.style.display = 'flex';
+      iconSpan.style.alignItems = 'center';
+      iconSpan.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
+      titleLabel.appendChild(iconSpan);
+
+      const titleText = document.createElement('span');
+      titleText.textContent = t('recording_settings', '录制设置');
+      titleLabel.appendChild(titleText);
+
+      // 提示说明按钮
+      const infoBtn = document.createElement('button');
+      infoBtn.type = 'button';
+      infoBtn.textContent = '?';
+      infoBtn.title = t('recording_settings_info_title', '录制说明');
+      infoBtn.setAttribute('aria-label', t('recording_settings_info_title', '录制说明'));
+      infoBtn.style.cssText = `
+        box-sizing: border-box !important;
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        outline: none !important;
+        border: 1px solid ${isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.18)'} !important;
+        border-radius: 999px !important;
+        background: ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'} !important;
+        color: ${isDark ? '#e2e8f0' : '#475569'} !important;
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+        padding: 0 !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        font-family: inherit !important;
+        cursor: pointer !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        pointer-events: auto !important;
+        transition: all 0.2s ease !important;
+        margin-left: 6px !important;
+        line-height: 1 !important;
+      `;
+      
+      infoBtn.addEventListener('mouseenter', () => {
+        infoBtn.style.setProperty('background', isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.12)', 'important');
+        infoBtn.style.setProperty('color', '#3b82f6', 'important');
+        infoBtn.style.setProperty('border-color', '#3b82f6', 'important');
+      });
+      infoBtn.addEventListener('mouseleave', () => {
+        infoBtn.style.setProperty('background', isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', 'important');
+        infoBtn.style.setProperty('color', isDark ? '#e2e8f0' : '#475569', 'important');
+        infoBtn.style.setProperty('border-color', isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.18)', 'important');
+      });
+      
+      const isChinese = (this.config && this.config.lang) !== 'en';
+      infoBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const helpPanelId = 'recording-settings-help-panel';
+        let helpPanel = panel.querySelector('#' + helpPanelId);
+        if (helpPanel) {
+          helpPanel.remove();
+        } else {
+          helpPanel = document.createElement('div');
+          helpPanel.id = helpPanelId;
+          helpPanel.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: ${isDark ? 'var(--panel-bg, #1f1f1f)' : 'var(--panel-bg, #f0f4f8)'};
+            border: 1px solid var(--panel-border, ${isDark ? '#3b3b3b' : '#cbd5e1'});
+            border-radius: 19px;
+            padding: 16px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            color: var(--text-main, ${isDark ? '#e2e8f0' : '#1e293b'});
+            box-sizing: border-box;
+            pointer-events: auto !important;
+          `;
+          
+          const helpTitle = document.createElement('div');
+          helpTitle.style.cssText = 'font-weight: 750 !important; font-size: 14px !important; margin-bottom: 12px !important; text-align: left !important;';
+          helpTitle.textContent = t('recording_settings_info_title', '录制说明');
+          
+          const list = document.createElement('ul');
+          list.style.cssText = 'margin: 0 0 16px 18px !important; padding: 0 !important; font-size: 12px !important; line-height: 1.6 !important; flex: 1 !important; overflow-y: auto !important;';
+          
+          const items = isChinese ? [
+            '<strong>请勿改变窗口大小：</strong>录制中途请勿 resize 窗口，否则裁剪区域对不齐会导致边缘出现红线。如需调整，请调整好后再开始录屏。',
+            '<strong>关于视频缓存：</strong>录制视频暂存在浏览器内存（RAM）中。完成录制后，无论点击<strong>“保存并删除缓存”</strong>还是<strong>“取消”</strong>，程序都会在底层立即清空并释放全部视频内存，保护您的隐私及电脑性能。'
+          ] : [
+            '<strong>Do not resize window:</strong> Please do not resize the browser window during recording, otherwise the crop ratio will shift and expose the red border.',
+            '<strong>About video cache:</strong> The recorded video is stored temporarily in browser memory. After recording, clicking <strong>"Save & Clear Cache"</strong> or <strong>"Cancel"</strong> will permanently delete the cache to release memory and protect your privacy.'
+          ];
+          
+          items.forEach(text => {
+            const li = document.createElement('li');
+            li.style.cssText = 'margin: 8px 0 !important; text-align: left !important; list-style-type: disc !important;';
+            li.innerHTML = text;
+            list.appendChild(li);
+          });
+          
+          const closeHelpBtn = document.createElement('button');
+          closeHelpBtn.type = 'button';
+          closeHelpBtn.textContent = t('got_it', isChinese ? '知道了' : 'Got it');
+          closeHelpBtn.style.cssText = `
+            width: 100% !important;
+            height: 32px !important;
+            background: linear-gradient(135deg, #1976d2, #42a5f5) !important;
+            color: #fff !important;
+            border: 0 !important;
+            border-radius: 8px !important;
+            cursor: pointer !important;
+            font-weight: 600 !important;
+            font-size: 13px !important;
+            transition: opacity 0.2s !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            pointer-events: auto !important;
+            outline: none !important;
+            box-shadow: 0 2px 6px rgba(25, 118, 210, 0.2) !important;
+          `;
+          closeHelpBtn.addEventListener('mouseenter', () => closeHelpBtn.style.setProperty('opacity', '0.9', 'important'));
+          closeHelpBtn.addEventListener('mouseleave', () => closeHelpBtn.style.setProperty('opacity', '1', 'important'));
+          closeHelpBtn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            helpPanel.remove();
+          });
+          
+          helpPanel.appendChild(helpTitle);
+          helpPanel.appendChild(list);
+          helpPanel.appendChild(closeHelpBtn);
+          panel.appendChild(helpPanel);
+        }
+      });
+      titleLabel.appendChild(infoBtn);
+
       const closeBtn = document.createElement('button');
       closeBtn.type = 'button';
       closeBtn.textContent = '×';
@@ -4566,6 +4845,7 @@
       // 创建设置项
       const createSettingRow = (labelText, options, storageKey, defaultValue) => {
         const row = document.createElement('div');
+        row.className = 'settings-row-' + storageKey;
         row.style.cssText = 'margin-bottom: 14px;';
 
         const label = document.createElement('div');
@@ -4596,7 +4876,12 @@
             font-size: 12px;
             opacity: ${isDisabled ? '0.4' : '1'};
             transition: all 0.15s ease;
+            display: ${isDisabled ? 'none' : ''};
           `;
+
+          if (isActive) {
+            btn.classList.add('active');
+          }
 
           if (!isDisabled) {
             btn.addEventListener('click', () => {
@@ -4604,11 +4889,17 @@
                 b.style.border = `1px solid ${isDark ? '#3b3b3b' : '#e2e8f0'}`;
                 b.style.background = isDark ? '#2d2d2d' : '#f8fafc';
                 b.style.color = isDark ? '#e2e8f0' : '#475569';
+                b.classList.remove('active');
               });
               btn.style.border = '1px solid #3b82f6';
               btn.style.background = isDark ? '#1e3a5f' : '#dbeafe';
               btn.style.color = '#3b82f6';
+              btn.classList.add('active');
               try { localStorage.setItem(storageKey, opt.value); } catch (_) { }
+
+              if (storageKey === 'record_format') {
+                updateSettingPanelState();
+              }
             });
           }
 
@@ -4619,20 +4910,113 @@
         return row;
       };
 
-      // 检查 WebCodecs 支持
-      const webCodecsSupported = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined' && typeof Mp4Muxer.Muxer === 'function';
+      // 动态更新面板禁用状态
+      const updateSettingPanelState = () => {
+        let format = 'mp4';
+        try { format = localStorage.getItem('record_format') || (webCodecsSupported ? 'mp4' : 'webm'); } catch (_) {}
 
-      // 编解码器选择（WebCodecs 支持更多）
-      const codecs = webCodecsSupported ? [
-        { value: 'avc1.640033', label: 'H.264 High 5.1' },
-        { value: 'avc1.640028', label: 'H.264 High 4.0' },
-        { value: 'avc1.4d0028', label: 'H.264 Main 4.0' },
-        { value: 'avc1.42001f', label: 'H.264 Baseline 3.1' }
-      ] : [
-        { value: 'video/webm;codecs=vp9', label: 'VP9', disabled: typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported('video/webm;codecs=vp9') },
-        { value: 'video/webm;codecs=vp8', label: 'VP8' }
+        const codecRow = panel.querySelector('.settings-row-record_codec');
+        const qualityRow = panel.querySelector('.settings-row-record_quality');
+        const fpsRow = panel.querySelector('.settings-row-record_fps');
+
+        if (!codecRow || !qualityRow || !fpsRow) return;
+
+        const setButtonEnabled = (btn, enabled) => {
+          if (enabled) {
+            btn.style.opacity = '1';
+            btn.style.pointerEvents = 'auto';
+            btn.style.cursor = 'pointer';
+            btn.disabled = false;
+            btn.style.display = '';
+          } else {
+            btn.style.opacity = '0.4';
+            btn.style.pointerEvents = 'none';
+            btn.style.cursor = 'not-allowed';
+            btn.disabled = true;
+            btn.style.border = `1px solid ${isDark ? '#3b3b3b' : '#e2e8f0'}`;
+            btn.style.background = isDark ? '#2d2d2d' : '#f8fafc';
+            btn.style.color = isDark ? '#e2e8f0' : '#475569';
+            btn.classList.remove('active');
+            btn.style.display = 'none';
+          }
+        };
+
+        const setButtonActive = (btn) => {
+          btn.style.border = '1px solid #3b82f6';
+          btn.style.background = isDark ? '#1e3a5f' : '#dbeafe';
+          btn.style.color = '#3b82f6';
+          btn.classList.add('active');
+          try {
+            const key = btn.parentElement.parentElement.className.replace('settings-row-', '');
+            localStorage.setItem(key, btn.dataset.value);
+          } catch (_) {}
+        };
+
+        if (format === 'mp4') {
+          // MP4: H.264, HEVC, AV1 Enabled; VP9, VP8 Disabled
+          codecRow.querySelectorAll('button').forEach(btn => {
+            const val = btn.dataset.value;
+            const isMp4Codec = val.startsWith('avc1') || val.startsWith('av01') || val.startsWith('hvc1');
+            setButtonEnabled(btn, isMp4Codec);
+          });
+
+          // Quality: All enabled
+          qualityRow.querySelectorAll('button').forEach(btn => {
+            setButtonEnabled(btn, true);
+          });
+
+          // FPS: All enabled
+          fpsRow.querySelectorAll('button').forEach(btn => {
+            setButtonEnabled(btn, true);
+          });
+        } else {
+          // WebM: VP9, VP8 Enabled; Others Disabled
+          codecRow.querySelectorAll('button').forEach(btn => {
+            const val = btn.dataset.value;
+            const isWebmCodec = val.includes('webm');
+            setButtonEnabled(btn, isWebmCodec);
+          });
+
+          // Quality: 100M/50M Disabled; 20M/10M/5M Enabled
+          qualityRow.querySelectorAll('button').forEach(btn => {
+            const val = parseInt(btn.dataset.value);
+            const isWebmQuality = val <= 20000000;
+            setButtonEnabled(btn, isWebmQuality);
+          });
+
+          // FPS: 240/120 Disabled; 60/30 Enabled
+          fpsRow.querySelectorAll('button').forEach(btn => {
+            const val = parseInt(btn.dataset.value);
+            const isWebmFps = val <= 60;
+            setButtonEnabled(btn, isWebmFps);
+          });
+        }
+
+        // Auto-select first enabled option if active button is disabled
+        [codecRow, qualityRow, fpsRow].forEach(row => {
+          const activeBtn = row.querySelector('button.active');
+          if (!activeBtn || activeBtn.disabled) {
+            if (activeBtn) activeBtn.classList.remove('active');
+            const firstEnabled = Array.from(row.querySelectorAll('button')).find(btn => !btn.disabled);
+            if (firstEnabled) {
+              setButtonActive(firstEnabled);
+            }
+          }
+        });
+      };
+
+      // 确保已经完成编解码器支持检测
+      if (this._codecCheckPromise) {
+        await this._codecCheckPromise;
+      }
+
+      const codecs = this._supportedCodecsCache || [
+        { value: 'avc1.640033', label: isChinese ? 'H.264 High 5.1 (推荐)' : 'H.264 High 5.1 (Recommended)' },
+        { value: 'avc1.42001f', label: isChinese ? 'H.264 Baseline (兼容)' : 'H.264 Baseline (Compatible)' }
       ];
-      const defaultCodec = webCodecsSupported ? 'avc1.640033' : 'video/webm;codecs=vp9';
+
+      const webCodecsSupported = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined' && typeof Mp4Muxer.Muxer === 'function';
+      const defaultCodec = codecs[0] ? codecs[0].value : (webCodecsSupported ? 'avc1.640033' : 'video/webm;codecs=vp9');
       panel.appendChild(createSettingRow(t('codec', '编码器'), codecs, 'record_codec', defaultCodec));
 
       // 画质选择（码率） - WebCodecs 支持更高码率
@@ -4640,7 +5024,8 @@
         { value: '100000000', label: t('quality_max', '无损') + ' 100Mbps' },
         { value: '50000000', label: t('quality_ultra', '极清') + ' 50Mbps' },
         { value: '20000000', label: t('quality_high', '超清') + ' 20Mbps' },
-        { value: '10000000', label: t('quality_medium', '高清') + ' 10Mbps' }
+        { value: '10000000', label: t('quality_medium', '高清') + ' 10Mbps' },
+        { value: '5000000', label: t('quality_low', '标清') + ' 5Mbps' }
       ] : [
         { value: '40000000', label: t('quality_ultra', '极清') + ' 40Mbps' },
         { value: '20000000', label: t('quality_high', '超清') + ' 20Mbps' },
@@ -4652,10 +5037,23 @@
 
       // 帧率选择
       const frameRates = [
+        { value: '240', label: '240 FPS' },
+        { value: '120', label: '120 FPS' },
         { value: '60', label: '60 FPS' },
         { value: '30', label: '30 FPS' }
       ];
       panel.appendChild(createSettingRow(t('frame_rate', '帧率'), frameRates, 'record_fps', '60'));
+
+      // 格式选择
+      const formats = [
+        { value: 'mp4', label: 'MP4', disabled: !webCodecsSupported },
+        { value: 'webm', label: 'WebM' }
+      ];
+      const defaultFormat = webCodecsSupported ? 'mp4' : 'webm';
+      panel.appendChild(createSettingRow(t('format', '格式'), formats, 'record_format', defaultFormat));
+
+      // 触发初始状态匹配更新
+      updateSettingPanelState();
 
 
 
@@ -4668,7 +5066,11 @@
       };
       setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
 
-      (this.shadow || document.body).appendChild(panel);
+      if (root) {
+        root.appendChild(panel);
+      } else {
+        (this.shadow || document.body).appendChild(panel);
+      }
       console.log('Settings panel appended', panel);
     }
 
@@ -4856,6 +5258,10 @@
 
     // 屏幕录制功能 - 先选择区域再录制
     startScreenRecording() {
+      if (!this._codecCheckPromise) {
+        this._codecCheckPromise = this._checkAllCodecsSupport();
+      }
+
       try {
         if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
             window.__dev1SnapshotHighlighter._instance && 
@@ -5012,6 +5418,7 @@
       const t = (key, fallback) => (this.t && this.t(key)) || fallback;
       const dpr = window.devicePixelRatio || 1;
       let discardRecording = false;
+      let worker = null;
       this.activeSessionCleanup = () => {
         discardRecording = true;
         this._isScreenshotting = false;
@@ -5024,8 +5431,13 @@
         console.log('Mp4Muxer.Muxer:', typeof Mp4Muxer.Muxer);
         console.log('Mp4Muxer keys:', Object.keys(Mp4Muxer));
       }
-      const useWebCodecs = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined' && typeof Mp4Muxer.Muxer === 'function';
-      console.log('WebCodecs available:', useWebCodecs);
+      const webCodecsSupported = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined' && typeof Mp4Muxer.Muxer === 'function';
+      let recordFormat = 'mp4';
+      try {
+        recordFormat = localStorage.getItem('record_format') || (webCodecsSupported ? 'mp4' : 'webm');
+      } catch (_) {}
+      const useWebCodecs = recordFormat === 'mp4' && webCodecsSupported;
+      console.log('Recording format:', recordFormat, 'useWebCodecs:', useWebCodecs);
 
       try {
         // 读取用户设置（先读取，用于配置 getDisplayMedia）
@@ -5052,7 +5464,7 @@
             // 请求最高分辨率 - 4K 或更高
             width: { ideal: 3840, max: 7680 },
             height: { ideal: 2160, max: 4320 },
-            frameRate: { ideal: frameRate, max: 60 }
+            frameRate: { ideal: frameRate, max: Math.max(frameRate, 240) }
           },
           audio: false,
           preferCurrentTab: true
@@ -5083,6 +5495,16 @@
         const videoTrack = displayStream.getVideoTracks()[0];
         const trackSettings = videoTrack.getSettings();
         console.log('Video track settings:', trackSettings);
+
+        // 为了能够精准裁剪录像区域，必须要求用户分享浏览器标签页而非整个屏幕/窗口
+        if (trackSettings.displaySurface && trackSettings.displaySurface !== 'browser') {
+          displayStream.getTracks().forEach(track => track.stop());
+          alert(t('screen_record_tab_only', '为了精准录制框选区域，请在弹出的共享窗口中选择「Chrome 标签页」（或「当前标签页」）进行录制！'));
+          this.activeSessionCleanup = null;
+          this._removeZoomInvariantContainer();
+          this._isScreenshotting = false;
+          return;
+        }
 
         // 计算缩放比例
         // getDisplayMedia 捕获的是整个视口内容，需要正确映射坐标
@@ -5137,6 +5559,36 @@
         // 高质量缩放设置
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
+
+        const getCropCoords = () => {
+          const currentScaleX = videoEl.videoWidth / window.innerWidth;
+          const currentScaleY = videoEl.videoHeight / window.innerHeight;
+          
+          let currentSrcX = Math.max(0, Math.min(videoEl.videoWidth - 2, Math.round(rect.left * currentScaleX)));
+          let currentSrcY = Math.max(0, Math.min(videoEl.videoHeight - 2, Math.round(rect.top * currentScaleY)));
+          let currentSrcW = Math.max(2, Math.min(videoEl.videoWidth - currentSrcX, Math.round(rect.width * currentScaleX)));
+          let currentSrcH = Math.max(2, Math.min(videoEl.videoHeight - currentSrcY, Math.round(rect.height * currentScaleY)));
+          
+          // Align to 2-pixel boundaries (even numbers) for WebCodecs YUV 4:2:0 format compatibility
+          currentSrcX = Math.floor(currentSrcX / 2) * 2;
+          currentSrcY = Math.floor(currentSrcY / 2) * 2;
+          currentSrcW = Math.floor(currentSrcW / 2) * 2;
+          currentSrcH = Math.floor(currentSrcH / 2) * 2;
+          
+          // Ensure they don't exceed video dimensions
+          if (currentSrcX + currentSrcW > videoEl.videoWidth) {
+            currentSrcW = Math.max(2, Math.floor((videoEl.videoWidth - currentSrcX) / 2) * 2);
+          }
+          if (currentSrcY + currentSrcH > videoEl.videoHeight) {
+            currentSrcH = Math.max(2, Math.floor((videoEl.videoHeight - currentSrcY) / 2) * 2);
+          }
+
+          // Safety clamp
+          currentSrcW = Math.max(2, currentSrcW);
+          currentSrcH = Math.max(2, currentSrcH);
+
+          return { x: currentSrcX, y: currentSrcY, w: currentSrcW, h: currentSrcH };
+        };
 
         // Get zoom-invariant container to prevent position drift during PDF zoom/resize
         const fixedLayer = this._getZoomInvariantContainer();
@@ -5265,7 +5717,13 @@
           this.activeSessionCleanup = null;
           isRecording = false;
           cancelAnimationFrame(animationId);
-          displayStream.getTracks().forEach(track => track.stop());
+          if (worker) {
+            try { worker.terminate(); } catch (_) {}
+            worker = null;
+          }
+          displayStream.getTracks().forEach(track => {
+            try { track.stop(); } catch (_) {}
+          });
           videoEl.pause();
           videoEl.srcObject = null;
           controlPanel.remove();
@@ -5278,32 +5736,68 @@
 
         this.activeSessionCleanup = () => cleanup(true);
 
-        if (useWebCodecs) {
-          // ===== WebCodecs + mp4-muxer 高清录制 =====
-          const muxer = new Mp4Muxer.Muxer({
-            target: new Mp4Muxer.ArrayBufferTarget(),
-            video: {
-              codec: 'avc',
-              width: width,
-              height: height
-            },
-            fastStart: 'in-memory'
-          });
+        let runWebCodecs = useWebCodecs;
+        if (runWebCodecs) {
+          // ===== WebCodecs + mp4-muxer 移交到 Web Worker 录制 =====
+          stopBtn.disabled = false;
 
-          let frameCount = 0;
-          const frameDuration = 1000000 / frameRate; // 微秒
+          try {
+            const workerUrl = chrome.runtime.getURL('dev_1/record_worker.js');
+            const response = await fetch(workerUrl);
+            const code = await response.text();
 
-          const encoder = new VideoEncoder({
-            output: (chunk, meta) => {
-              muxer.addVideoChunk(chunk, meta);
-            },
-            error: (e) => console.error('VideoEncoder error:', e)
-          });
+            // 将相对路径 './mp4-muxer.js' 替换为绝对路径，以便从 Blob URL 中成功加载
+            const absoluteMuxerUrl = chrome.runtime.getURL('dev_1/mp4-muxer.js');
+            const modifiedCode = code.replace(
+              /importScripts\(['"]\.\/mp4-muxer\.js['"]\);?/,
+              `importScripts('${absoluteMuxerUrl}');`
+            );
 
-          // 检查 codec 是否支持，如果不支持则降级
+            const blob = new Blob([modifiedCode], { type: 'application/javascript' });
+            const blobUrl = URL.createObjectURL(blob);
+            worker = new Worker(blobUrl);
+            URL.revokeObjectURL(blobUrl);
+          } catch (err) {
+            console.error('Failed to spawn worker via Blob URL, falling back to MediaRecorder:', err);
+            runWebCodecs = false;
+            if (worker) {
+              try { worker.terminate(); } catch (_) {}
+              worker = null;
+            }
+            // Update UI formatting badge to show WebM format since we fall back
+            formatBadge.textContent = 'WebM';
+            formatBadge.style.background = '#3b82f6';
+          }
+        }
+
+        if (runWebCodecs) {
+          // Function to get H.264 level string based on pixel count
+          const getRequiredAvcLevel = (w, h) => {
+            const pixels = w * h;
+            if (pixels <= 921600) return '1f'; // Level 3.1
+            if (pixels <= 2097152) return '29'; // Level 4.1
+            return '33'; // Level 5.1
+          };
+
+          const adjustAvcLevel = (codecStr, w, h) => {
+            if (codecStr.startsWith('avc1.')) {
+              const req = getRequiredAvcLevel(w, h);
+              const cur = codecStr.slice(-2);
+              if (parseInt(req, 16) > parseInt(cur, 16)) {
+                return codecStr.slice(0, -2) + req;
+              }
+            }
+            return codecStr;
+          };
+
+          // 确定 finalCodec
           let finalCodec = codecProfile;
+          if (finalCodec.startsWith('avc1.')) {
+            finalCodec = adjustAvcLevel(finalCodec, width, height);
+          }
+
           const codecConfig = {
-            codec: codecProfile,
+            codec: finalCodec,
             width: width,
             height: height,
             bitrate: bitrate,
@@ -5313,79 +5807,90 @@
           try {
             const support = await VideoEncoder.isConfigSupported(codecConfig);
             if (!support.supported) {
-              console.warn(`Codec ${codecProfile} not supported, falling back to avc1.42001f`);
-              finalCodec = 'avc1.42001f'; // Baseline Profile - 最广泛支持
+              console.warn(`Codec ${finalCodec} not supported, trying fallback codecs...`);
+              
+              // Fallback candidates in order of preference
+              const fallbacks = [
+                'avc1.640033', // H.264 High 5.1 (highly supported, high quality)
+                'avc1.420033', // H.264 Baseline 5.1 (very compatible)
+                'avc1.42001f'  // H.264 Baseline 3.1 (last resort)
+              ];
+
+              let foundFallback = false;
+              for (let cand of fallbacks) {
+                cand = adjustAvcLevel(cand, width, height);
+                const candConfig = { ...codecConfig, codec: cand };
+                try {
+                  const candSupport = await VideoEncoder.isConfigSupported(candConfig);
+                  if (candSupport.supported) {
+                    console.warn(`Falling back to supported codec: ${cand}`);
+                    finalCodec = cand;
+                    foundFallback = true;
+                    break;
+                  }
+                } catch (_) {}
+              }
+
+              if (!foundFallback) {
+                console.warn(`No fallback candidates supported, defaulting to avc1.640033`);
+                finalCodec = 'avc1.640033';
+              }
             }
           } catch (e) {
             console.warn('Could not check codec support:', e);
-            finalCodec = 'avc1.42001f';
+            finalCodec = adjustAvcLevel('avc1.640033', width, height);
           }
 
-          console.log('Final encoder config:', {
-            codec: finalCodec,
-            width, height,
-            bitrate: (bitrate / 1000000).toFixed(1) + ' Mbps',
-            frameRate
-          });
+          const videoTrack = displayStream.getVideoTracks()[0];
+          const processor = new MediaStreamTrackProcessor({ track: videoTrack });
+          const readable = processor.readable;
 
-          encoder.configure({
-            codec: finalCodec,
-            width: width,
-            height: height,
-            bitrate: bitrate,
-            framerate: frameRate,
-            latencyMode: 'quality',
-            hardwareAcceleration: 'prefer-hardware',
-            avc: { format: 'avc' }
-          });
-
-          const frameInterval = 1000 / frameRate;
-          let lastFrameTime = 0;
-
-          const captureFrame = (timestamp) => {
-            if (!isRecording) return;
-
-            if (timestamp - lastFrameTime >= frameInterval) {
-              ctx.drawImage(videoEl, srcX, srcY, srcW, srcH, 0, 0, width, height);
-
-              const frame = new VideoFrame(canvas, {
-                timestamp: frameCount * frameDuration
-              });
-
-              const keyFrame = frameCount % (frameRate * 2) === 0; // 每2秒一个关键帧
-              encoder.encode(frame, { keyFrame });
-              frame.close();
-
-              frameCount++;
-              lastFrameTime = timestamp;
+          // 监听 Worker 传回的消息
+          worker.onmessage = (e) => {
+            const { type, buffer, error } = e.data;
+            if (type === 'done') {
+              const blob = new Blob([buffer], { type: 'video/mp4' });
+              cleanup();
+              this._showRecordingResult(blob, 'video/mp4');
+            } else if (type === 'error') {
+              console.error('Worker error response:', error);
+              cleanup();
+              alert(t('screen_record_error', '录屏失败') + ': ' + error);
             }
-
-            animationId = requestAnimationFrame(captureFrame);
           };
 
-          animationId = requestAnimationFrame(captureFrame);
+          // 准备裁剪区域坐标
+          const coords = getCropCoords();
 
-          // 停止录制
-          const stopRecording = async () => {
+          // 启动 Worker，转移 readable 所有权
+          worker.postMessage({
+            type: 'start',
+            data: {
+              readable: readable,
+              width: coords.w,
+              height: coords.h,
+              bitrate: bitrate,
+              frameRate: frameRate,
+              codecProfile: finalCodec,
+              rect: {
+                x: coords.x,
+                y: coords.y,
+                width: coords.w,
+                height: coords.h
+              }
+            }
+          }, [readable]);
+
+          // 停止录制函数
+          const stopRecording = () => {
             if (!isRecording) return;
             isRecording = false;
 
             stopBtn.textContent = t('processing', '处理中...');
             stopBtn.disabled = true;
 
-            try {
-              await encoder.flush();
-              muxer.finalize();
-
-              const { buffer } = muxer.target;
-              const blob = new Blob([buffer], { type: 'video/mp4' });
-
-              cleanup();
-              this._showRecordingResult(blob, 'video/mp4');
-            } catch (e) {
-              console.error('Encoding error:', e);
-              cleanup();
-              alert(t('screen_record_error', '录屏失败') + ': ' + e.message);
+            if (worker) {
+              worker.postMessage({ type: 'stop' });
             }
           };
 
@@ -5411,22 +5916,47 @@
           document.addEventListener('contextmenu', onContextMenu);
 
           // 监听流结束
-          displayStream.getVideoTracks()[0].onended = stopRecording;
+          videoTrack.addEventListener('ended', stopRecording);
 
         } else {
           // ===== 降级到 MediaRecorder =====
           console.log('Falling back to MediaRecorder');
 
+          // Performance Optimization: Cache cropping coordinates and update only on resize to prevent Layout Thrashing
+          let cachedCoords = getCropCoords();
+          const handleResize = () => {
+            cachedCoords = getCropCoords();
+          };
+          window.addEventListener('resize', handleResize);
+
+          // Wrap cleanup to remove resize listener
+          const originalCleanup = cleanup;
+          cleanup = (discard = false) => {
+            window.removeEventListener('resize', handleResize);
+            originalCleanup(discard);
+          };
+
           const drawFrame = () => {
             if (!isRecording) return;
-            ctx.drawImage(videoEl, srcX, srcY, srcW, srcH, 0, 0, width, height);
+            ctx.drawImage(videoEl, cachedCoords.x, cachedCoords.y, cachedCoords.w, cachedCoords.h, 0, 0, width, height);
             animationId = requestAnimationFrame(drawFrame);
           };
           drawFrame();
 
           const croppedStream = canvas.captureStream(frameRate);
-          const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-            ? 'video/webm;codecs=vp9' : 'video/webm';
+          let mimeType = 'video/webm';
+          if (codecProfile && codecProfile.startsWith('video/webm')) {
+            if (MediaRecorder.isTypeSupported(codecProfile)) {
+              mimeType = codecProfile;
+            } else if (codecProfile.includes('vp9') && MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+              mimeType = 'video/webm;codecs=vp9';
+            } else if (codecProfile.includes('vp8') && MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+              mimeType = 'video/webm;codecs=vp8';
+            }
+          } else {
+            mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+              ? 'video/webm;codecs=vp9' : 'video/webm';
+          }
 
           const chunks = [];
           const recorder = new MediaRecorder(croppedStream, {
