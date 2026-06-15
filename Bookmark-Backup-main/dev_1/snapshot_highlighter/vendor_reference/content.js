@@ -15042,15 +15042,35 @@ if (window.customHighlighterLoaded) {
     }
 
     _getStorageKeyCandidatesForCurrentPage() {
-      // Strictly use the full, actual HTML URL (including query and hash)
-      // to decide storage and display for highlights. This ensures different
-      // conversations or in‑page navigations under SPAs are isolated.
+      // Return candidates including full URL, URL without temporary hash anchors/fragments,
+      // and normalized URL with sorted query parameters.
+      const candidates = new Set();
       try {
         const full = String(window.location.href);
-        return [`highlights_${full}`];
+        candidates.add(`highlights_${full}`);
+
+        const parsed = new URL(full);
+        if (parsed.hash) {
+          if (parsed.hash.startsWith('#/')) {
+            const innerHashIdx = parsed.hash.indexOf('#', 2);
+            if (innerHashIdx !== -1) {
+              parsed.hash = parsed.hash.substring(0, innerHashIdx);
+              candidates.add(`highlights_${parsed.href}`);
+            }
+          } else {
+            parsed.hash = '';
+            candidates.add(`highlights_${parsed.href}`);
+          }
+        }
+
+        const normalized = this._normalizeUrlForStorage(parsed, { sortQuery: true, includeSearch: true });
+        if (normalized) {
+          candidates.add(`highlights_${normalized}`);
+        }
       } catch (_) {
-        return [`highlights_${window.location.href}`];
+        candidates.add(`highlights_${window.location.href}`);
       }
+      return Array.from(candidates);
     }
 
     _buildStorageKeyCandidates(rawUrl) {

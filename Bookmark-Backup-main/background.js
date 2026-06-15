@@ -86,8 +86,30 @@ const BACKUP_PROGRESS_TARGET_ORDER = Object.freeze({
     webdav: 2
 });
 
+function dev1NormalizeUrlForComparison(url) {
+    if (!url) return '';
+    try {
+        const parsed = new URL(url);
+        if (parsed.hash && !parsed.hash.startsWith('#/')) {
+            parsed.hash = '';
+        }
+        return parsed.href;
+    } catch (_) {
+        return String(url).trim();
+    }
+}
+
 function dev1HashUrl(value) {
-    const input = String(value == null ? '' : value);
+    let input = String(value == null ? '' : value);
+    if (input.startsWith('http://') || input.startsWith('https://')) {
+        try {
+            const parsed = new URL(input);
+            if (parsed.hash && !parsed.hash.startsWith('#/')) {
+                parsed.hash = '';
+            }
+            input = parsed.href;
+        } catch (_) {}
+    }
     let h1 = 0xdeadbeef ^ input.length;
     let h2 = 0x41c6ce57 ^ input.length;
     for (let i = 0; i < input.length; i += 1) {
@@ -6388,20 +6410,21 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
     try {
         if (browserAPI && browserAPI.storage && browserAPI.storage.local) {
             const res = await browserAPI.storage.local.get([contentKey, notesKey, articleKey, imagesKey]);
+            const normUrlText = dev1NormalizeUrlForComparison(urlText);
             const entry = res && res[contentKey];
-            if (entry && typeof entry === 'object' && String(entry.u || '') === String(urlText || '')) {
+            if (entry && typeof entry === 'object' && dev1NormalizeUrlForComparison(entry.u) === normUrlText) {
                 userContent = entry.v;
             }
             const notesEntry = res && res[notesKey];
-            if (notesEntry && typeof notesEntry === 'object' && String(notesEntry.u || '') === String(urlText || '')) {
+            if (notesEntry && typeof notesEntry === 'object' && dev1NormalizeUrlForComparison(notesEntry.u) === normUrlText) {
                 userNotes = notesEntry.v;
             }
             const articleEntry = res && res[articleKey];
-            if (articleEntry && typeof articleEntry === 'object' && String(articleEntry.u || '') === String(urlText || '')) {
+            if (articleEntry && typeof articleEntry === 'object' && dev1NormalizeUrlForComparison(articleEntry.u) === normUrlText) {
                 userArticle = articleEntry.v;
             }
             const imagesEntry = res && res[imagesKey];
-            if (imagesEntry && typeof imagesEntry === 'object' && String(imagesEntry.u || '') === String(urlText || '')) {
+            if (imagesEntry && typeof imagesEntry === 'object' && dev1NormalizeUrlForComparison(imagesEntry.u) === normUrlText) {
                 userImages = imagesEntry.v;
             }
         }
@@ -7133,8 +7156,9 @@ async function dev1TryAutoRestoreSnapshotHighlighterForTab(tabId, tab = {}, opti
     } catch (_) {
         return false;
     }
-    if (requireMarker && (!marker || marker.visible !== true || String(marker.url || '') !== url)) return false;
-    if (!scopedEntry || typeof scopedEntry !== 'object' || String(scopedEntry.u || '') !== url) return false;
+    const normUrl = dev1NormalizeUrlForComparison(url);
+    if (requireMarker && (!marker || marker.visible !== true || dev1NormalizeUrlForComparison(marker.url) !== normUrl)) return false;
+    if (!scopedEntry || typeof scopedEntry !== 'object' || dev1NormalizeUrlForComparison(scopedEntry.u) !== normUrl) return false;
     if (!dev1SnapshotHighlighterStateHasVisibleData(scopedEntry.v)) return false;
     if (await dev1IsSnapshotHighlighterPdfPage(id)) return false;
 

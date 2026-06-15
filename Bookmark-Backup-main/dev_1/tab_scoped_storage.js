@@ -13,12 +13,27 @@
     }
 
     /**
+     * Normalize URL for comparison: strip hash fragment completely.
+     */
+    function normalizeUrl(url) {
+        if (!url) return '';
+        try {
+            const parsed = new URL(url);
+            parsed.hash = '';
+            return parsed.href;
+        } catch (_) {
+            return String(url).trim();
+        }
+    }
+
+    /**
      * Read scoped value. Returns null if:
      * - No stored value
      * - Stored URL doesn't match currentUrl (page navigated away)
      */
     async function getScoped(tabId, namespace, currentUrl) {
         const key = buildKey(tabId, namespace);
+        const normUrl = normalizeUrl(currentUrl);
         try {
             const storage = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local)
                 ? chrome.storage.local
@@ -27,7 +42,7 @@
             const res = await new Promise(resolve => storage.get([key], resolve));
             const entry = res && res[key];
             if (!entry || typeof entry !== 'object') return null;
-            if (String(entry.u || '') !== String(currentUrl || '')) return null;
+            if (normalizeUrl(entry.u) !== normUrl) return null;
             return entry.v;
         } catch (_) {
             return null;
@@ -39,13 +54,14 @@
      */
     async function setScoped(tabId, namespace, currentUrl, value) {
         const key = buildKey(tabId, namespace);
+        const normUrl = normalizeUrl(currentUrl);
         try {
             const storage = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local)
                 ? chrome.storage.local
                 : null;
             if (!storage) return;
             await new Promise((resolve, reject) => {
-                storage.set({ [key]: { v: value, u: String(currentUrl || '') } }, () => {
+                storage.set({ [key]: { v: value, u: normUrl } }, () => {
                     if (chrome.runtime && chrome.runtime.lastError) {
                         reject(chrome.runtime.lastError);
                     } else {

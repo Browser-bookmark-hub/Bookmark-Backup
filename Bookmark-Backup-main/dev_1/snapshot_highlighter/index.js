@@ -55,7 +55,16 @@
   }
 
   function hashUrl(value) {
-    const input = safeString(value);
+    let input = safeString(value);
+    if (input.startsWith('http://') || input.startsWith('https://')) {
+      try {
+        const parsed = new URL(input);
+        if (parsed.hash && !parsed.hash.startsWith('#/')) {
+          parsed.hash = '';
+        }
+        input = parsed.href;
+      } catch (_) {}
+    }
     let h1 = 0xdeadbeef ^ input.length;
     let h2 = 0x41c6ce57 ^ input.length;
     for (let i = 0; i < input.length; i += 1) {
