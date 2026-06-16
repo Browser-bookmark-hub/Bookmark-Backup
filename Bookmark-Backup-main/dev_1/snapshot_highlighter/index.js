@@ -155,6 +155,16 @@
   function contrastText(background, fallback = '#0f172a') {
     if (safeString(background).startsWith('special:')) return '#ffffff';
     if (background === 'transparent') return fallback;
+    if (fallback && fallback !== 'inherit' && fallback !== 'initial' && fallback !== 'unset') {
+      try {
+        const bgLum = luminance(background);
+        const fbLum = luminance(fallback);
+        const ratio = (Math.max(bgLum, fbLum) + 0.05) / (Math.min(bgLum, fbLum) + 0.05);
+        if (ratio >= 3.0) {
+          return fallback;
+        }
+      } catch (_) { }
+    }
     const lum = luminance(background);
     return lum > 0.38 ? '#0f172a' : '#ffffff';
   }
@@ -3334,7 +3344,8 @@
         const hex = parseHexInput(hexInput.value) || (parseRgbInput(rgbInput.value) ? toHex(...parseRgbInput(rgbInput.value)) : '');
         if (!hex) return;
         this._rgbPickerLastColor = hex;
-        this.commitColorSelection({ color: hex, key: hex, name: hex }, closeColorPicker, pickerContext);
+        const activeVariant = pickerContext && pickerContext.variant != null ? pickerContext.variant : this.currentColorVariant;
+        this.commitColorSelection({ color: hex, key: hex, name: hex, variant: activeVariant || 'auto' }, closeColorPicker, pickerContext);
         this.pulseCursorFeedback('#22c55e');
       });
       const topRow = document.createElement('div');
@@ -3379,6 +3390,7 @@
         recent: '⭐',
         classic: '🖍️',
         rgb: '🎯',
+        'special-colors': '✨',
         red: '🟥',
         orange: '🟧',
         yellow: '🟨',
@@ -3409,7 +3421,7 @@
       this.applyColorPreview(preview, color, colorKey || 'color-option');
       const sample = document.createElement('span');
       sample.className = 'color-sample';
-      sample.textContent = 'Aa';
+      sample.textContent = (item.variant === 'auto' || !item.variant) ? '' : 'Aa';
       sample.style.color = resolvedVariant === 'white' ? '#ffffff' : '#0f172a';
       preview.appendChild(sample);
       const label = document.createElement('span');
