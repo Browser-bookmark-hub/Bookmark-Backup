@@ -147,7 +147,7 @@ function updatePopupHistoryActionTooltips(lang = 'zh_CN') {
     if (safetyTooltip) safetyTooltip.textContent = isEn ? 'Temporary Safety Snapshot' : '临时安全快照';
 
     const webSnapshotTooltip = document.querySelector('#backupHistoryWebSnapshotBtn .tooltip');
-    if (webSnapshotTooltip) webSnapshotTooltip.textContent = isEn ? 'Web Snapshot' : '网页快照';
+    if (webSnapshotTooltip) webSnapshotTooltip.textContent = isEn ? 'Web Archive' : '网页存档';
 
     const restoreSafetyTooltip = document.querySelector('#restoreSafetyCheckpointEntryBtn .tooltip');
     if (restoreSafetyTooltip) restoreSafetyTooltip.textContent = isEn ? 'Safety Snapshot' : '安全快照';
@@ -318,7 +318,7 @@ function applyBackupHistorySlimmingLocale(lang = 'zh_CN') {
 
     const webSnapshotBtn = document.getElementById('backupHistoryWebSnapshotBtn');
     if (webSnapshotBtn) {
-        webSnapshotBtn.setAttribute('aria-label', isEn ? 'Web Snapshot' : '网页快照');
+        webSnapshotBtn.setAttribute('aria-label', isEn ? 'Web Archive' : '网页存档');
     }
 
     const restoreSafetyText = document.getElementById('restoreSafetyCheckpointEntryText');
@@ -2733,7 +2733,7 @@ async function renderPopupShortcutsDisplay(lang = 'zh_CN') {
         },
         {
             key: formatShortcut(shortcuts.open_web_snapshot_view, `${defaultPrefix}X`),
-            label: isEn ? 'Open/Close Quick Snapshot Tool' : '打开/关闭当前页快照工具'
+            label: isEn ? 'Open/Close Quick Archive Tool' : '打开/关闭当前页存档工具'
         }
     ];
 
@@ -8911,7 +8911,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const backupHistoryWebSnapshotTooltip = document.querySelector('#backupHistoryWebSnapshotBtn .tooltip');
     if (backupHistoryWebSnapshotTooltip) {
-        backupHistoryWebSnapshotTooltip.textContent = lang === 'en' ? 'Web Snapshot' : '网页快照';
+        backupHistoryWebSnapshotTooltip.textContent = lang === 'en' ? 'Web Archive' : '网页存档';
     }
 
     const restoreSafetyCheckpointEntryText = document.getElementById('restoreSafetyCheckpointEntryText');
@@ -9414,6 +9414,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
             cancelBtn.textContent = cancelButtonStrings[lang] || cancelButtonStrings['zh_CN'];
         }
     }
+    initializeWebSnapshotShortcutPrompt();
 };
 
 

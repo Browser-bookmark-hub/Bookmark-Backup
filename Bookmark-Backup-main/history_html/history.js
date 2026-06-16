@@ -2555,8 +2555,8 @@ const i18n = {
         'en': 'Backup History'
     },
     navDev1: {
-        'zh_CN': '网页快照',
-        'en': 'Web Snapshot'
+        'zh_CN': '网页存档',
+        'en': 'Web Archive'
     },
     currentChangesViewTitle: {
         'zh_CN': '当前变化',
@@ -2567,8 +2567,8 @@ const i18n = {
         'en': 'Backup History'
     },
     dev1ViewTitle: {
-        'zh_CN': '网页快照',
-        'en': 'Web Snapshot'
+        'zh_CN': '网页存档',
+        'en': 'Web Archive'
     },
     clearBackupHistoryTooltip: {
         'zh_CN': '清除记录',

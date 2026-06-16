@@ -43,7 +43,7 @@ function updateShortcutsDisplay() {
         if (!allowed || allowed.has('dev-1')) {
             rows.push({
                 key: key3,
-                label: lang === 'en' ? 'Open/Close Quick Snapshot Tool' : '打开/关闭当前页快照工具'
+                label: lang === 'en' ? 'Open/Close Quick Archive Tool' : '打开/关闭当前页存档工具'
             });
         }
 
