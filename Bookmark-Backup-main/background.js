@@ -6117,36 +6117,101 @@ async function dev1CaptureMhtmlBlob(tabId) {
         throw new Error('pageCapture API unavailable');
     }
 
-    return await new Promise((resolve, reject) => {
-        let settled = false;
-        const finish = (fn) => {
-            if (settled) return;
-            settled = true;
-            fn();
-        };
-
-        try {
-            const maybePromise = browserAPI.pageCapture.saveAsMHTML({ tabId: Number(tabId) }, (blob) => {
-                if (browserAPI.runtime.lastError) {
-                    finish(() => reject(new Error(browserAPI.runtime.lastError.message || 'saveAsMHTML failed')));
-                    return;
+    // Try to hide the helper and highlighter UI elements
+    try {
+        await dev1ExecuteScript(tabId, () => {
+            window.__dev1MhtmlTempRemoved = window.__dev1MhtmlTempRemoved || [];
+            const selectors = [
+                '#dev1-snapshot-helper-host',
+                '#zoom-invariant-fixed-layer',
+                '#dev1-snapshot-highlighter-toolbar',
+                '.dev1-snapshot-highlighter-panel',
+                '.highlight-color-picker',
+                '.highlight-tool-picker',
+                '.operations-panel',
+                '.highlight-action-panel',
+                '.indicator-details-panel',
+                '#dev1-snapshot-highlighter-batch-overlay',
+                '#dev1-snapshot-highlighter-batch-bar',
+                '#dev1-snapshot-highlighter-batch-confirm-dialog',
+                '[data-dev1-snapshot-highlighter-ui="true"]',
+                '#dev1-md-source-highlight',
+                '#dev1-presentation-pen-overlay',
+                '#md-edit-mode-overlay',
+                '#md-edit-mode-hint',
+                '#md-edit-help-panel'
+            ];
+            selectors.forEach(sel => {
+                try {
+                    document.querySelectorAll(sel).forEach(el => {
+                        if (window.__dev1MhtmlTempRemoved.some(item => item.el === el)) return;
+                        const parent = el.parentNode;
+                        const nextSibling = el.nextSibling;
+                        window.__dev1MhtmlTempRemoved.push({ el, parent, nextSibling });
+                        el.remove();
+                    });
+                } catch (e) {
+                    console.error('Failed to remove selector ' + sel, e);
                 }
-                if (!blob) {
-                    finish(() => reject(new Error('saveAsMHTML returned empty blob')));
-                    return;
-                }
-                finish(() => resolve(blob));
             });
+        });
+    } catch (e) {
+        console.warn('Failed to hide helper UI:', e);
+    }
 
-            if (maybePromise && typeof maybePromise.then === 'function') {
-                maybePromise
-                    .then((blob) => finish(() => resolve(blob)))
-                    .catch((error) => finish(() => reject(error)));
+    try {
+        return await new Promise((resolve, reject) => {
+            let settled = false;
+            const finish = (fn) => {
+                if (settled) return;
+                settled = true;
+                fn();
+            };
+
+            try {
+                const maybePromise = browserAPI.pageCapture.saveAsMHTML({ tabId: Number(tabId) }, (blob) => {
+                    if (browserAPI.runtime.lastError) {
+                        finish(() => reject(new Error(browserAPI.runtime.lastError.message || 'saveAsMHTML failed')));
+                        return;
+                    }
+                    if (!blob) {
+                        finish(() => reject(new Error('saveAsMHTML returned empty blob')));
+                        return;
+                    }
+                    finish(() => resolve(blob));
+                });
+
+                if (maybePromise && typeof maybePromise.then === 'function') {
+                    maybePromise
+                        .then((blob) => finish(() => resolve(blob)))
+                        .catch((error) => finish(() => reject(error)));
+                }
+            } catch (error) {
+                finish(() => reject(error));
             }
-        } catch (error) {
-            finish(() => reject(error));
+        });
+    } finally {
+        // Try to restore the helper and highlighter UI elements
+        try {
+            await dev1ExecuteScript(tabId, () => {
+                if (window.__dev1MhtmlTempRemoved && window.__dev1MhtmlTempRemoved.length > 0) {
+                    for (let i = window.__dev1MhtmlTempRemoved.length - 1; i >= 0; i--) {
+                        const { el, parent, nextSibling } = window.__dev1MhtmlTempRemoved[i];
+                        try {
+                            if (parent) {
+                                parent.insertBefore(el, nextSibling);
+                            }
+                        } catch (e) {
+                            console.error('Failed to restore element', el, e);
+                        }
+                    }
+                    window.__dev1MhtmlTempRemoved = [];
+                }
+            });
+        } catch (e) {
+            console.warn('Failed to restore helper UI:', e);
         }
-    });
+    }
 }
 
 const DEV1_DEFUDDLE_FULL_SCRIPT_PATH = 'dev_1/third_party/defuddle.index.full.js';
