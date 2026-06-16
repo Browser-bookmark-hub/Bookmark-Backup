@@ -169,6 +169,8 @@
       this.currentUrl = window.location.href;
       this.highlights = new Map();
       this.editFragments = [];
+      this._lastSelectedColorCategoryId = '';
+      this._lastSelectedToolCategoryId = '';
       this.currentColor = '#2196F3';
       this.currentColorKey = 'blue';
       this.currentColorName = '';
@@ -2976,7 +2978,9 @@
         this._releaseCursor('hoverUI');
       });
       const renderCategory = (category) => this.showCategoryColors(category, content, closeColorPicker, pickerContext);
-      const activeId = categories.some(category => category.id === 'classic') ? 'classic' : (categories[0] && categories[0].id);
+      const activeId = this._lastSelectedColorCategoryId && categories.some(category => category.id === this._lastSelectedColorCategoryId)
+        ? this._lastSelectedColorCategoryId
+        : (categories.some(category => category.id === 'classic') ? 'classic' : (categories[0] && categories[0].id));
       categories.forEach((category) => {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -2986,6 +2990,7 @@
         btn.addEventListener('click', () => {
           sidebar.querySelectorAll('.category-btn').forEach(el => this.stylePickerCategoryButton(el, false, accentColor));
           this.stylePickerCategoryButton(btn, true, accentColor);
+          this._lastSelectedColorCategoryId = category.id;
           renderCategory(category);
         });
         btn.addEventListener('mouseenter', () => {
@@ -3697,6 +3702,11 @@
       const preferredCategoryId = pickerContext && pickerContext.toolId
         ? this.getToolCategoryIdForTool(pickerContext.toolId)
         : ((this._mdEditModeActive || this.isEditTool(this.currentTool)) ? 'markdown' : '');
+      const activeId = this._lastSelectedToolCategoryId && categories.some(category => category.id === this._lastSelectedToolCategoryId)
+        ? this._lastSelectedToolCategoryId
+        : ((preferredCategoryId && categories.some(category => category.id === preferredCategoryId))
+            ? preferredCategoryId
+            : (categories[0] && categories[0].id));
       categories.forEach((category, index) => {
         if (category.id === 'markdown') {
           const divider = document.createElement('div');
@@ -3711,6 +3721,7 @@
         btn.addEventListener('click', () => {
           sidebar.querySelectorAll('.category-btn').forEach(el => this.stylePickerCategoryButton(el, false, accentColor));
           this.stylePickerCategoryButton(btn, true, accentColor);
+          this._lastSelectedToolCategoryId = category.id;
           if (category.id === 'markdown' && (this._mdEditModeActive || this.isEditTool(this.currentTool))) this._mdMode = 'edit';
           renderCategory(category);
         });
@@ -3726,7 +3737,7 @@
           if (!btn.classList.contains('active')) this.stylePickerCategoryButton(btn, false);
         });
         sidebar.appendChild(btn);
-        if ((preferredCategoryId && category.id === preferredCategoryId) || (!preferredCategoryId && index === 0)) {
+        if (category.id === activeId) {
           this.stylePickerCategoryButton(btn, true, accentColor);
           if (category.id === 'markdown' && (this._mdEditModeActive || this.isEditTool(this.currentTool))) this._mdMode = 'edit';
           renderCategory(category);
