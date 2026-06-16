@@ -655,6 +655,16 @@ const FaviconCache = {
     cravatarDefaultCheckCache: new BoundedLruMap(1200), // {dataUrl: boolean}
     pendingRequests: new Map(), // 正在请求的URL，避免重复请求
 
+    scheduleIdleCleanup() {
+        try {
+            if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+                window.requestIdleCallback(() => this.checkAndEvictOldest(), { timeout: 5000 });
+            } else {
+                setTimeout(() => this.checkAndEvictOldest(), 2000);
+            }
+        } catch (_) { }
+    },
+
     // 初始化 IndexedDB
     async init() {
         if (this.db) return;
@@ -672,7 +682,11 @@ const FaviconCache = {
                     .then(() => this._ensureQualityCacheVersion())
                     .then(() => this._initializeFirstInstallFastPath())
                     .catch(() => { })
-                    .finally(() => resolve());
+                    .finally(() => {
+                        resolve();
+                        // 触发容量检查与超限淘汰
+                        this.scheduleIdleCleanup();
+                    });
             };
 
             request.onupgradeneeded = (event) => {
@@ -1018,6 +1032,40 @@ const FaviconCache = {
             transaction.objectStore(this.failureStoreName).delete(domain);
 
         } catch (e) {
+            // 静默处理
+        }
+    },
+
+    // 检查图标缓存容量并淘汰最老的数据，保证不超过 2000 个域名
+    async checkAndEvictOldest() {
+        try {
+            if (!this.db) await this.init();
+
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+
+            const countRequest = store.count();
+            countRequest.onsuccess = () => {
+                const count = countRequest.result;
+                if (count < 2000) return; // 没到 2000 个域名，不进行任何处理
+
+                const deleteCount = 500; // 超限后淘汰最老的 500 个
+                const index = store.index('timestamp');
+                const cursorRequest = index.openCursor(null, 'next'); // 按时间戳升序遍历（最老的最先）
+
+                let evicted = 0;
+                cursorRequest.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    if (cursor && evicted < deleteCount) {
+                        const domain = cursor.value.domain;
+                        this.memoryCache.delete(domain);
+                        cursor.delete();
+                        evicted++;
+                        cursor.continue();
+                    }
+                };
+            };
+        } catch (_) {
             // 静默处理
         }
     },
@@ -22868,10 +22916,6 @@ async function handleBookmarkCreateRealtime(id, bookmark) {
 }
 
 async function handleBookmarkRemoveRealtime(id, removeInfo) {
-    if (removeInfo && removeInfo.node && removeInfo.node.url) {
-        FaviconCache.clear(removeInfo.node.url);
-    }
-
     const appliedToCachedTree = applyIncrementalRemoveFromCachedCurrentTree(id, removeInfo);
     if (!appliedToCachedTree) {
         scheduleCachedCurrentTreeSnapshotRefresh('onRemoved-fast-fallback');
@@ -22926,15 +22970,6 @@ async function flushPendingAddRemoveEvents(reason = '') {
         const isBulk = batch.length >= BULK_ADD_REMOVE_THRESHOLD;
 
         if (isBulk) {
-            
-
-            batch.forEach((event) => {
-                if (event.type !== 'removed') return;
-                if (event.removeInfo && event.removeInfo.node && event.removeInfo.node.url) {
-                    FaviconCache.clear(event.removeInfo.node.url);
-                }
-            });
-
             clearCanvasLazyChangeHints('bulk-add-remove');
             markCurrentChangesDataStale(reason || 'bulk-add-remove');
             scheduleCachedCurrentTreeSnapshotRefresh('bulk-add-remove');

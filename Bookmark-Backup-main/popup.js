@@ -17182,6 +17182,16 @@ const FaviconCache = {
     cravatarDefaultCheckCache: new BoundedLruMap(1200),
     pendingRequests: new Map(),
 
+    scheduleIdleCleanup() {
+        try {
+            if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+                window.requestIdleCallback(() => this.checkAndEvictOldest(), { timeout: 5000 });
+            } else {
+                setTimeout(() => this.checkAndEvictOldest(), 2000);
+            }
+        } catch (_) { }
+    },
+
     async init() {
         if (this.db) return;
 
@@ -17198,7 +17208,11 @@ const FaviconCache = {
                     .then(() => this._ensureQualityCacheVersion())
                     .then(() => this._initializeFirstInstallFastPath())
                     .catch(() => { })
-                    .finally(() => resolve());
+                    .finally(() => {
+                        resolve();
+                        // 触发容量检查与超限淘汰
+                        this.scheduleIdleCleanup();
+                    });
             };
 
             request.onupgradeneeded = (event) => {
@@ -17550,6 +17564,40 @@ const FaviconCache = {
             tx.objectStore(this.storeName).delete(domain);
             tx.objectStore(this.failureStoreName).delete(domain);
         } catch (_) { }
+    },
+
+    // 检查图标缓存容量并淘汰最老的数据，保证不超过 2000 个域名
+    async checkAndEvictOldest() {
+        try {
+            if (!this.db) await this.init();
+
+            const tx = this.db.transaction([this.storeName], 'readwrite');
+            const store = tx.objectStore(this.storeName);
+
+            const countRequest = store.count();
+            countRequest.onsuccess = () => {
+                const count = countRequest.result;
+                if (count < 2000) return; // 没到 2000 个域名，不进行任何处理
+
+                const deleteCount = 500; // 超限后淘汰最老的 500 个
+                const index = store.index('timestamp');
+                const cursorRequest = index.openCursor(null, 'next'); // 按时间戳升序遍历（最老的最先）
+
+                let evicted = 0;
+                cursorRequest.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    if (cursor && evicted < deleteCount) {
+                        const domain = cursor.value.domain;
+                        this.memoryCache.delete(domain);
+                        cursor.delete();
+                        evicted++;
+                        cursor.continue();
+                    }
+                };
+            };
+        } catch (_) {
+            // 静默处理
+        }
     },
 
     async getDataUrlDimensions(dataUrl) {
