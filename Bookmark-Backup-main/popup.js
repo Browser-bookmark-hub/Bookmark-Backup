@@ -10035,8 +10035,8 @@ function initializeWebSnapshotShortcutPrompt() {
                     const promptTextSpan = promptEl.querySelector('.prompt-text');
                     if (promptTextSpan) {
                         promptTextSpan.innerHTML = isEn 
-                            ? `"Page Archive" Shortcut: <kbd id="webSnapshotShortcutKey">${shortcut}</kbd>`
-                            : `「页面存档」快捷键: <kbd id="webSnapshotShortcutKey">${shortcut}</kbd>`;
+                            ? `"Helper Tool" Shortcut: <kbd id="webSnapshotShortcutKey">${shortcut}</kbd>`
+                            : `「辅助工具」快捷键: <kbd id="webSnapshotShortcutKey">${shortcut}</kbd>`;
                     }
                 });
             } else {
