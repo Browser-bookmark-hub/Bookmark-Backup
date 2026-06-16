@@ -13,13 +13,15 @@
     }
 
     /**
-     * Normalize URL for comparison: strip hash fragment completely.
+     * Normalize URL for comparison: keep hashes starting with #/ for hash routing, strip others.
      */
     function normalizeUrl(url) {
         if (!url) return '';
         try {
             const parsed = new URL(url);
-            parsed.hash = '';
+            if (parsed.hash && !parsed.hash.startsWith('#/')) {
+                parsed.hash = '';
+            }
             return parsed.href;
         } catch (_) {
             return String(url).trim();

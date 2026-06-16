@@ -5594,7 +5594,7 @@ async function dev1RunTabStorageGarbageCollection() {
 
         const keysToRemove = [];
         const scopedPrefix = 'dev1_scoped_';
-        const autoRestorePrefix = 'dev1_autorest_highlighter_';
+        const autoRestorePrefix = DEV1_SNAPSHOT_HIGHLIGHTER_AUTORESTORE_PREFIX;
 
         Object.keys(allStorage).forEach(key => {
             if (key.startsWith(scopedPrefix)) {
