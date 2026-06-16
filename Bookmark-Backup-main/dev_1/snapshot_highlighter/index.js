@@ -185,7 +185,7 @@
       this.currentColorKey = 'blue';
       this.currentColorName = '';
       this.currentColorVariant = 'auto';
-      this.currentTool = 'highlight';
+      this.currentTool = 'md-mark';
       this.currentToolName = '';
       this.recentColors = [];
       this.recentTools = [];
@@ -778,8 +778,8 @@
       this.currentColorKey = 'blue';
       this.currentColorName = this.lt('蓝色', 'Blue');
       this.currentColorVariant = 'auto';
-      this.currentTool = 'highlight';
-      this.currentToolName = this.t('classicHighlight');
+      this.currentTool = 'md-mark';
+      this.currentToolName = this.getToolNameForId('md-mark');
       this.recentColors = [];
       this.recentTools = [];
       this.presentationPenStyle = 'dashed';
@@ -3903,8 +3903,8 @@
           this._mdMode = 'visual';
           if (!pickerContext) this.exitMdEditMode({ keepTool: false, silent: true });
           if (!pickerContext && this.isEditTool(this.currentTool)) {
-            this.currentTool = 'highlight';
-            this.currentToolName = this.t('classicHighlight');
+            this.currentTool = 'md-mark';
+            this.currentToolName = this.getToolNameForId('md-mark');
             this.updatePermanentToolbarIndicator();
             this.requestSave(true);
           }
@@ -4941,8 +4941,8 @@
         }
       });
       if (!options.keepTool && this.isEditTool(this.currentTool)) {
-        this.currentTool = 'highlight';
-        this.currentToolName = this.t('classicHighlight');
+        this.currentTool = 'md-mark';
+        this.currentToolName = this.getToolNameForId('md-mark');
         this._mdMode = 'visual';
       }
       this.updatePermanentToolbarIndicator();
