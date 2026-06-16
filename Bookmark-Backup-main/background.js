@@ -6117,9 +6117,27 @@ async function dev1CaptureMhtmlBlob(tabId) {
         throw new Error('pageCapture API unavailable');
     }
 
-    // Try to hide the helper and highlighter UI elements
+    // Load styles.css from local extension folder
+    let cssText = '';
     try {
-        await dev1ExecuteScript(tabId, () => {
+        const cssUrl = browserAPI.runtime.getURL('dev_1/snapshot_highlighter/styles.css');
+        const res = await fetch(cssUrl);
+        cssText = await res.text();
+    } catch (e) {
+        console.warn('Failed to load snapshot highlighter styles:', e);
+    }
+
+    // Try to hide the helper and highlighter UI elements and inject styles
+    try {
+        await dev1ExecuteScript(tabId, (css) => {
+            // Embed the stylesheet directly in page DOM so pageCapture saves it
+            if (css) {
+                const style = document.createElement('style');
+                style.id = 'dev1-mhtml-temp-styles-inject';
+                style.textContent = css;
+                document.documentElement.appendChild(style);
+            }
+
             window.__dev1MhtmlTempRemoved = window.__dev1MhtmlTempRemoved || [];
             const selectors = [
                 '#dev1-snapshot-helper-host',
@@ -6154,9 +6172,9 @@ async function dev1CaptureMhtmlBlob(tabId) {
                     console.error('Failed to remove selector ' + sel, e);
                 }
             });
-        });
+        }, [cssText]);
     } catch (e) {
-        console.warn('Failed to hide helper UI:', e);
+        console.warn('Failed to hide helper UI and inject styles:', e);
     }
 
     try {
@@ -6191,9 +6209,14 @@ async function dev1CaptureMhtmlBlob(tabId) {
             }
         });
     } finally {
-        // Try to restore the helper and highlighter UI elements
+        // Try to restore the helper and highlighter UI elements, and remove the temp styles
         try {
             await dev1ExecuteScript(tabId, () => {
+                const style = document.getElementById('dev1-mhtml-temp-styles-inject');
+                if (style) {
+                    style.remove();
+                }
+
                 if (window.__dev1MhtmlTempRemoved && window.__dev1MhtmlTempRemoved.length > 0) {
                     for (let i = window.__dev1MhtmlTempRemoved.length - 1; i >= 0; i--) {
                         const { el, parent, nextSibling } = window.__dev1MhtmlTempRemoved[i];
