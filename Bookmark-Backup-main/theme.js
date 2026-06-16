@@ -47,16 +47,19 @@
         try {
             localStorage.setItem('themePreference', themeType);
             
-            // 同时保存到chrome.storage，以便History Viewer可以同步
+            // 同时保存到chrome.storage，以便History Viewer和Content Scripts可以同步
             if (chrome && chrome.storage && chrome.storage.local) {
                 // 获取实际应用的主题（如果是system，则转换为实际的light/dark）
                 const actualTheme = themeType === ThemeType.SYSTEM ? 
                     getSystemThemePreference() : themeType;
                 
-                chrome.storage.local.set({ currentTheme: actualTheme }, () => {
+                chrome.storage.local.set({ 
+                    themePreference: themeType,
+                    currentTheme: actualTheme 
+                }, () => {
                     if (chrome.runtime.lastError) {
                         console.error('无法保存主题到chrome.storage:', chrome.runtime.lastError);
-                    } else {}
+                    }
                 });
             }
         } catch (e) {

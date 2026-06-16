@@ -1823,6 +1823,10 @@ async function openQuickSnapshotHelperForCurrentPage() {
             ? api.isVisible()
             : !!(host && host.isConnected && host.style.display !== 'none');
         if (!isVisible) return { toggled: false };
+        const hlApi = window.__dev1SnapshotHighlighter;
+        if (hlApi && typeof hlApi.hide === 'function') {
+            try { hlApi.hide(); } catch (_) {}
+        }
         if (typeof api?.destroy === 'function') {
             return { toggled: true, result: api.destroy() };
         }
@@ -8286,6 +8290,32 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     try {
+        if (message.action === "dev1-open-dual-page") {
+            (async () => {
+                try {
+                    const currentWin = await browserAPI.windows.getCurrent();
+                    const winWidth = currentWin.width || 1200;
+                    const winHeight = currentWin.height || 800;
+                    const winLeft = currentWin.left != null ? currentWin.left : 0;
+                    const winTop = currentWin.top != null ? currentWin.top : 0;
+
+                    // Create new window with the same URL, matching dimensions, offset slightly to not obscure completely
+                    await browserAPI.windows.create({
+                        url: message.url,
+                        left: winLeft + 80,
+                        top: winTop + 40,
+                        width: winWidth,
+                        height: winHeight,
+                        state: 'normal'
+                    });
+
+                    sendResponse({ success: true });
+                } catch (error) {
+                    sendResponse({ success: false, error: String(error) });
+                }
+            })();
+            return true;
+        }
         if (message.action === "extensionBookmarkOpen") {
             // 书签备份项目不维护推荐/追踪归因，收到该消息时直接忽略以避免报错
             sendResponse({ success: true, ignored: true });

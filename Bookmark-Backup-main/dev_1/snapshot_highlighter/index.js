@@ -152,16 +152,17 @@
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   }
 
-  function contrastText(background, fallback = '#0f172a') {
+  function contrastText(background, fallback = '#0f172a', contextColor = '') {
     if (safeString(background).startsWith('special:')) return '#ffffff';
-    if (background === 'transparent') return fallback;
-    if (fallback && fallback !== 'inherit' && fallback !== 'initial' && fallback !== 'unset') {
+    if (background === 'transparent') return contextColor || fallback;
+    const resolvedContext = contextColor && contextColor !== 'inherit' && contextColor !== 'initial' && contextColor !== 'unset' ? contextColor : fallback;
+    if (resolvedContext) {
       try {
         const bgLum = luminance(background);
-        const fbLum = luminance(fallback);
+        const fbLum = luminance(resolvedContext);
         const ratio = (Math.max(bgLum, fbLum) + 0.05) / (Math.min(bgLum, fbLum) + 0.05);
         if (ratio >= 3.0) {
-          return fallback;
+          return resolvedContext;
         }
       } catch (_) { }
     }
@@ -226,6 +227,7 @@
       this.selectedEditFragmentIds = new Set();
       this._batchContainedHighlightIdsByEditId = new Map();
       this.darkModeEnabled = this.detectPageTheme();
+      this._initTheme();
       this.frameOverlayLayer = null;
       this.htmlOverlayLayer = null;
       this.groupFrameOverlays = new Map();
@@ -292,6 +294,8 @@
           clearAll: '清除全部',
           operationClearAll: '清除全部',
           operationBatchDelete: '批量删除',
+          operationDualPage: '双页比对',
+          operationDualPageMeta: '推荐使用双页比对功能与原网页对照',
           clearVisual: '清除视觉模式',
           clearEdit: '清除编辑模式',
           batchDelete: '批量删除',
@@ -400,6 +404,8 @@
           clearAll: 'Clear All',
           operationClearAll: 'Clear All',
           operationBatchDelete: 'Batch Delete',
+          operationDualPage: 'Split View',
+          operationDualPageMeta: 'Compare side-by-side with original page',
           clearVisual: 'Clear Visual Mode',
           clearEdit: 'Clear Edit Mode',
           batchDelete: 'Batch Delete',
@@ -503,6 +509,82 @@
       return this.lang === 'en' ? enText : zhText;
     }
 
+    _initTheme() {
+      // Listen to changes in chrome.storage.local
+      if (chrome && chrome.storage && chrome.storage.onChanged) {
+        chrome.storage.onChanged.addListener((changes, namespace) => {
+          if (namespace === 'local' && (changes.themePreference || changes.currentTheme)) {
+            this._refreshActiveTheme();
+          }
+        });
+      }
+
+      // Listen to system theme changes
+      if (window.matchMedia) {
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const handleMediaQueryChange = () => {
+          if (chrome && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.get(['themePreference'], (result) => {
+              if ((result.themePreference || 'system') === 'system') {
+                this._refreshActiveTheme();
+              }
+            });
+          } else {
+            this._refreshActiveTheme();
+          }
+        };
+        if (mediaQuery.addEventListener) {
+          mediaQuery.addEventListener('change', handleMediaQueryChange);
+        } else if (mediaQuery.addListener) {
+          mediaQuery.addListener(handleMediaQueryChange);
+        }
+      }
+
+      // Initial active theme fetch
+      this._refreshActiveTheme();
+    }
+
+    _refreshActiveTheme() {
+      return new Promise((resolve) => {
+        if (chrome && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get(['themePreference'], (result) => {
+            const pref = result.themePreference || 'system';
+            let actualThemeIsDark = false;
+            if (pref === 'dark') {
+              actualThemeIsDark = true;
+            } else if (pref === 'light') {
+              actualThemeIsDark = false;
+            } else {
+              actualThemeIsDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            }
+            this.darkModeEnabled = actualThemeIsDark;
+            this.updateAppliedTheme();
+            resolve(actualThemeIsDark);
+          });
+        } else {
+          this.darkModeEnabled = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          this.updateAppliedTheme();
+          resolve(this.darkModeEnabled);
+        }
+      });
+    }
+
+    updateAppliedTheme() {
+      const isDark = !!this.darkModeEnabled;
+      const elements = document.querySelectorAll(UI_SELECTOR);
+      elements.forEach(el => {
+        el.classList.toggle('dark-theme', isDark);
+        el.classList.toggle('light-theme', !isDark);
+      });
+      elements.forEach(el => {
+        if (el.classList.contains('dev1-snapshot-highlighter-panel') ||
+            el.classList.contains('highlight-color-picker') ||
+            el.classList.contains('highlight-tool-picker')) {
+          this.applyPickerColorFrame(el);
+        }
+      });
+    }
+
     normalizeToolbarUi(value = {}) {
       const raw = value && typeof value === 'object' ? value : {};
       const left = Number(raw.left);
@@ -555,7 +637,7 @@
       this.visible = true;
       this.restoreDisplayOnly = !!restoreOnly;
       if (!this.restoreDisplayOnly) await this.persistAutoRestoreMarker();
-      this.darkModeEnabled = this.detectPageTheme();
+      await this._refreshActiveTheme();
       if (this.restoreDisplayOnly) {
         this.closeTransientPanels();
         this.removeToolbar();
@@ -1452,7 +1534,7 @@
         try { this._suppressCursor('operations'); } catch (_) { }
         this.showOperationsPanel(deleteBtn);
       }, 'dev1-delete');
-      const backIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg>';
+      const backIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"></path></svg>';
       const backBtn = this.createToolbarButton(backIcon, this.t('backToSnapshotHelper'), () => this.returnToSnapshotHelperPanel(), 'dev1-back');
 
       toolbar.appendChild(colorBtn);
@@ -2303,7 +2385,7 @@
         btn.className = `dev1-highlight-action-btn ${className}${danger ? ' danger' : ''}`;
         btn.title = label;
         btn.setAttribute('aria-label', label);
-        btn.textContent = icon;
+        btn.innerHTML = icon;
         btn.addEventListener('click', (event) => {
           event.stopPropagation();
           handler(event);
@@ -2311,20 +2393,20 @@
         actions.appendChild(btn);
         return btn;
       };
-      addAction('dev1-delete-highlight', this.t('delete'), '🗑️', () => {
+      addAction('dev1-delete-highlight', this.t('delete'), `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`, () => {
         this.removeHighlightById(highlightId);
         this.untrackPanelPosition(panel);
         if (panel.parentNode) panel.remove();
         this.activeHighlightPanel = null;
         this.requestSave(true);
       }, true);
-      addAction('dev1-change-highlight-color', this.t('selectColor'), '🎨', () => {
+      addAction('dev1-change-highlight-color', this.t('selectColor'), `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 15.5 5.5 18 5.5 18C5.5 18 6 18.5 6 19.5C6 20.5 5 22 5 22H12Z"></path><circle cx="7.5" cy="10.5" r="1.2" fill="currentColor"></circle><circle cx="11.5" cy="7.5" r="1.2" fill="currentColor"></circle><circle cx="16.5" cy="9.5" r="1.2" fill="currentColor"></circle><circle cx="15.5" cy="14.5" r="1.2" fill="currentColor"></circle></svg>`, () => {
         this.showColorPicker(highlightEl, { highlightId });
       });
-      addAction('dev1-change-highlight-tool', this.t('selectTool'), '🛠️', () => {
+      addAction('dev1-change-highlight-tool', this.t('selectTool'), `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>`, () => {
         this.showToolPicker(highlightEl, { highlightId });
       });
-      addAction('dev1-close-highlight-panel', this.t('close'), '×', () => {
+      addAction('dev1-close-highlight-panel', this.t('close'), `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`, () => {
         this.untrackPanelPosition(panel);
         if (panel.parentNode) panel.remove();
         this.activeHighlightPanel = null;
@@ -2541,10 +2623,10 @@
       if (!entry) return;
       if (!item || !item.color) return;
       const color = item.color;
-      const resolvedVariant = this.resolveColorVariant(color, item.variant || '');
+      const textColorOverride = item.variant === 'white' || item.variant === 'black' || item.variant === 'auto' ? item.variant : 'auto';
+      const resolvedVariant = textColorOverride === 'auto' ? this.resolveColorVariant(color, '') : textColorOverride;
       const colorNameKey = item.key || this.getColorNameKeyForValue(color, resolvedVariant, item.name || '');
       const colorName = this.getColorNameForValue(color, resolvedVariant, item.name || color, colorNameKey);
-      const textColorOverride = resolvedVariant === 'white' || resolvedVariant === 'black' ? resolvedVariant : '';
       entry.color = color;
       entry.colorNameKey = colorNameKey;
       entry.colorName = colorName;
@@ -4366,10 +4448,27 @@
       }
       this.closeTransientPanels();
       this.operationsAnchor = anchor || null;
-      const panel = this.createPanel('operations-panel', anchor);
+      const panel = this.createPanel('operations-panel dev1-main-operations-panel', anchor);
       this.applyPickerTheme(panel);
+
       panel.appendChild(this.createOperationButton(this.t('operationClearAll'), () => this.showClearOptionsPanel(), { icon: '🧹' }));
       panel.appendChild(this.createOperationButton(this.t('operationBatchDelete'), () => this.enterBatchDeleteMode(), { icon: '🗑️' }));
+      panel.appendChild(this.createOperationButton(
+        this.t('operationDualPage'),
+        () => {
+          this.closeTransientPanelByKey('activeOperationsPanel');
+          try {
+            chrome.runtime.sendMessage({
+              action: 'dev1-open-dual-page',
+              url: window.location.href
+            });
+          } catch (e) {
+            console.error('Failed to open dual page:', e);
+          }
+        },
+        { icon: '📖' }
+      ));
+
       document.body.appendChild(panel);
       this.trackPanelPosition(panel, anchor, 'top');
       this.activeOperationsPanel = panel;
@@ -4518,7 +4617,7 @@
     }
 
     enterBatchDeleteMode() {
-      this.darkModeEnabled = this.detectPageTheme();
+      this._refreshActiveTheme();
       this.closeTransientPanels();
       if (this.batchCleanup) {
         this.exitBatchDeleteMode();
@@ -5827,8 +5926,24 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       }
       if (textColorOverride) element.dataset.textColorOverride = textColorOverride;
       const variantColor = textColorOverride === 'white' ? '#ffffff' : (textColorOverride === 'black' ? '#0f172a' : '');
-      const originalTextColor = safeString(element.dataset.originalColor || '');
-      const textColor = variantColor || contrastText(color, originalTextColor || (this.darkModeEnabled ? '#ffffff' : '#0f172a'));
+      
+      // Look at parent context color dynamically
+      let parentColor = '';
+      try {
+        if (element.parentElement) {
+          // If parent is a highlight itself, look at its parent to find the true context color
+          let parent = element.parentElement;
+          while (parent && parent.classList && parent.classList.contains('custom-highlight')) {
+            parent = parent.parentElement;
+          }
+          if (parent) {
+            parentColor = window.getComputedStyle(parent).color;
+          }
+        }
+      } catch (_) {}
+      
+      const originalTextColor = parentColor || safeString(element.dataset.originalColor || '');
+      const textColor = variantColor || contrastText(color, this.darkModeEnabled ? '#ffffff' : '#0f172a', originalTextColor);
       const renderColor = this.getRenderableColor(color, element);
       const rgba = /^#[0-9a-f]{6}$/i.test(renderColor) ? rgbaFromHex(renderColor, 0.32) : renderColor;
       const isRainbow = this.isRainbowColor(color);
