@@ -3487,10 +3487,6 @@
 
         /* Pre-backup remark button styling (glass style matching bottom-right overlay buttons) */
         #preBackupRemarkContainer {
-            position: absolute;
-            top: 12px;
-            left: 12px;
-            z-index: 10;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -3510,6 +3506,7 @@
             transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
             box-shadow: none;
             box-sizing: border-box;
+            flex: 0 0 auto;
         }
 
         #preBackupRemarkContainer:hover {
@@ -3534,6 +3531,8 @@
             white-space: nowrap;
             line-height: 1;
             color: var(--theme-glass-action-text-color);
+            -webkit-text-fill-color: var(--theme-glass-action-text-color);
+            text-shadow: none;
             overflow: hidden;
             text-overflow: ellipsis;
             max-width: 200px;
@@ -3543,7 +3542,7 @@
         #statusCardOverlayActions {
             position: absolute;
             right: 12px;
-            bottom: 12px;
+            bottom: 8px;
             display: flex;
             align-items: center;
             justify-content: flex-end;
@@ -6645,11 +6644,6 @@
                             width: 100%;
                             margin: 0;
                         " title="点击查看详细变化">
-                            <!-- 备注按钮 & 备注文本 -->
-                            <div id="preBackupRemarkContainer" title="点击编辑备注">
-                                <i class="fas fa-edit"></i>
-                                <span id="preBackupRemarkText"></span>
-                            </div>
                             <div id="statusCardText">自动备份模式</div>
                             <i id="statusCardChevron" class="fas fa-chevron-right"
                                 style="position: absolute; right: 12px; opacity: 0.5; font-size: 16px; display: none;"></i>
@@ -6658,6 +6652,12 @@
                                 <button id="undoCurrentChangesBtnOverlay" type="button">
                                     <i class="fas fa-undo"></i> <span id="undoCurrentChangesBtnText">撤销</span>
                                 </button>
+
+                                <!-- 备注按钮 & 备注文本 -->
+                                <div id="preBackupRemarkContainer" title="点击编辑备注">
+                                    <i class="fas fa-edit"></i>
+                                    <span id="preBackupRemarkText"></span>
+                                </div>
 
                                 <!-- Manual Backup Button Overlay -->
                                 <button id="manualBackupBtnOverlay" type="button">

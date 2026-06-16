@@ -21378,10 +21378,17 @@ function updatePendingRemarkUI() {
         const lang = data.preferredLang || 'zh_CN';
         if (remark.trim() === '') {
             remarkTextEl.textContent = lang === 'en' ? 'Add Note' : '添加备注';
-            remarkTextEl.style.opacity = '0.6';
         } else {
             remarkTextEl.textContent = remark;
-            remarkTextEl.style.opacity = '1';
+        }
+        remarkTextEl.style.opacity = '1';
+
+        // 同步容器的 title 与 aria-label
+        const container = document.getElementById('preBackupRemarkContainer');
+        if (container) {
+            const containerTitle = lang === 'en' ? 'Click to edit note' : '点击编辑备注';
+            container.setAttribute('title', containerTitle);
+            container.setAttribute('aria-label', containerTitle);
         }
     });
 }
