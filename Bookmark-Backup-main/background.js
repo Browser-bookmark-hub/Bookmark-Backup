@@ -9194,7 +9194,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
 
                     const requestedStrategy = normalizeRevertStrategySelection(message.strategy);
-                    const thresholdConfig = resolveRevertPatchThreshold(message.thresholdPercent);
+                    const thresholdConfig = resolveRevertPatchThreshold(message.thresholdCount);
 
                     await setRestoreRecoveryIntent({
                         sessionId: normalizedRestoreSessionId,
@@ -9258,9 +9258,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const strategyCompatible = requestedStrategy === 'auto'
                         ? preflightRequestedStrategy === 'auto'
                         : preflightRequestedStrategy === requestedStrategy;
-                    const preflightThresholdPercent = normalizeRevertPatchThresholdPercent(preflightPayload && preflightPayload.thresholdPercent);
+                    const preflightThresholdCount = normalizeRevertPatchThresholdCount(preflightPayload && preflightPayload.thresholdCount);
                     const thresholdCompatible = requestedStrategy === 'auto'
-                        ? preflightThresholdPercent === thresholdConfig.thresholdPercent
+                        ? preflightThresholdCount === thresholdConfig.thresholdCount
                         : true;
 
                     const canReusePreflightDecision = !!(
@@ -9283,14 +9283,13 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             changeRatio: Number.isFinite(Number(preflightPayload.changeRatio))
                                 ? Number(preflightPayload.changeRatio)
                                 : null,
-                            changeScore: Number.isFinite(Number(preflightPayload.changeScore))
-                                ? Number(preflightPayload.changeScore)
-                                : 0,
                             baselineNodeCount: Number.isFinite(Number(preflightPayload.baselineNodeCount)) && Number(preflightPayload.baselineNodeCount) > 0
                                 ? Number(preflightPayload.baselineNodeCount)
                                 : baselineNodeCount,
-                            thresholdRatio: thresholdConfig.thresholdRatio,
-                            thresholdPercent: thresholdConfig.thresholdPercent,
+                            changeScore: Number.isFinite(Number(preflightPayload.changeScore))
+                                ? Number(preflightPayload.changeScore)
+                                : 0,
+                            thresholdCount: thresholdConfig.thresholdCount,
                             preflightReused: true
                         };
                     } else {
@@ -9299,8 +9298,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             requestedStrategy,
                             diffSummary,
                             baselineNodeCount,
-                            thresholdRatio: thresholdConfig.thresholdRatio,
-                            thresholdPercent: thresholdConfig.thresholdPercent
+                            thresholdCount: thresholdConfig.thresholdCount
                         });
                         decision = {
                             ...computedDecision,
@@ -9405,8 +9403,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         changeRatio: decision.changeRatio,
                         changeScore: decision.changeScore,
                         baselineNodeCount: decision.baselineNodeCount,
-                        thresholdRatio: decision.thresholdRatio,
-                        thresholdPercent: decision.thresholdPercent,
+                        thresholdCount: decision.thresholdCount,
                         fallbackApplied: decision.strategy !== appliedStrategy,
                         ...(patchResult || {})
                     });
@@ -9754,7 +9751,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     }
 
-                    const thresholdConfig = resolveRevertPatchThreshold(message.thresholdPercent);
+                    const thresholdConfig = resolveRevertPatchThreshold(message.thresholdCount);
                     const preflightPayload = message.preflight && typeof message.preflight === 'object'
                         ? message.preflight
                         : null;
@@ -9796,9 +9793,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const strategyCompatible = requestedStrategy === 'auto'
                         ? preflightRequestedStrategy === 'auto'
                         : preflightRequestedStrategy === requestedStrategy;
-                    const preflightThresholdPercent = normalizeRevertPatchThresholdPercent(preflightPayload && preflightPayload.thresholdPercent);
+                    const preflightThresholdCount = normalizeRevertPatchThresholdCount(preflightPayload && preflightPayload.thresholdCount);
                     const thresholdCompatible = requestedStrategy === 'auto'
-                        ? preflightThresholdPercent === thresholdConfig.thresholdPercent
+                        ? preflightThresholdCount === thresholdConfig.thresholdCount
                         : true;
                     const canReusePreflightDecision = !!(
                         preflightReuseOptIn &&
@@ -9821,14 +9818,13 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             changeRatio: Number.isFinite(Number(preflightPayload.changeRatio))
                                 ? Number(preflightPayload.changeRatio)
                                 : null,
+                            baselineNodeCount: Number.isFinite(Number(preflightPayload.baselineNodeCount)) && Number(preflightPayload.baselineNodeCount) > 0
+                                ? Number(preflightPayload.baselineNodeCount)
+                                : (tree ? (countAllBookmarks(tree) + countAllFolders(tree)) : 1),
                             changeScore: Number.isFinite(Number(preflightPayload.changeScore))
                                 ? Number(preflightPayload.changeScore)
                                 : 0,
-                            baselineNodeCount: Number.isFinite(Number(preflightPayload.baselineNodeCount)) && Number(preflightPayload.baselineNodeCount) > 0
-                                ? Number(preflightPayload.baselineNodeCount)
-                                : 1,
-                            thresholdRatio: thresholdConfig.thresholdRatio,
-                            thresholdPercent: thresholdConfig.thresholdPercent,
+                            thresholdCount: thresholdConfig.thresholdCount,
                             preflightReused: true
                         };
                     } else {
@@ -9836,7 +9832,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             requestedStrategy,
                             currentTree,
                             snapshotTree: tree,
-                            thresholdPercent: message.thresholdPercent
+                            thresholdCount: message.thresholdCount
                         });
                         decision = {
                             ...computedDecision,
@@ -9951,8 +9947,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             changeRatio: decision.changeRatio,
                             changeScore: decision.changeScore,
                             baselineNodeCount: decision.baselineNodeCount,
-                            thresholdRatio: decision.thresholdRatio,
-                            thresholdPercent: decision.thresholdPercent,
+                            thresholdCount: decision.thresholdCount,
                             fallbackApplied: decision.strategy !== appliedStrategy,
                             ...(patchResult || {})
                         }
@@ -11649,7 +11644,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         restoreRef: message.restoreRef,
                         localPayload,
                         strategy: message.strategy,
-                        thresholdPercent: message.thresholdPercent
+                        thresholdCount: message.thresholdCount
                     });
                     sendResponse(result);
                 } catch (err) {
@@ -11683,7 +11678,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 const result = await restoreSelectedVersion({
                     restoreRef: message.restoreRef,
                     strategy: message.strategy,
-                    thresholdPercent: message.thresholdPercent,
+                    thresholdCount: message.thresholdCount,
                     restoreSessionId: message.restoreSessionId,
                     localPayload,
                     mergeViewMode: message.mergeViewMode,
@@ -18423,25 +18418,23 @@ function assertBookmarkTreeContent(snapshotTree, preferredLang = 'zh_CN', mode =
     throw new Error(buildEmptySnapshotError(preferredLang, mode));
 }
 
-const REVERT_PATCH_THRESHOLD_DEFAULT_PERCENT = 40;
-const REVERT_PATCH_THRESHOLD_MIN_PERCENT = 1;
-const REVERT_PATCH_THRESHOLD_MAX_PERCENT = 99;
-const REVERT_PATCH_RATIO_THRESHOLD = REVERT_PATCH_THRESHOLD_DEFAULT_PERCENT / 100;
+const REVERT_PATCH_THRESHOLD_DEFAULT_COUNT = 300;
+const REVERT_PATCH_THRESHOLD_MIN_COUNT = 0;
+const REVERT_PATCH_THRESHOLD_MAX_COUNT = 100000;
 
-function normalizeRevertPatchThresholdPercent(value) {
+function normalizeRevertPatchThresholdCount(value) {
     const num = Number(value);
-    if (!Number.isFinite(num)) return REVERT_PATCH_THRESHOLD_DEFAULT_PERCENT;
+    if (!Number.isFinite(num)) return REVERT_PATCH_THRESHOLD_DEFAULT_COUNT;
     return Math.min(
-        REVERT_PATCH_THRESHOLD_MAX_PERCENT,
-        Math.max(REVERT_PATCH_THRESHOLD_MIN_PERCENT, Math.round(num))
+        REVERT_PATCH_THRESHOLD_MAX_COUNT,
+        Math.max(REVERT_PATCH_THRESHOLD_MIN_COUNT, Math.round(num))
     );
 }
 
 function resolveRevertPatchThreshold(value) {
-    const percent = normalizeRevertPatchThresholdPercent(value);
+    const count = normalizeRevertPatchThresholdCount(value);
     return {
-        thresholdPercent: percent,
-        thresholdRatio: percent / 100
+        thresholdCount: count
     };
 }
 
@@ -21051,15 +21044,12 @@ function buildBookmarkStatsFromRestoreDiffSummary(diffSummary, currentTree, opti
     };
 }
 
-function selectRevertStrategyForLastBackup({ requestedStrategy, diffSummary, baselineNodeCount, thresholdRatio = REVERT_PATCH_RATIO_THRESHOLD, thresholdPercent = REVERT_PATCH_THRESHOLD_DEFAULT_PERCENT }) {
+function selectRevertStrategyForLastBackup({ requestedStrategy, diffSummary, baselineNodeCount, thresholdCount = REVERT_PATCH_THRESHOLD_DEFAULT_COUNT }) {
     const normalizedRequested = normalizeRevertStrategySelection(requestedStrategy);
+    const safeThresholdCount = normalizeRevertPatchThresholdCount(thresholdCount);
     const safeBaseline = Number.isFinite(Number(baselineNodeCount)) && Number(baselineNodeCount) > 0
         ? Number(baselineNodeCount)
         : 1;
-    const safeThresholdRatio = Number.isFinite(Number(thresholdRatio))
-        ? Math.min(0.99, Math.max(0.01, Number(thresholdRatio)))
-        : REVERT_PATCH_RATIO_THRESHOLD;
-    const safeThresholdPercent = normalizeRevertPatchThresholdPercent(thresholdPercent);
 
     const changeScore = computeRevertChangeScore(diffSummary);
     const changeRatio = changeScore / safeBaseline;
@@ -21068,20 +21058,18 @@ function selectRevertStrategyForLastBackup({ requestedStrategy, diffSummary, bas
         return {
             strategy: normalizedRequested,
             changeScore,
+            thresholdCount: safeThresholdCount,
             baselineNodeCount: safeBaseline,
-            changeRatio,
-            thresholdRatio: safeThresholdRatio,
-            thresholdPercent: safeThresholdPercent
+            changeRatio
         };
     }
 
     return {
-        strategy: changeRatio > safeThresholdRatio ? 'overwrite' : 'patch',
+        strategy: (changeScore > safeThresholdCount) ? 'overwrite' : 'patch',
         changeScore,
+        thresholdCount: safeThresholdCount,
         baselineNodeCount: safeBaseline,
-        changeRatio,
-        thresholdRatio: safeThresholdRatio,
-        thresholdPercent: safeThresholdPercent
+        changeRatio
     };
 }
 
@@ -21903,17 +21891,16 @@ function isRestoreSourceStableIdComparable(restoreRef) {
     return true;
 }
 
-function resolveRestoreStrategyDecision({ requestedStrategy, currentTree, snapshotTree, thresholdPercent }) {
+function resolveRestoreStrategyDecision({ requestedStrategy, currentTree, snapshotTree, thresholdCount }) {
     const normalizedRequested = normalizeRevertStrategySelection(requestedStrategy);
-    const thresholdConfig = resolveRevertPatchThreshold(thresholdPercent);
+    const thresholdConfig = resolveRevertPatchThreshold(thresholdCount);
     const diffSummary = computeIdStrictRevertDiffSummary(currentTree, snapshotTree);
     const baselineNodeCount = getRestoreStrategyBaselineNodeCount(snapshotTree);
     const decision = selectRevertStrategyForLastBackup({
         requestedStrategy: normalizedRequested,
         diffSummary,
         baselineNodeCount,
-        thresholdRatio: thresholdConfig.thresholdRatio,
-        thresholdPercent: thresholdConfig.thresholdPercent
+        thresholdCount: thresholdConfig.thresholdCount
     });
 
     return {
@@ -22105,109 +22092,14 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         }
     };
 
-    const computeLisStableIds = (orderedIds = [], currentIds = []) => {
-        if (!Array.isArray(orderedIds) || !Array.isArray(currentIds) || orderedIds.length === 0) {
-            return new Set();
-        }
-
-        const oldPosById = new Map();
-        for (let i = 0; i < currentIds.length; i++) {
-            oldPosById.set(String(currentIds[i]), i);
-        }
-
-        const seq = [];
-        for (const rawId of orderedIds) {
-            const id = String(rawId);
-            const oldPos = oldPosById.get(id);
-            if (typeof oldPos !== 'number') return new Set();
-            seq.push({ id, oldPos });
-        }
-
-        const tails = [];
-        const tailsIdx = [];
-        const prevIdx = new Array(seq.length).fill(-1);
-
-        for (let i = 0; i < seq.length; i++) {
-            const v = seq[i].oldPos;
-            let lo = 0;
-            let hi = tails.length;
-            while (lo < hi) {
-                const mid = (lo + hi) >> 1;
-                if (tails[mid] < v) lo = mid + 1;
-                else hi = mid;
-            }
-            const pos = lo;
-            if (pos > 0) prevIdx[i] = tailsIdx[pos - 1];
-            if (pos === tails.length) {
-                tails.push(v);
-                tailsIdx.push(i);
-            } else {
-                tails[pos] = v;
-                tailsIdx[pos] = i;
-            }
-        }
-
-        const stableIds = new Set();
-        let k = tailsIdx.length ? tailsIdx[tailsIdx.length - 1] : -1;
-        while (k >= 0) {
-            stableIds.add(seq[k].id);
-            k = prevIdx[k];
-        }
-        return stableIds;
-    };
-
     const refreshCurrentMeta = async () => {
         const currentTree = await browserAPI.bookmarks.getTree();
         currentMeta = buildPatchTreeMeta(currentTree);
         return currentTree;
     };
 
-    // Phase 1: 严格按 ID 对比删除（ID 不存在于目标快照 => 删除）
-    const targetResolvedIds = new Set();
-    targetMeta.nodeById.forEach((_, targetId) => {
-        const resolved = resolveTargetId(targetId);
-        if (resolved) targetResolvedIds.add(resolved);
-    });
-
-    const deleteSet = new Set();
-    currentMeta.nodeById.forEach((node, currentId) => {
-        if (protectedIds.has(currentId)) return;
-        if (!targetResolvedIds.has(currentId)) {
-            deleteSet.add(currentId);
-        }
-    });
-
-    const deleteRoots = Array.from(deleteSet).filter((nodeId) => {
-        const parentId = currentMeta.nodeById.get(nodeId)?.parentId;
-        return !parentId || !deleteSet.has(String(parentId));
-    }).sort((a, b) => {
-        const depthA = Number(currentMeta.depthById.get(a) || 0);
-        const depthB = Number(currentMeta.depthById.get(b) || 0);
-        return depthB - depthA;
-    });
-
-    await runStrictBatch(deleteRoots, async (nodeId) => {
-        const node = currentMeta.nodeById.get(nodeId);
-        if (!node) return;
-        try {
-            if (node.isFolder) {
-                await browserAPI.bookmarks.removeTree(nodeId);
-            } else {
-                await browserAPI.bookmarks.remove(nodeId);
-            }
-            removed += 1;
-        } catch (e) {
-            throw new Error(preferredLang === 'en'
-                ? `Patch revert delete failed: ${e.message || e}`
-                : `补丁撤销删除失败: ${e.message || e}`);
-        }
-    }, 8);
-
-    if (deleteRoots.length > 0) {
-        await refreshCurrentMeta();
-    }
-
-    // Phase 2: 严格按 ID 对比补建（目标快照有但当前没有 => 新增）
+// 阶段 1: 新增与修改 (Create & Update)
+    // 1.1) 严格按 ID 对比补建（目标快照有但当前没有 => 新增）
     const knownCurrentIds = new Set(currentMeta.nodeById.keys());
 
     const ensureTargetNodeExists = async (targetNode, actualParentId) => {
@@ -22268,8 +22160,7 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         await refreshCurrentMeta();
     }
 
-    // Phase 3: 对齐可复用节点（修改标题/URL + 跨级移动）
-    const moveQueue = [];
+    // 1.2) 修改标题与 URL
     const updateQueue = [];
 
     targetMeta.nodeById.forEach((targetNode, targetId) => {
@@ -22287,14 +22178,6 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
                 : '补丁撤销遇到节点类型不一致，请改用覆盖撤销。');
         }
 
-        const targetParentActualId = resolveTargetId(targetNode.parentId);
-        if (targetParentActualId && currentNode.parentId !== targetParentActualId) {
-            moveQueue.push({
-                id: actualId,
-                parentId: targetParentActualId
-            });
-        }
-
         const targetTitle = String(targetNode.title || '');
         const currentTitle = String(currentNode.title || '');
         const targetUrl = targetIsBookmark ? String(targetNode.url || '') : '';
@@ -22309,21 +22192,6 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
             });
         }
     });
-
-    await runStrictBatch(moveQueue, async (moveOp) => {
-        if (!currentMeta.nodeById.has(moveOp.id)) return;
-        if (!currentMeta.nodeById.has(String(moveOp.parentId))) return;
-        try {
-            await browserAPI.bookmarks.move(moveOp.id, {
-                parentId: String(moveOp.parentId)
-            });
-            moved += 1;
-        } catch (e) {
-            throw new Error(preferredLang === 'en'
-                ? `Patch revert move failed: ${e.message || e}`
-                : `补丁撤销移动失败: ${e.message || e}`);
-        }
-    }, 6);
 
     await runStrictBatch(updateQueue, async (updateOp) => {
         if (!currentMeta.nodeById.has(updateOp.id)) return;
@@ -22341,11 +22209,104 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         }
     }, 10);
 
-    if (moveQueue.length > 0 || updateQueue.length > 0) {
+    if (updateQueue.length > 0) {
         await refreshCurrentMeta();
     }
 
-    // Phase 4: 对齐同级顺序
+    // 阶段 2: 跨父级移动 (Move) - 深度降序，自底向上
+    const moveQueue = [];
+
+    targetMeta.nodeById.forEach((targetNode, targetId) => {
+        const actualId = resolveTargetId(targetId);
+        if (!actualId || !currentMeta.nodeById.has(actualId)) return;
+        if (protectedIds.has(actualId)) return;
+
+        const currentNode = currentMeta.nodeById.get(actualId);
+        const targetParentActualId = resolveTargetId(targetNode.parentId);
+
+        if (targetParentActualId && currentNode.parentId !== targetParentActualId) {
+            moveQueue.push({
+                id: actualId,
+                parentId: targetParentActualId
+            });
+        }
+    });
+
+    // 关键排序：在执行跨级移动前，先对移入队列按在当前树中的深度降序排列（自底向上）
+    // 保证子目录先被移出原父目录，解除父子依赖关系，规避 "Can't move into descendant"
+    moveQueue.sort((a, b) => {
+        const depthA = Number(currentMeta.depthById.get(a.id) || 0);
+        const depthB = Number(currentMeta.depthById.get(b.id) || 0);
+        return depthB - depthA;
+    });
+
+    await runStrictBatch(moveQueue, async (moveOp) => {
+        if (!currentMeta.nodeById.has(moveOp.id)) return;
+        if (!currentMeta.nodeById.has(String(moveOp.parentId))) return;
+        try {
+            await browserAPI.bookmarks.move(moveOp.id, {
+                parentId: String(moveOp.parentId)
+            });
+            moved += 1;
+        } catch (e) {
+            throw new Error(preferredLang === 'en'
+                ? `Patch revert move failed: ${e.message || e}`
+                : `补丁撤销移动失败: ${e.message || e}`);
+        }
+    }, 1);
+
+    if (moveQueue.length > 0) {
+        await refreshCurrentMeta();
+    }
+
+    // 阶段 3: 删除多余节点 (Delete)
+    // 此时保留的子节点已安全移出，可安全调用 removeTree，不会引起连带误删 Bug
+    const targetResolvedIds = new Set();
+    targetMeta.nodeById.forEach((_, targetId) => {
+        const resolved = resolveTargetId(targetId);
+        if (resolved) targetResolvedIds.add(resolved);
+    });
+
+    const deleteSet = new Set();
+    currentMeta.nodeById.forEach((node, currentId) => {
+        if (protectedIds.has(currentId)) return;
+        if (!targetResolvedIds.has(currentId)) {
+            deleteSet.add(currentId);
+        }
+    });
+
+    const deleteRoots = Array.from(deleteSet).filter((nodeId) => {
+        const parentId = currentMeta.nodeById.get(nodeId)?.parentId;
+        return !parentId || !deleteSet.has(String(parentId));
+    }).sort((a, b) => {
+        const depthA = Number(currentMeta.depthById.get(a) || 0);
+        const depthB = Number(currentMeta.depthById.get(b) || 0);
+        return depthB - depthA;
+    });
+
+    await runStrictBatch(deleteRoots, async (nodeId) => {
+        const node = currentMeta.nodeById.get(nodeId);
+        if (!node) return;
+        try {
+            if (node.isFolder) {
+                await browserAPI.bookmarks.removeTree(nodeId);
+            } else {
+                await browserAPI.bookmarks.remove(nodeId);
+            }
+            removed += 1;
+        } catch (e) {
+            throw new Error(preferredLang === 'en'
+                ? `Patch revert delete failed: ${e.message || e}`
+                : `补丁撤销删除失败: ${e.message || e}`);
+        }
+    }, 8);
+
+    if (deleteRoots.length > 0) {
+        await refreshCurrentMeta();
+    }
+
+    // 阶段 4: 同级排序 (Reorder)
+    // 采用“从左到右内存模拟对齐（Scan-and-Align）”算法，完美规避索引位置偏移的乱序 Bug
     for (const [targetParentId, targetChildIds] of targetMeta.childrenByParent.entries()) {
         if (!targetParentId || !Array.isArray(targetChildIds) || targetChildIds.length <= 1) continue;
 
@@ -22380,23 +22341,27 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         }
         if (isAlreadyOrdered) continue;
 
-        const stableIds = computeLisStableIds(desiredOrder, currentOrder);
-        if (stableIds.size === desiredOrder.length) continue;
+        const simulatedList = [...currentOrder];
+        for (let i = 0; i < desiredOrder.length; i++) {
+            const targetChromeId = desiredOrder[i];
+            const currentItem = simulatedList[i];
+            if (currentItem === targetChromeId) {
+                continue;
+            }
 
-        for (let idx = desiredOrder.length - 1; idx >= 0; idx--) {
-            const childId = desiredOrder[idx];
-            if (stableIds.has(childId)) continue;
-            const currentIdx = currentOrder.indexOf(childId);
-            if (currentIdx === -1) continue;
-            if (currentIdx === idx) continue;
+            const currentIndex = simulatedList.indexOf(targetChromeId);
+            if (currentIndex >= 0) {
+                simulatedList.splice(currentIndex, 1);
+                simulatedList.splice(i, 0, targetChromeId);
+            } else {
+                simulatedList.splice(i, 0, targetChromeId);
+            }
 
             try {
-                await browserAPI.bookmarks.move(childId, {
+                await browserAPI.bookmarks.move(targetChromeId, {
                     parentId: String(actualParentId),
-                    index: idx
+                    index: i
                 });
-                currentOrder.splice(currentIdx, 1);
-                currentOrder.splice(idx, 0, childId);
                 moved += 1;
             } catch (e) {
                 throw new Error(preferredLang === 'en'
@@ -22406,7 +22371,7 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         }
     }
 
-    // 与覆盖恢复一致：更新 lastBookmarkData、重置状态并刷新分析缓存
+        // 与覆盖恢复一致：更新 lastBookmarkData、重置状态并刷新分析缓存
     try {
         await commitCurrentTreeAsBaselineSnapshot({
             timestamp: baselineTimestamp
@@ -22424,73 +22389,26 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
     return { created, removed, moved, updated };
 }
 
-function buildAutoRollbackUserError(preferredLang, operationMsg) {
+function buildRestoreFailureSafetyHintError(preferredLang, error) {
+    const errorMsg = error && error.message ? error.message : String(error);
     return preferredLang === 'en'
-        ? `Sorry, failed. But data safety first: rollback is already completed by overwrite. Please use overwrite revert/restore (data preserved, ID may not be preserved). Original error: ${operationMsg}`
-        : `抱歉，失败。但为保存数据已覆盖式回退，建议使用覆盖撤销/恢复（当前数据优先：保数据不保ID）。原始错误：${operationMsg}`;
-}
-
-function buildAutoRollbackFailureError(preferredLang, operationMsg, rollbackMsg) {
-    return preferredLang === 'en'
-        ? `Operation failed: ${operationMsg}. Auto rollback by temporary snapshot failed. Please try again later. Recommend overwrite revert/restore. Rollback error: ${rollbackMsg}`
-        : `执行失败：${operationMsg}。自动用临时快照做一次覆盖回退失败。请稍后重试，建议使用覆盖撤销/恢复。回退错误：${rollbackMsg}`;
-}
-
-function shouldBypassAutoRollbackForError(error) {
-    const errorCode = String(error?.errorCode || '').trim();
-    return errorCode.startsWith('restore_root_');
+        ? `Restore failed. A temporary safety snapshot was auto-saved before this operation. If your bookmarks are inconsistent, please open "Temporary Safety Snapshot" at the top right of the History page to export and restore. Original error: ${errorMsg}`
+        : `恢复失败。为了你的数据安全，在执行前已自动保存临时快照。若书签状态异常，请点击历史页右上角“临时安全快照”进行导出和恢复。原始错误：${errorMsg}`;
 }
 
 async function executeBookmarkOperationWithAutoRollback(operationExecutor, options = {}) {
-    const {
-        preferredLang = 'zh_CN',
-        rollbackSnapshot = null
-    } = options;
-
-    const normalizedRollbackSnapshot = normalizeRestoreRecoverySnapshot(rollbackSnapshot);
-    const rollbackSnapshotTree = normalizedRollbackSnapshot || (await browserAPI.bookmarks.getTree());
-
+    const { preferredLang = 'zh_CN' } = options;
     try {
         return await operationExecutor();
     } catch (operationError) {
-        if (shouldBypassAutoRollbackForError(operationError)) {
-            throw operationError;
-        }
-
-        const operationMsg = operationError && operationError.message ? operationError.message : String(operationError);
-
-        let rollbackFinalError = null;
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-            try {
-                await restoreSnapshotTree(rollbackSnapshotTree, {
-                    baselineTimestamp: new Date().toISOString(),
-                    preferredLang,
-                    allowEmpty: true,
-                    strictDelete: true
-                });
-                rollbackFinalError = null;
-                break;
-            } catch (rollbackError) {
-                rollbackFinalError = rollbackError;
-            }
-        }
-
-        if (rollbackFinalError) {
-            const rollbackMsg = rollbackFinalError && rollbackFinalError.message
-                ? rollbackFinalError.message
-                : String(rollbackFinalError);
-            throw new Error(buildAutoRollbackFailureError(preferredLang, operationMsg, rollbackMsg));
-        }
-
-        throw new Error(buildAutoRollbackUserError(preferredLang, operationMsg));
+        throw new Error(buildRestoreFailureSafetyHintError(preferredLang, operationError));
     }
 }
 
 async function executePatchBookmarkWithAutoRollback(snapshotTree, options = {}) {
     const {
         baselineTimestamp,
-        preferredLang = 'zh_CN',
-        rollbackSnapshot = null
+        preferredLang = 'zh_CN'
     } = options;
 
     return await executeBookmarkOperationWithAutoRollback(async () => {
@@ -22499,8 +22417,7 @@ async function executePatchBookmarkWithAutoRollback(snapshotTree, options = {}) 
             preferredLang
         });
     }, {
-        preferredLang,
-        rollbackSnapshot
+        preferredLang
     });
 }
 
@@ -32906,7 +32823,7 @@ function isMergeRestorePreflightEntryCompatible(entry, restoreRef, mergeViewMode
     return expectedMode === entryMode;
 }
 
-async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, localPayload, mergeViewMode, manualMatches, importParentId, forceChangesArtifact, preflight, restoreSessionId, restoreRecordMeta }) {
+async function restoreSelectedVersion({ restoreRef, strategy, thresholdCount, localPayload, mergeViewMode, manualMatches, importParentId, forceChangesArtifact, preflight, restoreSessionId, restoreRecordMeta }) {
     const normalizedRestoreSessionId = String(
         restoreSessionId
         || `restore_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
@@ -33280,7 +33197,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             };
         }
 
-        const thresholdConfig = resolveRevertPatchThreshold(thresholdPercent);
+        const thresholdConfig = resolveRevertPatchThreshold(thresholdCount);
 
         const restoreRecordTime = restoreRef?.recordTime != null
             ? String(restoreRef.recordTime)
@@ -33322,9 +33239,9 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
         const strategyCompatible = requestedStrategy === 'auto'
             ? preflightRequestedStrategy === 'auto'
             : preflightRequestedStrategy === requestedStrategy;
-        const preflightThresholdPercent = normalizeRevertPatchThresholdPercent(preflightPayload && preflightPayload.thresholdPercent);
+        const preflightThresholdCount = normalizeRevertPatchThresholdCount(preflightPayload && preflightPayload.thresholdCount);
         const thresholdCompatible = requestedStrategy === 'auto'
-            ? preflightThresholdPercent === thresholdConfig.thresholdPercent
+            ? preflightThresholdCount === thresholdConfig.thresholdCount
             : true;
         const canReusePreflightDecision = !!(
             preflightReuseOptIn &&
@@ -33344,17 +33261,10 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             decision = {
                 strategy: strategyByRequest,
                 requestedStrategy,
-                changeRatio: Number.isFinite(Number(preflightPayload.changeRatio))
-                    ? Number(preflightPayload.changeRatio)
-                    : null,
                 changeScore: Number.isFinite(Number(preflightPayload.changeScore))
                     ? Number(preflightPayload.changeScore)
                     : 0,
-                baselineNodeCount: Number.isFinite(Number(preflightPayload.baselineNodeCount)) && Number(preflightPayload.baselineNodeCount) > 0
-                    ? Number(preflightPayload.baselineNodeCount)
-                    : 1,
-                thresholdRatio: thresholdConfig.thresholdRatio,
-                thresholdPercent: thresholdConfig.thresholdPercent,
+                thresholdCount: thresholdConfig.thresholdCount,
                 preflightReused: true,
                 patchUnsupported: preflightPayload?.patchUnsupported === true,
                 stableIdComparable: preflightPayload?.stableIdComparable !== false
@@ -33365,7 +33275,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
                 requestedStrategy,
                 currentTree,
                 snapshotTree: tree,
-                thresholdPercent
+                thresholdCount
             });
             decision = {
                 ...computedDecision,
@@ -33378,7 +33288,6 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
         if (!stableIdComparable) {
             decision.patchUnsupported = true;
             decision.stableIdComparable = false;
-            decision.changeRatio = null;
             if (requestedStrategy === 'auto') {
                 decision.strategy = 'overwrite';
             }
@@ -33477,11 +33386,8 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
             strategy: appliedStrategy,
             requestedStrategy,
             preflightReused: !!decision.preflightReused,
-            changeRatio: decision.changeRatio,
             changeScore: decision.changeScore,
-            baselineNodeCount: decision.baselineNodeCount,
-            thresholdRatio: decision.thresholdRatio,
-            thresholdPercent: decision.thresholdPercent,
+            thresholdCount: decision.thresholdCount,
             fallbackApplied: decision.strategy !== appliedStrategy,
             patchUnsupported: decision.patchUnsupported === true,
             stableIdComparable: decision.stableIdComparable !== false,
@@ -33554,7 +33460,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdPercent, 
 
 // [New] Overwrite preview data builder (Current Browser -> Selected Snapshot)
 // Returns { diffSummary, currentTree, targetTree, changeEntries }
-async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy, thresholdPercent }) {
+async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy, thresholdCount }) {
     try {
         if (!restoreRef) {
             return { success: false, error: 'Missing restoreRef' };
@@ -33609,22 +33515,20 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
                 ? 'patch'
                 : (String(strategy || 'overwrite').toLowerCase() === 'auto' ? 'auto' : 'overwrite')
         );
-        const stableIdComparable = isRestoreSourceStableIdComparable(restoreRef);
-        const thresholdConfig = resolveRevertPatchThreshold(thresholdPercent);
+        const thresholdConfig = resolveRevertPatchThreshold(thresholdCount);
         const patchDiffSummary = computeIdStrictRevertDiffSummary(currentTree, targetTree);
         const decision = selectRevertStrategyForLastBackup({
             requestedStrategy,
             diffSummary: patchDiffSummary,
             baselineNodeCount: getRestoreStrategyBaselineNodeCount(targetTree),
-            thresholdRatio: thresholdConfig.thresholdRatio,
-            thresholdPercent: thresholdConfig.thresholdPercent
+            thresholdCount: thresholdConfig.thresholdCount
         });
+        const stableIdComparable = isRestoreSourceStableIdComparable(restoreRef);
         const patchUnsupported = !stableIdComparable;
         if (patchUnsupported) {
             if (requestedStrategy === 'auto') {
                 decision.strategy = 'overwrite';
             }
-            decision.changeRatio = null;
         }
         const resolvedStrategy = String(decision?.strategy || '').toLowerCase() === 'patch'
             ? 'patch'
@@ -33647,8 +33551,7 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
             changeRatio: decision.changeRatio,
             changeScore: decision.changeScore,
             baselineNodeCount: decision.baselineNodeCount,
-            thresholdRatio: decision.thresholdRatio,
-            thresholdPercent: decision.thresholdPercent,
+            thresholdCount: decision.thresholdCount,
             stableIdComparable,
             patchUnsupported
         };

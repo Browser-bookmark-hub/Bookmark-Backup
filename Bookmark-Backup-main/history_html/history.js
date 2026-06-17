@@ -328,13 +328,13 @@ const restoreImportTargetTreeCache = new Map(); // folderId -> { folders, stats 
 const restoreImportTargetTreeLoading = new Map(); // folderId -> Promise
 const restoreImportTargetPathCache = new Map(); // folderId -> fullPath
 let restoreComparisonState = null; // 二级 UI 中部统计区状态
-const RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT = 40;
-const RESTORE_PATCH_THRESHOLD_MIN_PERCENT = 1;
-const RESTORE_PATCH_THRESHOLD_MAX_PERCENT = 99;
+const RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT = 300;
+const RESTORE_PATCH_THRESHOLD_MIN_COUNT = 0;
+const RESTORE_PATCH_THRESHOLD_MAX_COUNT = 100000;
 const RESTORE_SETTING_STRATEGY_KEY = 'restoreStrategyPreference';
-const RESTORE_SETTING_THRESHOLD_KEY = 'restorePatchThresholdPercent';
+const RESTORE_SETTING_THRESHOLD_KEY = 'restorePatchThresholdCount';
 let restoreStrategyPreference = 'auto';
-let restorePatchThresholdPercent = RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT;
+let restorePatchThresholdCount = RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT;
 
 const HISTORY_DELETE_WARN_SETTING_KEYS = {
     yellow: 'backupHistoryDeleteWarnYellowThreshold',
@@ -5061,15 +5061,15 @@ let revertModalInited = false;
 let revertPreflight = null; // { strategy, changeMap, currentTree, targetTree }
 let revertSnapshotCache = null; // lastBookmarkData
 
-const REVERT_PATCH_THRESHOLD_DEFAULT_PERCENT = 40;
-const REVERT_PATCH_THRESHOLD_MIN_PERCENT = 1;
-const REVERT_PATCH_THRESHOLD_MAX_PERCENT = 99;
+const REVERT_PATCH_THRESHOLD_DEFAULT_COUNT = 300;
+const REVERT_PATCH_THRESHOLD_MIN_COUNT = 0;
+const REVERT_PATCH_THRESHOLD_MAX_COUNT = 100000;
 const REVERT_SETTING_STRATEGY_KEY = 'revertStrategyPreference';
-const REVERT_SETTING_THRESHOLD_KEY = 'revertPatchThresholdPercent';
+const REVERT_SETTING_THRESHOLD_KEY = 'revertPatchThresholdCount';
 const RESTORE_PATCH_DISABLE_RATIO = 1;
 
 let revertStrategyPreference = 'auto';
-let revertPatchThresholdPercent = REVERT_PATCH_THRESHOLD_DEFAULT_PERCENT;
+let revertPatchThresholdCount = REVERT_PATCH_THRESHOLD_DEFAULT_COUNT;
 let revertLiveAutoDecision = null;
 let revertLiveAutoDecisionToken = 0;
 
@@ -5122,12 +5122,12 @@ async function loadRevertSettings() {
             REVERT_SETTING_THRESHOLD_KEY
         ]);
         const strategy = normalizeRevertStrategyValue(data && data[REVERT_SETTING_STRATEGY_KEY]);
-        const threshold = normalizeRevertPatchThresholdPercent(data && data[REVERT_SETTING_THRESHOLD_KEY]);
+        const threshold = normalizeRevertPatchThresholdCount(data && data[REVERT_SETTING_THRESHOLD_KEY]);
         revertStrategyPreference = strategy;
-        revertPatchThresholdPercent = threshold;
+        revertPatchThresholdCount = threshold;
     } catch (_) {
         revertStrategyPreference = 'auto';
-        revertPatchThresholdPercent = REVERT_PATCH_THRESHOLD_DEFAULT_PERCENT;
+        revertPatchThresholdCount = REVERT_PATCH_THRESHOLD_DEFAULT_COUNT;
     }
 }
 
@@ -5151,37 +5151,32 @@ function applyRevertSettingsToUI() {
 
     const thresholdInput = document.getElementById('revertPatchThresholdInput');
     if (thresholdInput) {
-        thresholdInput.value = String(revertPatchThresholdPercent);
+        thresholdInput.value = String(revertPatchThresholdCount);
     }
 
     updateRevertModeUI();
 }
 
-function normalizeRevertPatchThresholdPercent(value) {
+function normalizeRevertPatchThresholdCount(value) {
     const num = Number(value);
-    if (!Number.isFinite(num)) return REVERT_PATCH_THRESHOLD_DEFAULT_PERCENT;
+    if (!Number.isFinite(num)) return REVERT_PATCH_THRESHOLD_DEFAULT_COUNT;
     return Math.min(
-        REVERT_PATCH_THRESHOLD_MAX_PERCENT,
-        Math.max(REVERT_PATCH_THRESHOLD_MIN_PERCENT, Math.round(num))
+        REVERT_PATCH_THRESHOLD_MAX_COUNT,
+        Math.max(REVERT_PATCH_THRESHOLD_MIN_COUNT, Math.round(num))
     );
 }
 
-function getCurrentRevertPatchThresholdPercent() {
+function getCurrentRevertPatchThresholdCount() {
     const thresholdInput = document.getElementById('revertPatchThresholdInput');
-    if (!thresholdInput) return normalizeRevertPatchThresholdPercent(revertPatchThresholdPercent);
+    if (!thresholdInput) return normalizeRevertPatchThresholdCount(revertPatchThresholdCount);
 
-    const normalized = normalizeRevertPatchThresholdPercent(thresholdInput.value);
+    const normalized = normalizeRevertPatchThresholdCount(thresholdInput.value);
     if (String(normalized) !== String(thresholdInput.value)) {
         thresholdInput.value = String(normalized);
     }
 
-    revertPatchThresholdPercent = normalized;
+    revertPatchThresholdCount = normalized;
     return normalized;
-}
-
-function getCurrentRevertPatchThresholdRatio() {
-    const percent = getCurrentRevertPatchThresholdPercent();
-    return percent / 100;
 }
 
 async function refreshRevertLiveAutoDecision() {
@@ -5196,28 +5191,26 @@ async function refreshRevertLiveAutoDecision() {
     }
 
     const requestToken = ++revertLiveAutoDecisionToken;
-    const thresholdPercent = getCurrentRevertPatchThresholdPercent();
+    const thresholdCount = getCurrentRevertPatchThresholdCount();
     revertLiveAutoDecision = {
         calculating: true,
-        thresholdPercent
+        thresholdCount
     };
     if (!revertPreflight) {
         updateRevertWarning(getSelectedRevertStrategy());
     }
 
     try {
-        const diff = await buildRevertDiffSummary('auto', revertSnapshotCache.bookmarkTree, { thresholdPercent });
+        const diff = await buildRevertDiffSummary('auto', revertSnapshotCache.bookmarkTree, { thresholdCount });
         if (requestToken !== revertLiveAutoDecisionToken) return;
         revertLiveAutoDecision = {
             resolvedStrategy: diff.resolvedStrategy,
-            changeRatio: diff.changeRatio,
             changeScore: diff.changeScore,
-            baselineCount: diff.baselineCount,
-            thresholdPercent: diff.thresholdPercent
+            thresholdCount: diff.thresholdCount
         };
     } catch (_) {
         if (requestToken !== revertLiveAutoDecisionToken) return;
-        revertLiveAutoDecision = { thresholdPercent };
+        revertLiveAutoDecision = { thresholdCount };
     }
 
     if (!revertPreflight) {
@@ -5235,9 +5228,9 @@ async function persistRevertSettings(partial = {}) {
         payload[REVERT_SETTING_STRATEGY_KEY] = strategy;
     }
 
-    if (Object.prototype.hasOwnProperty.call(partial, 'thresholdPercent')) {
-        const threshold = normalizeRevertPatchThresholdPercent(partial.thresholdPercent);
-        revertPatchThresholdPercent = threshold;
+    if (Object.prototype.hasOwnProperty.call(partial, 'thresholdCount')) {
+        const threshold = normalizeRevertPatchThresholdCount(partial.thresholdCount);
+        revertPatchThresholdCount = threshold;
         payload[REVERT_SETTING_THRESHOLD_KEY] = threshold;
     }
 
@@ -5300,7 +5293,7 @@ function getRevertSnapshotBaselineCount(snapshotTree) {
     return Math.max(1, Number(stats.bookmarks || 0) + Number(stats.folders || 0));
 }
 
-function resolveRevertStrategyBySummary(summary, snapshotTree, requestedStrategy, thresholdPercent = getCurrentRevertPatchThresholdPercent()) {
+function resolveRevertStrategyBySummary(summary, snapshotTree, requestedStrategy, thresholdCount = getCurrentRevertPatchThresholdCount()) {
     const requested = normalizeRevertStrategyValue(requestedStrategy);
     const safeSummary = summary && typeof summary === 'object' ? summary : {};
     const changeScore =
@@ -5308,32 +5301,23 @@ function resolveRevertStrategyBySummary(summary, snapshotTree, requestedStrategy
         Number(safeSummary.deleted || 0) +
         Number(safeSummary.moved || 0) +
         Number(safeSummary.modified || 0);
-    const baselineCount = Math.max(1, getRevertSnapshotBaselineCount(snapshotTree));
-    const changeRatio = changeScore / baselineCount;
 
-    const normalizedThresholdPercent = normalizeRevertPatchThresholdPercent(thresholdPercent);
-    const thresholdRatio = normalizedThresholdPercent / 100;
+    const normalizedThresholdCount = normalizeRevertPatchThresholdCount(thresholdCount);
 
     if (requested === 'patch' || requested === 'overwrite') {
         return {
             strategy: requested,
             requestedStrategy: requested,
             changeScore,
-            baselineCount,
-            changeRatio,
-            thresholdPercent: normalizedThresholdPercent,
-            thresholdRatio
+            thresholdCount: normalizedThresholdCount
         };
     }
 
     return {
-        strategy: changeRatio > thresholdRatio ? 'overwrite' : 'patch',
+        strategy: changeScore > normalizedThresholdCount ? 'overwrite' : 'patch',
         requestedStrategy: 'auto',
         changeScore,
-        baselineCount,
-        changeRatio,
-        thresholdPercent: normalizedThresholdPercent,
-        thresholdRatio
+        thresholdCount: normalizedThresholdCount
     };
 }
 
@@ -5383,15 +5367,15 @@ function updateRevertWarning(strategy, preflightInfo = null) {
     const info = preflightInfo || revertLiveAutoDecision;
     const normalized = normalizeRevertStrategyValue(strategy);
 
-    const thresholdInputPercent = getCurrentRevertPatchThresholdPercent();
-    const thresholdPercent = normalizeRevertPatchThresholdPercent(
-        preflightInfo && Number.isFinite(Number(preflightInfo.thresholdPercent))
-            ? Number(preflightInfo.thresholdPercent)
-            : thresholdInputPercent
+    const thresholdInputCount = getCurrentRevertPatchThresholdCount();
+    const thresholdCount = normalizeRevertPatchThresholdCount(
+        preflightInfo && Number.isFinite(Number(preflightInfo.thresholdCount))
+            ? Number(preflightInfo.thresholdCount)
+            : thresholdInputCount
     );
 
-    const hasRatio = info && Number.isFinite(Number(info.changeRatio));
-    const ratioPercent = hasRatio ? Math.round(Number(info.changeRatio) * 1000) / 10 : null;
+    const hasScore = info && Number.isFinite(Number(info.changeScore));
+    const changeScore = hasScore ? Number(info.changeScore) : 0;
 
     let title = isZh ? '提示' : 'Note';
     let text = '';
@@ -5404,23 +5388,22 @@ function updateRevertWarning(strategy, preflightInfo = null) {
         text = isZh
             ? '手动模式：覆盖撤销，清空并恢复到上次备份快照（会重建书签，ID 将变化）。'
             : 'Manual mode: overwrite revert clears and restores to the last backup snapshot (IDs will change).';
-    } else if (hasRatio) {
-        const ratioRawPercent = Number(info.changeRatio) * 100;
-        const choosePatch = Number(ratioRawPercent) <= Number(thresholdPercent);
+    } else if (hasScore) {
+        const choosePatch = changeScore <= thresholdCount;
         const chosen = choosePatch
             ? (isZh ? '补丁撤销' : 'Patch Revert')
             : (isZh ? '覆盖撤销' : 'Overwrite Revert');
         text = isZh
-            ? `自动模式：当前占比 ${ratioPercent}% ，阈值 ${thresholdPercent}%；当前：${chosen}。`
-            : `Auto mode: ratio ${ratioPercent}%, threshold ${thresholdPercent}%; current: ${chosen}.`;
+            ? `自动模式：当前变化数 ${changeScore} 条，阈值 ${thresholdCount} 条；当前：${chosen}。`
+            : `Auto mode: current changes ${changeScore} entries, threshold ${thresholdCount} entries; current: ${chosen}.`;
     } else if (info && info.calculating) {
         text = isZh
-            ? `自动模式：当前占比计算中；阈值 ${thresholdPercent}%。`
-            : `Auto mode: ratio calculating; threshold ${thresholdPercent}%.`;
+            ? `自动模式：当前变化数计算中；阈值 ${thresholdCount} 条。`
+            : `Auto mode: changes calculating; threshold ${thresholdCount} entries.`;
     } else {
         text = isZh
-            ? `自动模式：当前占比暂无；阈值 ${thresholdPercent}%。`
-            : `Auto mode: ratio unavailable; threshold ${thresholdPercent}%.`;
+            ? `自动模式：当前变化数暂无；阈值 ${thresholdCount} 条。`
+            : `Auto mode: changes unavailable; threshold ${thresholdCount} entries.`;
     }
 
     titleEl.textContent = title;
@@ -5436,10 +5419,10 @@ async function buildRevertDiffSummary(strategy, snapshotTree, options = {}) {
     const targetTree = snapshotTree;
     const requestedStrategy = normalizeRevertStrategyValue(strategy);
 
-    const thresholdPercent = normalizeRevertPatchThresholdPercent(
-        options && Object.prototype.hasOwnProperty.call(options, 'thresholdPercent')
-            ? options.thresholdPercent
-            : getCurrentRevertPatchThresholdPercent()
+    const thresholdCount = normalizeRevertPatchThresholdCount(
+        options && Object.prototype.hasOwnProperty.call(options, 'thresholdCount')
+            ? options.thresholdCount
+            : getCurrentRevertPatchThresholdCount()
     );
 
     let rawChangeMap = new Map();
@@ -5450,7 +5433,7 @@ async function buildRevertDiffSummary(strategy, snapshotTree, options = {}) {
     }
 
     const rawSummary = summarizeChangeMap(rawChangeMap);
-    const decision = resolveRevertStrategyBySummary(rawSummary, targetTree, requestedStrategy, thresholdPercent);
+    const decision = resolveRevertStrategyBySummary(rawSummary, targetTree, requestedStrategy, thresholdCount);
     const resolvedStrategy = decision.strategy;
 
     const changeMap = resolvedStrategy === 'overwrite'
@@ -5498,10 +5481,7 @@ async function buildRevertDiffSummary(strategy, snapshotTree, options = {}) {
         resolvedStrategy,
         rawSummary,
         changeScore: decision.changeScore,
-        baselineCount: decision.baselineCount,
-        changeRatio: decision.changeRatio,
-        thresholdPercent: decision.thresholdPercent,
-        thresholdRatio: decision.thresholdRatio
+        thresholdCount: decision.thresholdCount
     };
 }
 
@@ -5670,17 +5650,17 @@ function initRevertModalEvents() {
     const thresholdInput = document.getElementById('revertPatchThresholdInput');
     if (thresholdInput) {
         const syncThresholdDraft = () => {
-            const normalized = normalizeRevertPatchThresholdPercent(thresholdInput.value);
+            const normalized = normalizeRevertPatchThresholdCount(thresholdInput.value);
             thresholdInput.value = String(normalized);
-            revertPatchThresholdPercent = normalized;
+            revertPatchThresholdCount = normalized;
             updateRevertWarning(getSelectedRevertStrategy());
         };
 
         const applyThresholdValue = () => {
-            const normalized = normalizeRevertPatchThresholdPercent(thresholdInput.value);
+            const normalized = normalizeRevertPatchThresholdCount(thresholdInput.value);
             thresholdInput.value = String(normalized);
-            revertPatchThresholdPercent = normalized;
-            persistRevertSettings({ thresholdPercent: normalized }).catch(() => { });
+            revertPatchThresholdCount = normalized;
+            persistRevertSettings({ thresholdCount: normalized }).catch(() => { });
             resetPreflightAndConfirm();
             updateRevertModalI18n();
             refreshRevertLiveAutoDecision().catch(() => { });
@@ -5820,10 +5800,10 @@ async function executeRevert(strategy) {
     }
 
     const requestedStrategy = normalizeRevertStrategyValue(strategy);
-    const thresholdPercent = getCurrentRevertPatchThresholdPercent();
+    const thresholdCount = getCurrentRevertPatchThresholdCount();
 
-    if (!revertPreflight || revertPreflight.requestedStrategy !== requestedStrategy || Number(revertPreflight.thresholdPercent || 0) !== Number(thresholdPercent)) {
-        const diff = await buildRevertDiffSummary(requestedStrategy, revertSnapshotCache.bookmarkTree, { thresholdPercent });
+    if (!revertPreflight || revertPreflight.requestedStrategy !== requestedStrategy || Number(revertPreflight.thresholdCount || 0) !== Number(thresholdCount)) {
+        const diff = await buildRevertDiffSummary(requestedStrategy, revertSnapshotCache.bookmarkTree, { thresholdCount });
         const diffContainer = document.getElementById('revertDiffSummary');
         if (diffContainer) diffContainer.innerHTML = diff.html || '';
 
@@ -5831,7 +5811,7 @@ async function executeRevert(strategy) {
             ...diff,
             strategy: diff.resolvedStrategy,
             requestedStrategy,
-            thresholdPercent: diff.thresholdPercent
+            thresholdCount: diff.thresholdCount
         };
 
         setRevertDiffBarVisible(true);
@@ -5904,16 +5884,14 @@ async function executeRevert(strategy) {
                 : '',
             requestedStrategy: revertPreflight.requestedStrategy || requestedStrategy,
             resolvedStrategy: strategyToUse,
-            changeRatio: revertPreflight.changeRatio,
             changeScore: revertPreflight.changeScore,
-            baselineNodeCount: revertPreflight.baselineCount,
-            thresholdPercent: revertPreflight.thresholdPercent
+            thresholdCount: revertPreflight.thresholdCount
         } : null;
         const resp = await new Promise(resolve => {
             browserAPI.runtime.sendMessage({
                 action: 'revertAllToLastBackup',
                 strategy: strategyToUse,
-                thresholdPercent: Number(revertPreflight && revertPreflight.thresholdPercent) || thresholdPercent,
+                thresholdCount: Number(revertPreflight && revertPreflight.thresholdCount) || thresholdCount,
                 preflight: revertPreflightPayload
             }, (res) => resolve(res));
         });
@@ -5926,6 +5904,11 @@ async function executeRevert(strategy) {
             const msg = resp && resp.error ? String(resp.error) : (currentLang === 'zh_CN' ? '撤销失败' : 'Revert failed');
             setRevertProgress(0, msg);
             showRevertToast(false, msg);
+            try {
+                if (typeof openHistorySafetyCheckpointModal === 'function') {
+                    openHistorySafetyCheckpointModal();
+                }
+            } catch (_) { }
             return;
         }
 
@@ -11341,24 +11324,24 @@ function normalizeRestoreStrategyValue(strategy) {
     return 'auto';
 }
 
-function normalizeRestorePatchThresholdPercent(value) {
+function normalizeRestorePatchThresholdCount(value) {
     const num = Number(value);
-    if (!Number.isFinite(num)) return RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT;
+    if (!Number.isFinite(num)) return RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT;
     return Math.min(
-        RESTORE_PATCH_THRESHOLD_MAX_PERCENT,
-        Math.max(RESTORE_PATCH_THRESHOLD_MIN_PERCENT, Math.round(num))
+        RESTORE_PATCH_THRESHOLD_MAX_COUNT,
+        Math.max(RESTORE_PATCH_THRESHOLD_MIN_COUNT, Math.round(num))
     );
 }
 
-function getCurrentRestorePatchThresholdPercent() {
+function getCurrentRestorePatchThresholdCount() {
     const thresholdInput = document.getElementById('restorePatchThresholdInput');
-    if (!thresholdInput) return normalizeRestorePatchThresholdPercent(restorePatchThresholdPercent);
+    if (!thresholdInput) return normalizeRestorePatchThresholdCount(restorePatchThresholdCount);
 
-    const normalized = normalizeRestorePatchThresholdPercent(thresholdInput.value);
+    const normalized = normalizeRestorePatchThresholdCount(thresholdInput.value);
     if (String(normalized) !== String(thresholdInput.value)) {
         thresholdInput.value = String(normalized);
     }
-    restorePatchThresholdPercent = normalized;
+    restorePatchThresholdCount = normalized;
     return normalized;
 }
 
@@ -11369,12 +11352,12 @@ async function loadRestoreSettings() {
             RESTORE_SETTING_THRESHOLD_KEY
         ]);
         const strategy = normalizeRestoreStrategyValue(data && data[RESTORE_SETTING_STRATEGY_KEY]);
-        const threshold = normalizeRestorePatchThresholdPercent(data && data[RESTORE_SETTING_THRESHOLD_KEY]);
+        const threshold = normalizeRestorePatchThresholdCount(data && data[RESTORE_SETTING_THRESHOLD_KEY]);
         restoreStrategyPreference = strategy;
-        restorePatchThresholdPercent = threshold;
+        restorePatchThresholdCount = threshold;
     } catch (_) {
         restoreStrategyPreference = 'auto';
-        restorePatchThresholdPercent = RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT;
+        restorePatchThresholdCount = RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT;
     }
 }
 
@@ -11387,9 +11370,9 @@ async function persistRestoreSettings(partial = {}) {
         payload[RESTORE_SETTING_STRATEGY_KEY] = strategy;
     }
 
-    if (Object.prototype.hasOwnProperty.call(partial, 'thresholdPercent')) {
-        const threshold = normalizeRestorePatchThresholdPercent(partial.thresholdPercent);
-        restorePatchThresholdPercent = threshold;
+    if (Object.prototype.hasOwnProperty.call(partial, 'thresholdCount')) {
+        const threshold = normalizeRestorePatchThresholdCount(partial.thresholdCount);
+        restorePatchThresholdCount = threshold;
         payload[RESTORE_SETTING_THRESHOLD_KEY] = threshold;
     }
 
@@ -11414,7 +11397,7 @@ function applyRestoreSettingsToUI() {
     if (radioPatch) radioPatch.checked = preferredStrategy === 'patch';
 
     if (thresholdInput) {
-        thresholdInput.value = String(restorePatchThresholdPercent);
+        thresholdInput.value = String(restorePatchThresholdCount);
     }
 }
 
@@ -11544,10 +11527,10 @@ function updateRestoreWarning(strategy, preflightInfo = null) {
     const titleEl = document.getElementById('restoreWarningTitle');
     const textEl = document.getElementById('restoreWarningText');
     const thresholdLabel = document.getElementById('restoreThresholdLabel');
-    const thresholdPercent = normalizeRestorePatchThresholdPercent(
-        preflightInfo && Number.isFinite(Number(preflightInfo.thresholdPercent))
-            ? Number(preflightInfo.thresholdPercent)
-            : getCurrentRestorePatchThresholdPercent()
+    const thresholdCount = normalizeRestorePatchThresholdCount(
+        preflightInfo && Number.isFinite(Number(preflightInfo.thresholdCount))
+            ? Number(preflightInfo.thresholdCount)
+            : getCurrentRestorePatchThresholdCount()
     );
 
     if (!titleEl || !textEl) return;
@@ -11606,22 +11589,22 @@ function updateRestoreWarning(strategy, preflightInfo = null) {
         iconClass = 'fas fa-wrench';
         }
     } else if (strategy === 'auto') {
-        const hasRatio = preflightInfo && Number.isFinite(Number(preflightInfo.changeRatio));
-        const ratioPercent = hasRatio ? Math.round(Number(preflightInfo.changeRatio) * 1000) / 10 : null;
+        const hasScore = preflightInfo && Number.isFinite(Number(preflightInfo.changeScore));
+        const changeScore = hasScore ? Number(preflightInfo.changeScore) : null;
         const resolvedStrategy = normalizeRestoreStrategyValue(preflightInfo?.resolvedStrategy || '');
         const chosenText = resolvedStrategy === 'overwrite'
             ? (isZh ? '覆盖恢复' : 'Overwrite Restore')
             : (isZh ? '补丁恢复' : 'Patch Restore');
 
         title = isZh ? '提示' : 'Note';
-        if (hasRatio) {
+        if (hasScore) {
             text = isZh
-                ? `自动模式：当前占比 ${ratioPercent}% ，阈值 ${thresholdPercent}%；当前：${chosenText}。`
-                : `Auto mode: ratio ${ratioPercent}%, threshold ${thresholdPercent}%; current: ${chosenText}.`;
+                ? `自动模式：当前变化 ${changeScore}条，阈值 ${thresholdCount}条；当前：${chosenText}。`
+                : `Auto mode: current change ${changeScore} entries, threshold ${thresholdCount} entries; current: ${chosenText}.`;
         } else {
             text = isZh
-                ? `自动模式：变化占比 ≤ ${thresholdPercent}% 走补丁恢复，> ${thresholdPercent}% 走覆盖恢复。`
-                : `Auto mode: ratio ≤ ${thresholdPercent}% uses patch restore, > ${thresholdPercent}% uses overwrite restore.`;
+                ? `自动模式：变化条数 ≤ ${thresholdCount}条 走补丁恢复，> ${thresholdCount}条 走覆盖恢复。`
+                : `Auto mode: change ≤ ${thresholdCount} entries uses patch restore, > ${thresholdCount} entries uses overwrite restore.`;
         }
 
         boxBg = 'var(--info-light)';
@@ -13515,7 +13498,7 @@ function getRestoreSnapshotBaselineCount(snapshotTree) {
     return Math.max(1, Number(stats.bookmarks || 0) + Number(stats.folders || 0));
 }
 
-function resolveRestoreStrategyBySummary(summary, snapshotTree, requestedStrategy, thresholdPercent = getCurrentRestorePatchThresholdPercent()) {
+function resolveRestoreStrategyBySummary(summary, snapshotTree, requestedStrategy, thresholdCount = getCurrentRestorePatchThresholdCount()) {
     const requested = normalizeRestoreStrategyValue(requestedStrategy);
     const safeSummary = summary && typeof summary === 'object' ? summary : {};
     const changeScore =
@@ -13523,32 +13506,28 @@ function resolveRestoreStrategyBySummary(summary, snapshotTree, requestedStrateg
         Number(safeSummary.deleted || 0) +
         Number(safeSummary.moved || 0) +
         Number(safeSummary.modified || 0);
+
     const baselineCount = getRestoreSnapshotBaselineCount(snapshotTree);
     const changeRatio = changeScore / baselineCount;
 
-    const normalizedThresholdPercent = normalizeRestorePatchThresholdPercent(thresholdPercent);
-    const thresholdRatio = normalizedThresholdPercent / 100;
+    const normalizedThresholdCount = normalizeRestorePatchThresholdCount(thresholdCount);
 
     if (requested === 'patch' || requested === 'overwrite' || requested === 'merge') {
         return {
             strategy: requested,
             requestedStrategy: requested,
             changeScore,
-            baselineCount,
             changeRatio,
-            thresholdPercent: normalizedThresholdPercent,
-            thresholdRatio
+            thresholdCount: normalizedThresholdCount
         };
     }
 
     return {
-        strategy: changeRatio > thresholdRatio ? 'overwrite' : 'patch',
+        strategy: changeScore > normalizedThresholdCount ? 'overwrite' : 'patch',
         requestedStrategy: 'auto',
         changeScore,
-        baselineCount,
         changeRatio,
-        thresholdPercent: normalizedThresholdPercent,
-        thresholdRatio
+        thresholdCount: normalizedThresholdCount
     };
 }
 
@@ -13573,10 +13552,10 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
     const currentTree = await browserAPI.bookmarks.getTree();
 
     const normalizedRequestedStrategy = normalizeRestoreStrategyValue(strategy);
-    const thresholdPercent = normalizeRestorePatchThresholdPercent(
-        options && Object.prototype.hasOwnProperty.call(options, 'thresholdPercent')
-            ? options.thresholdPercent
-            : getCurrentRestorePatchThresholdPercent()
+    const thresholdCount = normalizeRestorePatchThresholdCount(
+        options && Object.prototype.hasOwnProperty.call(options, 'thresholdCount')
+            ? options.thresholdCount
+            : getCurrentRestorePatchThresholdCount()
     );
     let targetTree = record.bookmarkTree;
     let rawChangeMap = new Map();
@@ -13592,7 +13571,7 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
         } catch (_) {
             strictDecisionSummary = { added: 0, deleted: 0, moved: 0, modified: 0 };
         }
-        decision = resolveRestoreStrategyBySummary(strictDecisionSummary, targetTree, normalizedRequestedStrategy, thresholdPercent);
+        decision = resolveRestoreStrategyBySummary(strictDecisionSummary, targetTree, normalizedRequestedStrategy, thresholdCount);
 
         try {
             // 预演与卡片展示采用“视觉口径”变更图。
@@ -13691,21 +13670,14 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
                 : 'Import merge preflight (whole version): ';
         }
     } else if (normalizedRequestedStrategy === 'auto') {
-        const ratioPercent = decision && Number.isFinite(Number(decision.changeRatio))
-            ? Math.round(Number(decision.changeRatio) * 1000) / 10
-            : null;
         const chosenText = resolvedStrategy === 'patch'
             ? (isZh ? '补丁恢复' : 'Patch Restore')
             : (isZh ? '覆盖恢复' : 'Overwrite Restore');
-        if (ratioPercent == null) {
-            prefix = isZh
-                ? `自动恢复预演（阈值 ${decision ? decision.thresholdPercent : thresholdPercent}% ，当前 ${chosenText}）：`
-                : `Auto restore preflight (threshold ${decision ? decision.thresholdPercent : thresholdPercent}%, current ${chosenText}): `;
-        } else {
-            prefix = isZh
-                ? `自动恢复预演（占比 ${ratioPercent}% / 阈值 ${decision.thresholdPercent}% ，当前 ${chosenText}）：`
-                : `Auto restore preflight (ratio ${ratioPercent}% / threshold ${decision.thresholdPercent}%, current ${chosenText}): `;
-        }
+        const countLimit = decision ? decision.thresholdCount : thresholdCount;
+        const changeScore = decision ? decision.changeScore : 0;
+        prefix = isZh
+            ? `自动恢复预演（变化数 ${changeScore} 条 / 阈值 ${countLimit} 条 ，当前 ${chosenText}）：`
+            : `Auto restore preflight (changes ${changeScore} / threshold ${countLimit}, current ${chosenText}): `;
     }
 
     let html = `
@@ -13729,11 +13701,9 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
         requestedStrategy: normalizedRequestedStrategy,
         resolvedStrategy,
         rawSummary,
-        changeScore: decision ? decision.changeScore : 0,
-        baselineCount: decision ? decision.baselineCount : 0,
         changeRatio: decision ? decision.changeRatio : null,
-        thresholdPercent: decision ? decision.thresholdPercent : thresholdPercent,
-        thresholdRatio: decision ? decision.thresholdRatio : (thresholdPercent / 100),
+        changeScore: decision ? decision.changeScore : 0,
+        thresholdCount: decision ? decision.thresholdCount : thresholdCount,
         precomputedDiffSummary
     };
 }
@@ -13743,7 +13713,7 @@ async function updateRestoreDiffSummaryByStrategy(strategy) {
     const diffContainer = document.getElementById('restoreDiffSummary');
     if (!diffContainer) return;
 
-    const thresholdPercent = getCurrentRestorePatchThresholdPercent();
+    const thresholdCount = getCurrentRestorePatchThresholdCount();
     const selectedMergeViewMode = strategy === 'merge' ? getSelectedRestoreMergeViewMode() : null;
     const {
         html,
@@ -13756,9 +13726,8 @@ async function updateRestoreDiffSummaryByStrategy(strategy) {
         resolvedStrategy,
         changeRatio,
         changeScore,
-        baselineCount,
         precomputedDiffSummary
-    } = await buildRestoreDiffSummary(currentRestoreRecord, strategy, { thresholdPercent });
+    } = await buildRestoreDiffSummary(currentRestoreRecord, strategy, { thresholdCount });
 
     diffContainer.innerHTML = html || '';
 
@@ -13776,8 +13745,7 @@ async function updateRestoreDiffSummaryByStrategy(strategy) {
         targetTree,
         changeRatio,
         changeScore,
-        baselineCount,
-        thresholdPercent,
+        thresholdCount,
         precomputedDiffSummary
     };
 
@@ -14346,12 +14314,12 @@ function updateRestoreModalI18n() {
     setStrategyLabel('restoreStrategyMergeLabel', isZh ? '导入合并' : 'Import Merge');
     setStrategyLabel('restoreStrategyPatchLabel', isZh ? '补丁恢复' : 'Patch Restore');
 
-    const thresholdPercent = getCurrentRestorePatchThresholdPercent();
+    const thresholdCount = getCurrentRestorePatchThresholdCount();
     const autoWrap = document.getElementById('restoreStrategyAutoLabelWrap');
     if (autoWrap) {
         autoWrap.title = isZh
-            ? `自动恢复：变化占比 ≤${thresholdPercent}% 走补丁恢复，>${thresholdPercent}% 走覆盖恢复。`
-            : `Auto restore: use patch when change ratio is ≤${thresholdPercent}%, otherwise overwrite.`;
+            ? `自动恢复：变化条数 ≤${thresholdCount}条 走补丁恢复，>${thresholdCount}条 走覆盖恢复。`
+            : `Auto restore: use patch when change score is ≤${thresholdCount} entries, otherwise overwrite.`;
     }
 
     const overwriteWrap = document.getElementById('restoreStrategyOverwriteLabelWrap');
@@ -14447,13 +14415,13 @@ function updateRevertModalI18n() {
     const badge = document.getElementById('revertSnapshotBadge');
     if (badge) badge.textContent = i18n.revertSnapshotBadge[currentLang];
 
-    const thresholdPercent = getCurrentRevertPatchThresholdPercent();
+    const thresholdCount = getCurrentRevertPatchThresholdCount();
 
     const autoWrap = document.getElementById('revertStrategyAutoLabelWrap');
     if (autoWrap) {
         autoWrap.title = isZh
-            ? `智能撤销：变化占比 ≤${thresholdPercent}% 走补丁撤销，>${thresholdPercent}% 走覆盖撤销。`
-            : `Smart revert: use patch when change ratio is ≤${thresholdPercent}%, otherwise overwrite.`;
+            ? `智能撤销：变化条数 ≤${thresholdCount}条 走补丁撤销，>${thresholdCount}条 走覆盖撤销。`
+            : `Smart revert: use patch when change score is ≤${thresholdCount} entries, otherwise overwrite.`;
     }
 
     const manualWrap = document.getElementById('revertStrategyManualLabelWrap');
@@ -14640,17 +14608,17 @@ function initRestoreModalEvents() {
     const thresholdInput = document.getElementById('restorePatchThresholdInput');
     if (thresholdInput) {
         const syncThresholdDraft = () => {
-            const normalized = normalizeRestorePatchThresholdPercent(thresholdInput.value);
+            const normalized = normalizeRestorePatchThresholdCount(thresholdInput.value);
             thresholdInput.value = String(normalized);
-            restorePatchThresholdPercent = normalized;
+            restorePatchThresholdCount = normalized;
             updateRestoreWarning(getSelectedRestoreStrategy());
         };
 
         const applyThresholdValue = () => {
-            const normalized = normalizeRestorePatchThresholdPercent(thresholdInput.value);
+            const normalized = normalizeRestorePatchThresholdCount(thresholdInput.value);
             thresholdInput.value = String(normalized);
-            restorePatchThresholdPercent = normalized;
-            persistRestoreSettings({ thresholdPercent: normalized }).catch(() => { });
+            restorePatchThresholdCount = normalized;
+            persistRestoreSettings({ thresholdCount: normalized }).catch(() => { });
             restoreGeneralPreflight = null;
             setRestoreDiffBarVisible(false);
             lockRestoreStrategy(false);
@@ -14759,13 +14727,13 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
     }
 
     const recordTime = String(currentRestoreRecord.time || '');
-    const thresholdPercent = getCurrentRestorePatchThresholdPercent();
+    const thresholdCount = getCurrentRestorePatchThresholdCount();
     const selectedMergeViewMode = strategy === 'merge' ? getSelectedRestoreMergeViewMode() : null;
     const isPreflightReady = restoreGeneralPreflight &&
         restoreGeneralPreflight.recordTime === recordTime &&
         restoreGeneralPreflight.requestedStrategy === strategy &&
         (strategy !== 'merge' || restoreGeneralPreflight.mergeViewMode === selectedMergeViewMode) &&
-        (strategy !== 'auto' || Number(restoreGeneralPreflight.thresholdPercent || 0) === Number(thresholdPercent));
+        (strategy !== 'auto' || Number(restoreGeneralPreflight.thresholdCount || 0) === Number(thresholdCount));
 
     if (!isPreflightReady) {
         await updateRestoreDiffSummaryByStrategy(strategy);
@@ -14906,16 +14874,14 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
                 action: 'restoreToHistoryRecord',
                 time: currentRestoreRecord.time,
                 strategy: nextStrategy,
-                thresholdPercent,
+                thresholdCount,
                 restoreSessionId,
                 preflight: preflightInfo ? {
                     recordTime: preflightInfo.recordTime || '',
                     requestedStrategy: preflightInfo.requestedStrategy || nextStrategy,
                     resolvedStrategy: normalizeRestoreStrategyValue(nextStrategy === 'overwrite' ? 'overwrite' : preflightResolvedStrategy),
-                    changeRatio: preflightInfo.changeRatio,
                     changeScore: preflightInfo.changeScore,
-                    baselineNodeCount: preflightInfo.baselineCount,
-                    thresholdPercent: preflightInfo.thresholdPercent
+                    thresholdCount: preflightInfo.thresholdCount
                 } : null
             });
             if (isRestoreRecoveryLockedResponse(response)) {
@@ -14963,16 +14929,14 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
                     action: 'restoreToHistoryRecord',
                     time: currentRestoreRecord.time,
                     strategy,
-                    thresholdPercent,
+                    thresholdCount,
                     restoreSessionId,
                     preflight: preflightInfo ? {
                         recordTime: preflightInfo.recordTime || '',
                         requestedStrategy: preflightInfo.requestedStrategy || strategy,
                         resolvedStrategy: preflightResolvedStrategy,
-                        changeRatio: preflightInfo.changeRatio,
                         changeScore: preflightInfo.changeScore,
-                        baselineNodeCount: preflightInfo.baselineCount,
-                        thresholdPercent: preflightInfo.thresholdPercent
+                        thresholdCount: preflightInfo.thresholdCount
                     } : null
                 });
                 if (isRestoreRecoveryLockedResponse(patchRes)) {
@@ -15091,6 +15055,11 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
         const msg = currentLang === 'zh_CN' ? `恢复失败: ${error.message}` : `Restore failed: ${error.message}`;
         setRestoreProgress(0, msg);
         showToast(msg);
+        try {
+            if (typeof openHistorySafetyCheckpointModal === 'function') {
+                openHistorySafetyCheckpointModal();
+            }
+        } catch (_) { }
     } finally {
         try {
             await browserAPI.runtime.sendMessage({ action: 'setBookmarkRestoringFlag', value: false });
@@ -24115,6 +24084,8 @@ async function showRestoreRecoveryBannerInHistory(status) {
                 min-height: 28px;
                 letter-spacing: 0.2px;
                 white-space: nowrap;
+                width: max-content !important;
+                flex: 0 0 auto !important;
                 transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
                 outline: none;
                 text-shadow: none;
