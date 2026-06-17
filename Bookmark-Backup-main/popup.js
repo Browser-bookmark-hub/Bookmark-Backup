@@ -1152,7 +1152,15 @@ function shouldPromptRestoreRecoveryOnResponse(action, response) {
 }
 
 function promptRestoreRecoveryTransactionFromPopup() {
-    Promise.resolve().then(() => maybePromptRestoreRecoveryTransaction().catch(() => { }));
+    Promise.resolve().then(() => {
+        maybePromptRestoreRecoveryTransaction()
+            .then(() => {
+                if (typeof openLatestSafetyCheckpointDialogRef === 'function') {
+                    openLatestSafetyCheckpointDialogRef();
+                }
+            })
+            .catch(() => { });
+    });
 }
 
 async function callBackgroundFunction(action, data = {}) {
@@ -4688,6 +4696,8 @@ function updateBookmarkCountDisplay(passedLang) {
                                 min-height: 28px;
                                 letter-spacing: 0.2px;
                                 white-space: nowrap;
+                                width: max-content !important;
+                                flex: 0 0 auto !important;
                                 transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
                                 outline: none;
                                 text-shadow: none;
@@ -12753,9 +12763,9 @@ function showRestoreModal(versions, source) {
             : '提示：覆盖策略在扩展内只显示当前覆盖快照。若使用云端2（GitHub），旧的覆盖版本可到仓库提交历史里查看或回退；当前弹窗仍只读取当前分支里的最新文件。';
     };
 
-    const RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT = 40;
-    const RESTORE_PATCH_THRESHOLD_MIN_PERCENT = 1;
-    const RESTORE_PATCH_THRESHOLD_MAX_PERCENT = 99;
+    const RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT = 300;
+    const RESTORE_PATCH_THRESHOLD_MIN_COUNT = 0;
+    const RESTORE_PATCH_THRESHOLD_MAX_COUNT = 100000;
 
     const normalizeRestoreStrategyValue = (strategy) => {
         const value = String(strategy || '').toLowerCase();
@@ -12765,16 +12775,16 @@ function showRestoreModal(versions, source) {
         return 'auto';
     };
 
-    const normalizeRestorePatchThresholdPercent = (value) => {
+    const normalizeRestorePatchThresholdCount = (value) => {
         const num = Number(value);
-        if (!Number.isFinite(num)) return RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT;
+        if (!Number.isFinite(num)) return RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT;
         return Math.min(
-            RESTORE_PATCH_THRESHOLD_MAX_PERCENT,
-            Math.max(RESTORE_PATCH_THRESHOLD_MIN_PERCENT, Math.round(num))
+            RESTORE_PATCH_THRESHOLD_MAX_COUNT,
+            Math.max(RESTORE_PATCH_THRESHOLD_MIN_COUNT, Math.round(num))
         );
     };
 
-    let restorePatchThresholdPercent = RESTORE_PATCH_THRESHOLD_DEFAULT_PERCENT;
+    let restorePatchThresholdCount = RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT;
     let currentStrategy = strategyMergeRadio && strategyMergeRadio.checked ? 'merge' : 'overwrite';
 
     const getPreferredLang = () => new Promise(resolve => {
@@ -13106,8 +13116,8 @@ function showRestoreModal(versions, source) {
 
         if (strategyAutoLabelWrap) {
             strategyAutoLabelWrap.title = isEn
-                ? `Auto restore: use patch when change ratio is ≤${restorePatchThresholdPercent}%, otherwise overwrite.`
-                : `自动恢复：变化占比 ≤${restorePatchThresholdPercent}% 走补丁恢复，>${restorePatchThresholdPercent}% 走覆盖恢复。`;
+                ? `Auto restore: use patch when change score is ≤${restorePatchThresholdCount} entries, otherwise overwrite.`
+                : `自动恢复：变化条数 ≤${restorePatchThresholdCount}条 走补丁恢复，>${restorePatchThresholdCount}条 走覆盖恢复。`;
         }
         if (strategyOverwriteLabelWrap) {
             strategyOverwriteLabelWrap.title = isEn
@@ -15738,11 +15748,11 @@ function showRestoreModal(versions, source) {
             thresholdWrap.style.display = strategy === 'auto' ? 'inline-flex' : 'none';
         }
         if (thresholdInput) {
-            thresholdInput.value = String(restorePatchThresholdPercent);
+            thresholdInput.value = String(restorePatchThresholdCount);
             thresholdInput.disabled = strategy !== 'auto';
             thresholdInput.title = isEn
-                ? `Auto mode threshold. <= threshold uses patch; > threshold uses overwrite (current ${restorePatchThresholdPercent}%).`
-                : `自动模式阈值。<= 阈值走补丁，> 阈值走覆盖（当前 ${restorePatchThresholdPercent}%）。`;
+                ? `Auto mode threshold. <= threshold uses patch; > threshold uses overwrite (current ${restorePatchThresholdCount} entries).`
+                : `自动模式阈值。<= 阈值走补丁，> 阈值走覆盖（当前 ${restorePatchThresholdCount}条）。`;
         }
 
         if (strategy === 'overwrite') {
@@ -15761,8 +15771,8 @@ function showRestoreModal(versions, source) {
             confirmWarning.classList.add('info');
             confirmBtn.classList.add('primary');
             confirmWarning.textContent = isEn
-                ? `Auto restore: uses patch when change ratio is ≤ ${restorePatchThresholdPercent}%, otherwise overwrite.`
-                : `自动恢复：变化占比 ≤ ${restorePatchThresholdPercent}% 走补丁恢复，> ${restorePatchThresholdPercent}% 走覆盖恢复。`;
+                ? `Auto restore: uses patch when change score is ≤ ${restorePatchThresholdCount} entries, otherwise overwrite.`
+                : `自动恢复：变化条数 ≤ ${restorePatchThresholdCount}条 走补丁恢复，> ${restorePatchThresholdCount}条 走覆盖恢复。`;
         } else {
             confirmWarning.classList.add('info');
             confirmBtn.classList.add('primary');
@@ -15805,11 +15815,11 @@ function showRestoreModal(versions, source) {
         const ID_CHURN_PATCH_DISABLE_RATIO = 1;
         let autoResolvedStrategy = 'patch';
         let patchBlockedByIdChurn = false;
-        const getCurrentConfirmThresholdPercent = () => {
-            const normalized = normalizeRestorePatchThresholdPercent(
-                thresholdInput ? thresholdInput.value : restorePatchThresholdPercent
+        const getCurrentConfirmThresholdCount = () => {
+            const normalized = normalizeRestorePatchThresholdCount(
+                thresholdInput ? thresholdInput.value : restorePatchThresholdCount
             );
-            restorePatchThresholdPercent = normalized;
+            restorePatchThresholdCount = normalized;
             if (thresholdInput && String(thresholdInput.value) !== String(normalized)) {
                 thresholdInput.value = String(normalized);
             }
@@ -16093,7 +16103,7 @@ function showRestoreModal(versions, source) {
                         payload: {
                             restoreRef,
                             strategy,
-                            thresholdPercent: getCurrentConfirmThresholdPercent()
+                            thresholdCount: getCurrentConfirmThresholdCount()
                         }
                     });
                 }
@@ -16302,7 +16312,7 @@ function showRestoreModal(versions, source) {
                     payload: {
                         restoreRef,
                         strategy,
-                        thresholdPercent: getCurrentConfirmThresholdPercent()
+                        thresholdCount: getCurrentConfirmThresholdCount()
                     }
                 });
 
@@ -16315,7 +16325,7 @@ function showRestoreModal(versions, source) {
                 patchBlockedByIdChurn = shouldDisablePatchByIdChurn(res);
                 if (isAutoPreview) {
                     autoResolvedStrategy = normalizeRestoreStrategyValue(res?.resolvedStrategy || autoResolvedStrategy);
-                    const thresholdPercent = normalizeRestorePatchThresholdPercent(res?.thresholdPercent);
+                    const thresholdCount = normalizeRestorePatchThresholdCount(res?.thresholdCount);
                     const chosenText = autoResolvedStrategy === 'patch'
                         ? (isEn ? 'Patch Restore' : '补丁恢复')
                         : (isEn ? 'Overwrite Restore' : '覆盖恢复');
@@ -16324,14 +16334,10 @@ function showRestoreModal(versions, source) {
                             ? `Auto restore: this source lacks stable Bookmark IDs, using ${chosenText}.`
                             : `自动恢复：当前来源缺少稳定 Bookmark ID，已使用${chosenText}。`;
                     } else {
-                        const ratioPercentText = formatRestoreRatioPercentText(res?.changeRatio);
-                        confirmWarning.textContent = ratioPercentText == null
-                            ? (isEn
-                                ? `Auto restore: threshold ${thresholdPercent}%, current ${chosenText}.`
-                                : `自动恢复：阈值 ${thresholdPercent}% ，当前 ${chosenText}。`)
-                            : (isEn
-                                ? `Auto restore: ratio ${ratioPercentText}%, threshold ${thresholdPercent}%, current ${chosenText}.`
-                                : `自动恢复：占比 ${ratioPercentText}% ，阈值 ${thresholdPercent}% ，当前 ${chosenText}。`);
+                        const changeScore = Number.isFinite(Number(res?.changeScore)) ? Number(res.changeScore) : 0;
+                        confirmWarning.textContent = isEn
+                            ? `Auto restore: change ${changeScore} entries, threshold ${thresholdCount} entries, current ${chosenText}.`
+                            : `自动恢复：当前变化 ${changeScore}条，阈值 ${thresholdCount}条，当前：${chosenText}。`;
                     }
                 }
                 renderCurrentDiffSummaryHtml(res.diffSummary, res.changeEntries);
@@ -16396,21 +16402,21 @@ function showRestoreModal(versions, source) {
 
         if (thresholdInput) {
             thresholdInput.oninput = () => {
-                const normalized = normalizeRestorePatchThresholdPercent(thresholdInput.value);
+                const normalized = normalizeRestorePatchThresholdCount(thresholdInput.value);
                 thresholdInput.value = String(normalized);
-                restorePatchThresholdPercent = normalized;
+                restorePatchThresholdCount = normalized;
                 if (isAutoPreview) {
                     confirmWarning.textContent = isEn
-                        ? `Auto restore: uses patch when change ratio is ≤ ${normalized}%, otherwise overwrite.`
-                        : `自动恢复：变化占比 ≤ ${normalized}% 走补丁恢复，> ${normalized}% 走覆盖恢复。`;
+                        ? `Auto restore: uses patch when change score is ≤ ${normalized} entries, otherwise overwrite.`
+                        : `自动恢复：变化条数 ≤ ${normalized}条 走补丁恢复，> ${normalized}条 走覆盖恢复。`;
                 }
             };
             thresholdInput.onchange = () => {
-                const normalized = getCurrentConfirmThresholdPercent();
+                const normalized = getCurrentConfirmThresholdCount();
                 if (!isAutoPreview) return;
                 confirmWarning.textContent = isEn
-                    ? `Auto restore: uses patch when change ratio is ≤ ${normalized}%, otherwise overwrite.`
-                    : `自动恢复：变化占比 ≤ ${normalized}% 走补丁恢复，> ${normalized}% 走覆盖恢复。`;
+                    ? `Auto restore: uses patch when change score is ≤ ${normalized} entries, otherwise overwrite.`
+                    : `自动恢复：变化条数 ≤ ${normalized}条 走补丁恢复，> ${normalized}条 走覆盖恢复。`;
                 overwritePreviewCache = null;
                 runOverwritePreflight().catch(() => { });
             };
@@ -16513,9 +16519,9 @@ function showRestoreModal(versions, source) {
                 return null;
             }
 
-            const thresholdPercent = Number.isFinite(Number(preview?.thresholdPercent))
-                ? Number(preview.thresholdPercent)
-                : getCurrentConfirmThresholdPercent();
+            const thresholdCount = Number.isFinite(Number(preview?.thresholdCount))
+                ? Number(preview.thresholdCount)
+                : getCurrentConfirmThresholdCount();
 
             return {
                 recordTime: String(
@@ -16553,7 +16559,7 @@ function showRestoreModal(versions, source) {
                 baselineNodeCount: Number.isFinite(Number(preview?.baselineNodeCount)) && Number(preview.baselineNodeCount) > 0
                     ? Number(preview.baselineNodeCount)
                     : 1,
-                thresholdPercent: normalizeRestorePatchThresholdPercent(thresholdPercent),
+                thresholdCount: normalizeRestorePatchThresholdCount(thresholdCount),
                 patchUnsupported: preview?.patchUnsupported === true,
                 stableIdComparable: preview?.stableIdComparable !== false,
                 precomputedDiffSummary: buildRestoreDiffSummaryPayload(preview?.diffSummary || null)
@@ -16772,7 +16778,7 @@ function showRestoreModal(versions, source) {
                     : { localPayload: runtimeSafeLocalPayload })
             };
             if (strategy === 'auto') {
-                restorePayload.thresholdPercent = restorePatchThresholdPercent;
+                restorePayload.thresholdCount = restorePatchThresholdCount;
             }
             if (restoreExecutePreflight) {
                 restorePayload.preflight = restoreExecutePreflight;
