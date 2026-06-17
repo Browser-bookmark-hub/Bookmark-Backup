@@ -2074,6 +2074,16 @@
           window.removeEventListener('resize', settings._resizeHandler);
           window.removeEventListener('scroll', settings._resizeHandler);
         }
+        const tocPanel = (this.shadow && this.shadow.querySelector('#md-toc-panel')) || document.getElementById('md-toc-panel');
+        if (tocPanel) {
+          if (tocPanel._observer) {
+            tocPanel._observer.disconnect();
+          }
+          if (tocPanel._cleanupListeners) {
+            tocPanel._cleanupListeners();
+          }
+          tocPanel.remove();
+        }
         settings.remove();
       }
       this._removeMarkdownSourceHighlight();
@@ -2362,16 +2372,14 @@
         }
       }
 
-      const selectedText = end > start ? value.slice(start, end) : '';
-      const selectedLookup = this._trimMarkdownLookupText(selectedText);
-      if (selectedLookup.length >= 8) {
-        return this._buildMarkdownLookupPayload('content', defaultLabel, value, start, end, selectedText);
-      }
-
       const aroundText = value.slice(Math.max(0, start - 140), Math.min(value.length, end + 140));
       const lineLookup = this._trimMarkdownLookupText(lineText.length > 260 ? aroundText : lineText);
-      if (lineLookup.length >= 12) {
-        return this._buildMarkdownLookupPayload('content', defaultLabel, value, start, end, lineText.length > 260 ? aroundText : lineText);
+      if (lineLookup.length >= 8) {
+        if (lineText.length > 260) {
+          return this._buildMarkdownLookupPayload('content', defaultLabel, value, Math.max(0, start - 140), Math.min(value.length, end + 140), aroundText);
+        } else {
+          return this._buildMarkdownLookupPayload('content', defaultLabel, value, lineStart, lineEnd, lineText);
+        }
       }
 
       const prevBlank = value.lastIndexOf('\n\n', Math.max(0, start - 1));
@@ -2381,12 +2389,12 @@
       const paragraphText = value.slice(paragraphStart, paragraphEnd);
       const paragraphLookup = this._trimMarkdownLookupText(paragraphText);
       if (paragraphLookup.length >= 12) {
-        return this._buildMarkdownLookupPayload('content', defaultLabel, value, start, end, paragraphText);
+        return this._buildMarkdownLookupPayload('content', defaultLabel, value, paragraphStart, paragraphEnd, paragraphText);
       }
 
       const aroundLookup = this._trimMarkdownLookupText(aroundText);
       if (aroundLookup.length >= 12) {
-        return this._buildMarkdownLookupPayload('content', defaultLabel, value, start, end, aroundText);
+        return this._buildMarkdownLookupPayload('content', defaultLabel, value, Math.max(0, start - 140), Math.min(value.length, end + 140), aroundText);
       }
       return { target: 'content', label: defaultLabel, lookupText: '' };
     }
@@ -2687,7 +2695,7 @@
       if (beforeHit && afterHit) score += 4200;
 
       const occurrenceIndex = Number(lookupConfig.occurrenceIndex);
-      if (Number.isFinite(occurrenceIndex) && occurrenceIndex > 0 && hitOrder >= 0) {
+      if (Number.isFinite(occurrenceIndex) && occurrenceIndex >= 0 && hitOrder >= 0) {
         score -= Math.min(Math.abs(hitOrder - occurrenceIndex) * 2600, 9000);
       }
 
@@ -3201,7 +3209,7 @@
           - Math.max(0, (rangeEnd - rangeStart) - Math.max(coreNormalized.length + 80, 160)) * 7;
 
         const occurrenceIndex = Number(lookupConfig.occurrenceIndex);
-        if (Number.isFinite(occurrenceIndex) && occurrenceIndex > 0) {
+        if (Number.isFinite(occurrenceIndex) && occurrenceIndex >= 0) {
           score -= Math.min(Math.abs(fuzzyHitOrder - occurrenceIndex) * 900, 3600);
         }
 
@@ -3429,7 +3437,7 @@
             }
 
             const occurrenceIndex = Number(lookupConfig.occurrenceIndex);
-            if (Number.isFinite(occurrenceIndex) && occurrenceIndex > 0) {
+            if (Number.isFinite(occurrenceIndex) && occurrenceIndex >= 0) {
               score -= Math.min(Math.abs(localHitOrder - occurrenceIndex) * 1200, 4800);
             }
 
@@ -4576,6 +4584,361 @@
       this._bindMarkdownTextareaSelectionMemory(articleArea);
       this._mdArticleArea = articleArea;
 
+      // Create TOC Button
+      const tocBtn = document.createElement('button');
+      tocBtn.type = 'button';
+      tocBtn.dataset.noDrag = 'true';
+      tocBtn.title = '文章目录';
+      tocBtn.setAttribute('aria-label', '文章目录');
+      tocBtn.style.cssText = `
+        width: 22px;
+        height: 22px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        flex: 0 0 22px;
+        transition: all 0.2s ease;
+      `;
+      tocBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="8" y1="6" x2="21" y2="6"></line>
+          <line x1="8" y1="12" x2="21" y2="12"></line>
+          <line x1="8" y1="18" x2="21" y2="18"></line>
+          <line x1="3" y1="6" x2="3.01" y2="6"></line>
+          <line x1="3" y1="12" x2="3.01" y2="12"></line>
+          <line x1="3" y1="18" x2="3.01" y2="18"></line>
+        </svg>
+      `;
+      articleLabel.appendChild(tocBtn);
+
+      let tocPanel = null;
+
+      const syncTocPanelPosition = () => {
+        if (!tocPanel || !panel) return;
+        const panelLeft = parseFloat(panel.style.left) || 0;
+        const panelTop = parseFloat(panel.style.top) || 0;
+        const panelHeight = parseFloat(panel.style.height) || panel.offsetHeight;
+        
+        const TOC_WIDTH = 260;
+        let left = panelLeft - TOC_WIDTH - 8;
+        if (left < 0) {
+          left = panelLeft + panel.offsetWidth + 8;
+        }
+        tocPanel.style.left = `${left}px`;
+        tocPanel.style.top = `${panelTop}px`;
+        tocPanel.style.height = `${panelHeight}px`;
+      };
+
+      const findAndSelectText = (rawText, occurrenceIndex = 0) => {
+        const textVal = articleArea.value;
+        let pos = -1;
+        let currentOccurrence = 0;
+        let searchPos = 0;
+        while ((searchPos = textVal.indexOf(rawText, searchPos)) !== -1) {
+          if (currentOccurrence === occurrenceIndex) {
+            pos = searchPos;
+            break;
+          }
+          currentOccurrence++;
+          searchPos += rawText.length;
+        }
+        
+        if (pos === -1) {
+          pos = textVal.indexOf(rawText);
+        }
+        
+        if (pos !== -1) {
+          articleArea.focus();
+          articleArea.setSelectionRange(pos, pos + rawText.length);
+          
+          const textBefore = textVal.substring(0, pos);
+          const lineCount = textBefore.split('\n').length - 1;
+          const style = window.getComputedStyle(articleArea);
+          const lineHeight = parseFloat(style.lineHeight) || 16;
+          
+          const visibleHeight = articleArea.clientHeight;
+          const targetScroll = Math.max(0, lineCount * lineHeight - visibleHeight / 3);
+          articleArea.scrollTop = targetScroll;
+          
+          articleArea.dispatchEvent(new Event('input'));
+          articleArea.dispatchEvent(new Event('select'));
+          
+          const locateBtn = articleLabel.querySelector('button');
+          if (locateBtn) {
+            setTimeout(() => {
+              locateBtn.click();
+            }, 80);
+          }
+        }
+      };
+
+      const renderTocList = () => {
+        const listContainer = tocPanel.querySelector('.toc-list-container');
+        if (!listContainer) return;
+        listContainer.innerHTML = '';
+        
+        const lines = articleArea.value.split('\n');
+        const tocItems = [];
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const trimmed = line.trim();
+          
+          const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+          if (headingMatch) {
+            tocItems.push({
+              type: 'heading',
+              level: headingMatch[1].length,
+              text: headingMatch[2],
+              raw: line,
+              index: i
+            });
+            continue;
+          }
+          
+          const sepMatch = trimmed.match(/^(=+|-+)$/);
+          if (sepMatch && (trimmed.startsWith('---') || trimmed.startsWith('==='))) {
+            let displayName = trimmed;
+            if (i > 0 && lines[i-1].trim().length > 0 && !lines[i-1].trim().match(/^(#{1,6})\s+/)) {
+              displayName = `${lines[i-1].trim()} (${trimmed})`;
+            }
+            tocItems.push({
+              type: 'separator',
+              level: 2,
+              text: displayName,
+              raw: line,
+              index: i
+            });
+          }
+        }
+        
+        if (tocItems.length === 0) {
+          const noToc = document.createElement('div');
+          noToc.textContent = '无目录项';
+          noToc.style.cssText = `
+            padding: 16px;
+            color: var(--text-muted);
+            font-size: 13px;
+            text-align: center;
+          `;
+          listContainer.appendChild(noToc);
+          return;
+        }
+        
+        const rawOccurrences = {};
+        
+        tocItems.forEach((item) => {
+          const raw = item.raw;
+          if (rawOccurrences[raw] === undefined) {
+            rawOccurrences[raw] = 0;
+          } else {
+            rawOccurrences[raw]++;
+          }
+          const occurrenceIndex = rawOccurrences[raw];
+          
+          const itemEl = document.createElement('div');
+          itemEl.className = 'toc-item';
+          itemEl.title = item.raw;
+          
+          let indent = (item.level - 1) * 12 + 8;
+          let fontSize = 13 - (item.level - 1) * 0.5;
+          if (fontSize < 11) fontSize = 11;
+          
+          itemEl.style.cssText = `
+            padding: 6px 12px 6px ${indent}px;
+            cursor: pointer;
+            font-size: ${fontSize}px;
+            font-weight: ${item.type === 'heading' && item.level <= 3 ? '600' : 'normal'};
+            color: var(--text-main);
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin: 2px 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+          `;
+          
+          itemEl.addEventListener('mouseenter', () => {
+            itemEl.style.background = 'rgba(128,128,128,0.15)';
+          });
+          itemEl.addEventListener('mouseleave', () => {
+            itemEl.style.background = 'transparent';
+          });
+          
+          const dot = document.createElement('span');
+          if (item.type === 'heading') {
+            dot.textContent = 'H' + item.level;
+            dot.style.cssText = `
+              font-size: 9px;
+              font-weight: bold;
+              color: var(--text-muted);
+              background: rgba(128,128,128,0.1);
+              padding: 1px 3px;
+              border-radius: 3px;
+              margin-right: 4px;
+              flex-shrink: 0;
+            `;
+          } else {
+            dot.textContent = '—';
+            dot.style.cssText = `
+              font-size: 10px;
+              color: var(--text-muted);
+              margin-right: 4px;
+              flex-shrink: 0;
+            `;
+          }
+          itemEl.appendChild(dot);
+          
+          const textSpan = document.createElement('span');
+          textSpan.textContent = item.text;
+          textSpan.style.cssText = `
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          `;
+          itemEl.appendChild(textSpan);
+          
+          itemEl.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            findAndSelectText(item.raw, occurrenceIndex);
+          });
+          
+          listContainer.appendChild(itemEl);
+        });
+      };
+
+      const removeTocPanel = () => {
+        if (tocPanel) {
+          if (tocPanel._observer) {
+            tocPanel._observer.disconnect();
+          }
+          if (tocPanel._cleanupListeners) {
+            tocPanel._cleanupListeners();
+          }
+          tocPanel.remove();
+          tocPanel = null;
+        }
+        tocBtn.style.color = 'var(--text-muted)';
+      };
+
+      const showTocPanel = () => {
+        if (tocPanel) return;
+        
+        tocPanel = document.createElement('div');
+        tocPanel.id = 'md-toc-panel';
+        tocPanel.style.cssText = `
+          position: fixed;
+          width: 260px;
+          background: var(--panel-bg);
+          border: 1px solid var(--panel-border);
+          border-radius: 12px;
+          box-shadow: var(--panel-shadow);
+          z-index: 2147483648;
+          font-family: system-ui, -apple-system, sans-serif;
+          color: var(--text-main);
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          box-sizing: border-box;
+        `;
+        
+        const tocHeader = document.createElement('div');
+        tocHeader.style.cssText = `
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 14px;
+          background: var(--header-bg);
+          border-bottom: 1px solid var(--panel-border);
+          font-size: 13px;
+          font-weight: 600;
+          user-select: none;
+          flex-shrink: 0;
+        `;
+        tocHeader.innerHTML = `
+          <span>文章目录</span>
+          <button type="button" class="toc-close-btn" style="
+            border: 0; background: transparent; color: var(--text-muted);
+            font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 6px;
+            border-radius: 4px; display: flex; align-items: center; justify-content: center;
+          ">×</button>
+        `;
+        
+        const closeBtn = tocHeader.querySelector('.toc-close-btn');
+        closeBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          removeTocPanel();
+        });
+        closeBtn.addEventListener('mouseenter', () => {
+          closeBtn.style.background = 'var(--btn-close-hover)';
+          closeBtn.style.color = '#ef4444';
+        });
+        closeBtn.addEventListener('mouseleave', () => {
+          closeBtn.style.background = 'transparent';
+          closeBtn.style.color = 'var(--text-muted)';
+        });
+        
+        const listContainer = document.createElement('div');
+        listContainer.className = 'toc-list-container';
+        listContainer.style.cssText = `
+          padding: 8px 4px;
+          overflow-y: auto;
+          flex: 1;
+          box-sizing: border-box;
+        `;
+        
+        tocPanel.appendChild(tocHeader);
+        tocPanel.appendChild(listContainer);
+        
+        const rootLayer = (this.shadow && this.shadow.querySelector('.dev1-helper-root')) || document.body;
+        rootLayer.appendChild(tocPanel);
+        
+        syncTocPanelPosition();
+        
+        const observer = new MutationObserver(() => {
+          syncTocPanelPosition();
+        });
+        observer.observe(panel, { attributes: true, attributeFilter: ['style'] });
+        tocPanel._observer = observer;
+        
+        const syncHandler = () => syncTocPanelPosition();
+        window.addEventListener('resize', syncHandler);
+        window.addEventListener('scroll', syncHandler, { passive: true });
+        
+        tocPanel._cleanupListeners = () => {
+          window.removeEventListener('resize', syncHandler);
+          window.removeEventListener('scroll', syncHandler);
+        };
+        
+        renderTocList();
+        tocBtn.style.color = 'var(--accent-color)';
+      };
+
+      const toggleTocPanel = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (tocPanel) {
+          removeTocPanel();
+        } else {
+          showTocPanel();
+        }
+      };
+
+      tocBtn.addEventListener('click', toggleTocPanel);
+      articleArea.addEventListener('input', () => {
+        if (tocPanel) renderTocList();
+      });
+
       tab2Content.appendChild(articleLabel);
       tab2Content.appendChild(articleArea);
 
@@ -4597,7 +4960,10 @@
         }
       };
 
-      tab1.addEventListener('click', () => switchTab(1));
+      tab1.addEventListener('click', () => {
+        switchTab(1);
+        removeTocPanel();
+      });
       tab2.addEventListener('click', () => switchTab(2));
 
       const btnGroup = document.createElement('div');
