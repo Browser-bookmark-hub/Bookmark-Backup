@@ -195,7 +195,7 @@
       this._colorPickerViewMode = 'grid';
       this._toolPickerViewMode = 'grid';
       this._mdMode = 'visual';
-      this._mdPureMode = true;
+      this._mdPureMode = false;
       this._collapsedToolGroups = new Set();
       this.toolbarUi = this.normalizeToolbarUi();
       this.toolbar = null;
@@ -377,6 +377,10 @@
           tool_presentation_desc: '用于演示或指示，支持形状识别与自动消失',
           presentationNotice: '给演示用的，录制视频的时候可以指示。',
           markdownNotice: '编辑模式可以删除、增加里边的文字，选择工具后将对选中文本应用格式，执行后会自动切回输入状态。',
+          mdNoticeVisual: '【视觉模式】对选中文本应用划线、粗斜体等标注，不修改网页文本。',
+          mdNoticeEdit: '【编辑模式】直接点击敲字修改文本。格式工具为一次性使用，应用后自动回退到输入状态。',
+          mdNoticeHtml: '【HTML (带颜色)】生成 HTML 格式标签（保留色彩背景与边框），适用于支持 HTML 渲染的 Markdown 编辑器与阅读器。',
+          mdNoticePure: '【MD】生成标准 Markdown 语法，不可选颜色，专为 Obsidian 等标准 Markdown 准备。',
           presentationLineStyle: '线条样式',
           presentationLineSolid: '实线',
           presentationLineDashed: '虚线',
@@ -490,6 +494,10 @@
           tool_presentation_desc: 'Used for presentation or indicators, supports shape recognition and auto-disappearance',
           presentationNotice: 'For presentations. Can be used as an indicator when recording video.',
           markdownNotice: 'In edit mode, you can type, add, or delete text. Selecting a format tool applies it once, then automatically switches back to typing.',
+          mdNoticeVisual: '[Visual Mode] Apply annotations (underline, bold, etc.) without modifying page text.',
+          mdNoticeEdit: '[Edit Mode] Type directly to edit text. Formatting tools are one-time use, returning to typing after application.',
+          mdNoticeHtml: '[HTML (with Color)] Generates HTML format tags (keeps color backgrounds & borders), compatible with Markdown editors/renderers that support HTML.',
+          mdNoticePure: '[MD] Generates standard Markdown syntax (cannot select color), designed for Obsidian and standard Markdown.',
           presentationLineStyle: 'Line Style',
           presentationLineSolid: 'Solid',
           presentationLineDashed: 'Dashed',
@@ -840,7 +848,7 @@
       this.currentToolName = this.getToolNameForId(this.currentTool, toolbar.toolName || '');
       this._colorPickerViewMode = toolbar.colorPickerViewMode === 'list' ? 'list' : 'grid';
       this._toolPickerViewMode = toolbar.toolPickerViewMode === 'list' ? 'list' : 'grid';
-      this._mdPureMode = toolbar.mdPureMode !== undefined ? !!toolbar.mdPureMode : true;
+      this._mdPureMode = toolbar.mdPureMode !== undefined ? !!toolbar.mdPureMode : false;
       const isUnderlineOrStrikethroughActive = ['md-underline', 'md-strikethrough', 'md-edit-strikethrough'].includes(this.currentTool);
       const isSupOrSubActive = ['md-sup', 'md-sub', 'md-edit-sup', 'md-edit-sub'].includes(this.currentTool);
       if (this._mdPureMode && isSupOrSubActive) {
@@ -896,7 +904,7 @@
       this._colorPickerViewMode = 'grid';
       this._toolPickerViewMode = 'grid';
       this._mdMode = 'visual';
-      this._mdPureMode = true;
+      this._mdPureMode = false;
       this.toolbarUi = this.normalizeToolbarUi();
       this._editOriginalByXPath.clear();
     }
@@ -3642,7 +3650,23 @@
       if (!raw || raw.startsWith('special:')) return '';
       if (raw === 'transparent') return this.detectPageTheme() ? 'white' : 'black';
       try {
-        return luminance(raw) <= 0.38 ? 'white' : 'black';
+        const renderColor = this.getRenderableColor(raw);
+        const bgLum = luminance(renderColor);
+        const darkColor = '#0f172a';
+        let darkLum = 0.01;
+        try {
+          darkLum = luminance(darkColor);
+        } catch (_) {}
+        const blackContrast = (Math.max(bgLum, darkLum) + 0.05) / (Math.min(bgLum, darkLum) + 0.05);
+        const whiteContrast = (Math.max(bgLum, 1.0) + 0.05) / (Math.min(bgLum, 1.0) + 0.05);
+        
+        if (whiteContrast < 3.0) {
+          return 'black';
+        } else if (blackContrast < 3.0) {
+          return 'white';
+        } else {
+          return this.detectPageTheme() ? 'white' : 'black';
+        }
       } catch (_) {
         return '';
       }
@@ -4032,7 +4056,6 @@
         content.appendChild(modeBar);
         const notice = document.createElement('div');
         notice.className = 'dev1-dynamic-mhtml-notice';
-        notice.textContent = this.t('markdownNotice');
         content.appendChild(notice);
         const grid = document.createElement('div');
         grid.className = `dev1-tool-grid ${viewMode === 'list' ? 'list-view' : 'grid-view'}`;
@@ -4042,6 +4065,20 @@
           edit.classList.toggle('active', this._mdMode === 'edit');
           htmlFormat.classList.toggle('active', !this._mdPureMode);
           pureFormat.classList.toggle('active', !!this._mdPureMode);
+          let modeNotice = this._mdMode === 'edit' ? this.t('mdNoticeEdit') : this.t('mdNoticeVisual');
+          let formatNotice = this._mdPureMode ? this.t('mdNoticePure') : this.t('mdNoticeHtml');
+          modeNotice = this.escapeHtml(modeNotice);
+          formatNotice = this.escapeHtml(formatNotice);
+          const styleBracket = (str) => {
+            const orangeSpanOpen = '<span style="color: #ff9800; font-weight: bold;">';
+            const orangeSpanClose = '</span>';
+            return str
+              .replace(/【/g, `${orangeSpanOpen}【${orangeSpanClose}`)
+              .replace(/】/g, `${orangeSpanOpen}】${orangeSpanClose}`)
+              .replace(/\[/g, `${orangeSpanOpen}[${orangeSpanClose}`)
+              .replace(/\]/g, `${orangeSpanOpen}]${orangeSpanClose}`);
+          };
+          notice.innerHTML = `${styleBracket(modeNotice)}<br>${styleBracket(formatNotice)}`;
           let tools = (category.tools || []).filter(tool => {
             const isEdit = this.isEditTool(tool.id);
             const matchesMode = this._mdMode === 'edit' ? isEdit : (!isEdit && tool.id !== 'md-edit-disable-highlight');
@@ -4264,8 +4301,9 @@
       if (safeString(iconMarkup).trim().startsWith('<svg')) {
         icon.innerHTML = iconMarkup;
       } else {
-        icon.textContent = tool.icon || '•';
-        if (tool.icon && tool.icon.length > 2) {
+        const iconText = this.getToolIconText(tool);
+        icon.textContent = iconText;
+        if (iconText && iconText.length > 2) {
           icon.style.setProperty('font-size', '13px', 'important');
         }
       }
@@ -4354,7 +4392,7 @@
       const id = safeString(tool && tool.id);
       if (id === 'wavy') return this.getWavyIconSVG(this.darkModeEnabled ? '#eef2ff' : '#2c3e50', 24);
       if (['dashed-box', 'gradient', 'mosaic', 'outline', 'liquidglass'].includes(id)) return this.getCustomToolIconSVG(id, 24);
-      return this.escapeHtml(tool.icon || '•');
+      return this.escapeHtml(this.getToolIconText(tool));
     }
 
     isEffectiveUiDarkMode() {
@@ -4606,9 +4644,17 @@
       return categories;
     }
 
+    getToolIconText(tool) {
+      if (!tool) return '🖍️';
+      if (tool.id === 'md-mark' || tool.id === 'md-edit-mark') {
+        return this._mdPureMode ? '==' : 'H';
+      }
+      return tool.icon || '•';
+    }
+
     getCurrentToolIcon() {
       const tool = this.findTool(this.currentTool);
-      return tool ? tool.icon : '🖍️';
+      return this.getToolIconText(tool);
     }
 
     getCurrentToolName() {
@@ -6267,11 +6313,16 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       element.className = 'custom-highlight dev1-snapshot-highlight';
       element.classList.add(`tool-${tool}`);
       element.dataset.toolStyle = tool;
+      const renderColor = this.getRenderableColor(color, element);
       element.dataset.color = this.getCssColorDataValue(color);
       if (!element.dataset.colorKey) {
         element.dataset.colorKey = this.getColorNameKeyForValue(color, textColorOverride || '', element.dataset.colorName || '');
       }
       if (textColorOverride) element.dataset.textColorOverride = textColorOverride;
+      
+      const originalColor = safeString(element.dataset.originalColor || '');
+      const originalTextColor = originalColor;
+
       let textColor = '';
       if (textColorOverride === 'white') {
         textColor = '#ffffff';
@@ -6282,16 +6333,18 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         let resolved = false;
         let bgLum = 0.5;
         try {
-          bgLum = luminance(color);
+          bgLum = luminance(renderColor);
         } catch (_) {}
 
+        const isDarkPage = this.detectPageTheme();
+        const threshold = isDarkPage ? 3.0 : 4.5;
+
         // Priority 1: Original text color of the highlighted text itself (no highlight)
-        const originalColor = safeString(element.dataset.originalColor || '');
         if (originalColor && originalColor !== 'inherit' && originalColor !== 'initial' && originalColor !== 'unset') {
           try {
             const origLum = luminance(originalColor);
             const ratio = (Math.max(bgLum, origLum) + 0.05) / (Math.min(bgLum, origLum) + 0.05);
-            if (ratio >= 3.0) {
+            if (ratio >= threshold) {
               textColor = originalColor;
               resolved = true;
             }
@@ -6317,7 +6370,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
             try {
               const parentLum = luminance(parentColor);
               const ratio = (Math.max(bgLum, parentLum) + 0.05) / (Math.min(bgLum, parentLum) + 0.05);
-              if (ratio >= 3.0) {
+              if (ratio >= threshold) {
                 textColor = parentColor;
                 resolved = true;
               }
@@ -6325,7 +6378,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
           }
         }
 
-        // Priority 3: Fallback based on best contrast against the highlight color
+        // Priority 3: Fallback based on page theme and strict contrast boundaries
         if (!resolved) {
           const darkColor = '#0f172a';
           let darkLum = 0.01;
@@ -6334,10 +6387,16 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
           } catch (_) {}
           const blackContrast = (Math.max(bgLum, darkLum) + 0.05) / (Math.min(bgLum, darkLum) + 0.05);
           const whiteContrast = (Math.max(bgLum, 1.0) + 0.05) / (Math.min(bgLum, 1.0) + 0.05);
-          textColor = whiteContrast >= blackContrast ? '#ffffff' : '#0f172a';
+
+          if (whiteContrast < 3.0) {
+            textColor = '#0f172a';
+          } else if (blackContrast < 3.0) {
+            textColor = '#ffffff';
+          } else {
+            textColor = isDarkPage ? '#ffffff' : '#0f172a';
+          }
         }
       }
-      const renderColor = this.getRenderableColor(color, element);
       const rgba = /^#[0-9a-f]{6}$/i.test(renderColor) ? rgbaFromHex(renderColor, 0.32) : renderColor;
       const isRainbow = this.isRainbowColor(color);
       const isTransparent = this.isTransparentColor(color);
@@ -6681,6 +6740,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
           if (gid) this.applyGroupFrameOverlayIfNeeded(gid, tool, color);
           return;
         }
+        try { this._enforceLiquidGlassInterlineCaps(element); } catch (_) { }
       } else if (tool === 'running-line') {
         this.ensureRunningLineLayers(element, renderColor, color);
         element.style.background = 'transparent';
@@ -6837,6 +6897,79 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         } else {
           element.textContent = text;
         }
+      } catch (_) { }
+    }
+
+    // 计算并限制 liquidglass 工具的上下内边距不超过“所在行距的一半”
+    _enforceLiquidGlassInterlineCaps(element) {
+      if (!element) return;
+      // 基础默认垂直内边距（px）
+      const DEFAULT_PAD_Y = 4;
+      // 解析当前顶部/底部内边距（若不可解析，则采用默认值）
+      const parsePx = (v, fallback) => {
+        if (!v) return fallback;
+        const n = parseFloat(String(v));
+        return Number.isFinite(n) ? n : fallback;
+      };
+      const cs = window.getComputedStyle(element);
+      const curTop = parsePx(cs.paddingTop, DEFAULT_PAD_Y);
+      const curBottom = parsePx(cs.paddingBottom, DEFAULT_PAD_Y);
+
+      // 计算本元素“行距的一半”（px）
+      const halfGap = this._computeHalfLineGapPx(element, cs);
+      // 预留总计约 2px 的细缝：上下各让 1px（避免完全贴合）
+      const EPSILON_TOTAL_GAP = 2; // 可按需微调，比如 1.5/2/3 等
+      const gapHalf = EPSILON_TOTAL_GAP / 2;
+
+      // 允许小数像素，避免 Math.floor 带来的粗糙跳变
+      const cap = Math.max(0, halfGap - gapHalf);
+
+      // 将上下内边距限制到不超过 cap（半行距-半缝隙）
+      const nextTop = Math.min(curTop, cap);
+      const nextBottom = Math.min(curBottom, cap);
+
+      // 应用（保持水平不变）
+      element.style.paddingTop = `${nextTop}px`;
+      element.style.paddingBottom = `${nextBottom}px`;
+    }
+
+    // 估算当前元素的“行距的一半”（px）
+    _computeHalfLineGapPx(element, computed) {
+      try {
+        const cs = computed || window.getComputedStyle(element);
+        // 解析字体大小
+        const fontSizePx = parseFloat(cs.fontSize) || 16;
+        // 行高可能为数字/px/normal
+        let lineHeightPx;
+        if (cs.lineHeight && cs.lineHeight !== 'normal') {
+          const v = cs.lineHeight.trim();
+          if (v.endsWith('px')) {
+            lineHeightPx = parseFloat(v);
+          } else if (/^[0-9]*\.?[0-9]+$/.test(v)) {
+            // 单位less，代表倍数
+            lineHeightPx = parseFloat(v) * fontSizePx;
+          } else {
+            // 兜底
+            lineHeightPx = 1.35 * fontSizePx;
+          }
+        } else {
+          // normal 的经验值：1.35（略大于 1.2，适配中文/混排）
+          lineHeightPx = 1.35 * fontSizePx;
+        }
+        // “行距”（leading）≈ 行高 - 字号
+        const leading = Math.max(0, lineHeightPx - fontSizePx);
+        return leading / 2;
+      } catch (_) {
+        return 2; // 兜底半行距
+      }
+    }
+
+    // 重新应用所有 liquidglass 高亮的“行距一半”限制
+    updateAllLiquidGlassInterlineCaps() {
+      try {
+        document.querySelectorAll('.custom-highlight.tool-liquidglass').forEach(el => {
+          this._enforceLiquidGlassInterlineCaps(el);
+        });
       } catch (_) { }
     }
 
@@ -7102,14 +7235,14 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         element.style.background = 'transparent';
         element.style.backgroundColor = 'transparent';
       };
-      let isPure = !!this._mdPureMode;
+      let isPure = !!this._mdPureMode && id.startsWith('md-');
       if (element && element.dataset && element.dataset.mdPure !== undefined) {
-        isPure = element.dataset.mdPure === 'true';
+        isPure = element.dataset.mdPure === 'true' && id.startsWith('md-');
       } else {
         const gid = element && element.getAttribute && element.getAttribute('data-highlight-id');
         const entry = gid ? this.highlights.get(gid) : null;
         if (entry && entry.mdPureMode !== undefined) {
-          isPure = !!entry.mdPureMode;
+          isPure = !!entry.mdPureMode && id.startsWith('md-');
         }
       }
       if (isPure) {
@@ -9856,6 +9989,7 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
         }
         this.applyGroupFrameOverlayIfNeeded(id, entry.toolStyle || 'highlight', entry.color || this.currentColor);
       });
+      try { this.updateAllLiquidGlassInterlineCaps(); } catch (_) { }
     }
 
     removeGroupFrameOverlay(gid) {
@@ -10671,12 +10805,18 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
         const candidates = [body, html];
         for (const el of candidates) {
           const bg = window.getComputedStyle(el).backgroundColor || '';
-          const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+          if (bg === 'transparent') continue;
+          const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/i);
           if (!match) continue;
+          const alpha = match[4] !== undefined ? parseFloat(match[4]) : 1;
+          if (alpha === 0) continue;
           const r = Number(match[1]);
           const g = Number(match[2]);
           const b = Number(match[3]);
           return ((0.299 * r + 0.587 * g + 0.114 * b) / 255) < 0.5;
+        }
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          return true;
         }
       } catch (_) { }
       return false;

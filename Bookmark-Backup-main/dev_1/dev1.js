@@ -5130,7 +5130,7 @@
                     <div class="dev1-empty">${escapeHtml(hint)}</div>
                     <div class="dev1-format-row dev1-export-note-row dev1-queue-hint-row">
                         <div class="dev1-export-note dev1-queue-hint-note">
-                            <i class="fas fa-circle-info"></i>
+                            <i class="fas fa-info-circle"></i>
                             <span>${escapeHtml(t('queueCloseTabHint'))}</span>
                         </div>
                     </div>
@@ -7297,7 +7297,7 @@
                                 <span style="margin-left: 6px;">${escapeHtml(t('pickScope'))}</span>
                             </button>
                             <button id="dev1ReviewSyncBtn" class="action-btn compact" title="${escapeHtml(t('tipReviewSyncNow'))}">
-                                <i class="fas fa-arrows-rotate"></i>
+                                <i class="fas fa-sync-alt"></i>
                                 <span style="margin-left: 6px;">${escapeHtml(t('reviewSyncNow'))}</span>
                             </button>
                             <button id="dev1ClearFiltersBtn" class="action-btn compact" title="${escapeHtml(t('tipQueueClear'))}">
@@ -7352,7 +7352,7 @@
                     </div>
                     <div id="dev1ExportFormatHintRow" class="dev1-format-row dev1-export-note-row" ${isSnapshotMhtmlFormatEnabled() || isSnapshotMdFormatEnabled() ? '' : 'hidden'}>
                         <div class="dev1-export-note">
-                            <i class="fas fa-circle-info"></i>
+                            <i class="fas fa-info-circle"></i>
                             <span class="dev1-export-note-lines">${renderExportFormatHintHtml()}</span>
                         </div>
                     </div>

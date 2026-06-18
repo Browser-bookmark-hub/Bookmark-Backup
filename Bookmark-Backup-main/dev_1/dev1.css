@@ -621,7 +621,7 @@
     gap: 8px;
 }
 
-.dev1-scope-meta-row > span {
+.dev1-scope-meta-row>span {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -633,7 +633,7 @@
     color: var(--text-secondary);
 }
 
-.dev1-scope-meta-row > span strong {
+.dev1-scope-meta-row>span strong {
     color: var(--text-primary);
 }
 
@@ -939,13 +939,24 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
-.dev1-scope-option-list .path-symbol.added { color: var(--git-added, #28a745); }
-.dev1-scope-option-list .path-symbol.deleted { color: var(--git-deleted, #dc3545); }
-.dev1-scope-option-list .path-symbol.modified { color: var(--git-modified, #fd7e14); }
-.dev1-scope-option-list .path-symbol.moved { color: var(--git-moved, #0d6efd); }
+.dev1-scope-option-list .path-symbol.added {
+    color: var(--git-added, #28a745);
+}
+
+.dev1-scope-option-list .path-symbol.deleted {
+    color: var(--git-deleted, #dc3545);
+}
+
+.dev1-scope-option-list .path-symbol.modified {
+    color: var(--git-modified, #fd7e14);
+}
+
+.dev1-scope-option-list .path-symbol.moved {
+    color: var(--git-moved, #0d6efd);
+}
 
 /* Keep title text neutral; only badges carry action colors. */
-.dev1-scope-option-list.folder-tree-mode .folder-tree-item.tree-change-deleted > .folder-tree-title,
+.dev1-scope-option-list.folder-tree-mode .folder-tree-item.tree-change-deleted>.folder-tree-title,
 .dev1-scope-option-list.scope-group-mode .dev1-scope-group-child-title.tree-change-deleted {
     text-decoration: line-through;
     opacity: 0.72;
@@ -1248,7 +1259,7 @@
     background: var(--bg-primary);
 }
 
-.dev1-scope-option-list .dev1-whitelist-scope-item + .dev1-whitelist-scope-item {
+.dev1-scope-option-list .dev1-whitelist-scope-item+.dev1-whitelist-scope-item {
     margin-top: 8px;
 }
 
@@ -1488,7 +1499,7 @@
 }
 
 .dev1-export-note i {
-    margin-top: 1px;
+    margin-top: 2px;
     color: var(--accent-primary);
 }
 
@@ -1520,7 +1531,7 @@
     gap: 10px;
 }
 
-.dev1-field-row > label {
+.dev1-field-row>label {
     color: var(--text-secondary);
     font-size: 13px;
 }
@@ -1543,7 +1554,7 @@
     scrollbar-width: thin;
 }
 
-.dev1-export-inline-row > * {
+.dev1-export-inline-row>* {
     flex: 0 0 auto;
 }
 
@@ -1632,7 +1643,7 @@
     gap: 10px;
 }
 
-.dev1-field-control-inline > label {
+.dev1-field-control-inline>label {
     color: var(--text-secondary);
     font-size: 13px;
     white-space: nowrap;
@@ -2056,7 +2067,7 @@ body.dev1-col-resize-active * {
     accent-color: var(--accent-primary);
 }
 
-.dev1-whitelist-toggle input[type="checkbox"]:checked + span {
+.dev1-whitelist-toggle input[type="checkbox"]:checked+span {
     color: var(--accent-primary);
     font-weight: 600;
 }

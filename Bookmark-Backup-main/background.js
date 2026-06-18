@@ -1771,6 +1771,9 @@ async function openHistoryViewFromCommand(view) {
 async function openOrFocusWebSnapshotPage(options = {}) {
     const preferredTabId = dev1NormalizeTabId(options?.tabId);
     const preferredWindowId = dev1NormalizeWindowId(options?.windowId);
+    const senderWindowId = dev1NormalizeWindowId(options?.senderWindowId);
+
+    // 1. If preferred tab is valid and is the history page, focus it
     if (preferredTabId != null) {
         try {
             const tab = await browserAPI.tabs.get(preferredTabId);
@@ -1782,23 +1785,69 @@ async function openOrFocusWebSnapshotPage(options = {}) {
         } catch (_) { }
     }
 
+    // 2. Determine target window (prefer sender's window or last focused window)
+    let targetWindowId = senderWindowId || preferredWindowId;
+    if (targetWindowId == null) {
+        try {
+            const currentWin = await browserAPI.windows.getLastFocused();
+            if (currentWin && currentWin.id != null) {
+                targetWindowId = currentWin.id;
+            }
+        } catch (_) {}
+    }
+
     const targetUrl = browserAPI.runtime.getURL('history_html/history.html?view=dev-1');
+
+    // 3. Try to find existing history.html tab in the target window (current window)
+    if (targetWindowId != null) {
+        try {
+            const tabs = await browserAPI.tabs.query({ windowId: targetWindowId });
+            const existing = Array.isArray(tabs)
+                ? tabs.find(tab => String(tab?.url || '').startsWith(browserAPI.runtime.getURL('history_html/history.html')))
+                : null;
+            if (existing?.id != null) {
+                try {
+                    await browserAPI.windows.update(targetWindowId, { focused: true });
+                } catch (_) {}
+                await browserAPI.tabs.update(existing.id, { active: true, url: targetUrl });
+                return { success: true, tabId: existing.id, reused: true };
+            }
+        } catch (_) {}
+    }
+
+    // 4. Try to find existing history.html tab globally across all windows
     try {
         const tabs = await browserAPI.tabs.query({});
         const existing = Array.isArray(tabs)
             ? tabs.find(tab => String(tab?.url || '').startsWith(browserAPI.runtime.getURL('history_html/history.html')))
             : null;
         if (existing?.id != null) {
-            if (existing.windowId != null) await browserAPI.windows.update(existing.windowId, { focused: true });
+            if (existing.windowId != null) {
+                try {
+                    await browserAPI.windows.update(existing.windowId, { focused: true });
+                } catch (_) {}
+            }
             await browserAPI.tabs.update(existing.id, { active: true, url: targetUrl });
             return { success: true, tabId: existing.id, reused: true };
         }
-    } catch (_) { }
+    } catch (_) {}
 
-    const createOptions = { url: targetUrl };
-    if (preferredWindowId != null) createOptions.windowId = preferredWindowId;
-    const created = await browserAPI.tabs.create(createOptions);
-    return { success: true, tabId: created?.id ?? null, reused: false };
+    // 5. If not found, create a new tab in target window or default window
+    try {
+        const createOptions = { url: targetUrl };
+        if (targetWindowId != null) {
+            createOptions.windowId = targetWindowId;
+        }
+        const created = await browserAPI.tabs.create(createOptions);
+        return { success: true, tabId: created?.id ?? null, reused: false };
+    } catch (err) {
+        try {
+            const created = await browserAPI.tabs.create({ url: targetUrl });
+            return { success: true, tabId: created?.id ?? null, reused: false };
+        } catch (err2) {
+            return { success: false, error: err2?.message || 'Failed to create tab' };
+        }
+    }
 }
 
 async function openQuickSnapshotHelperForCurrentPage() {
@@ -11072,7 +11121,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 try {
                     const result = await openOrFocusWebSnapshotPage({
                         tabId: message?.originExtensionTabId,
-                        windowId: message?.originExtensionWindowId
+                        windowId: message?.originExtensionWindowId,
+                        senderWindowId: sender?.tab?.windowId
                     });
                     sendResponse(result);
                 } catch (error) {
