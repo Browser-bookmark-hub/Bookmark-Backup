@@ -1019,34 +1019,39 @@
         .backup-history-choice-content {
             position: relative;
             z-index: 1;
-            min-height: 74px;
-            padding: 12px;
+            min-height: 46px;
+            padding: 6px 12px;
             border: 1px solid var(--theme-border-primary);
             border-radius: 8px;
             background: var(--theme-bg-secondary);
             color: var(--theme-text-primary);
             display: flex;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
             gap: 0;
-            text-align: center;
+            text-align: left;
             box-sizing: border-box;
             transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .backup-history-choice-card:hover .backup-history-choice-content {
+            border-color: var(--theme-accent-color);
+            background: var(--theme-bg-hover, rgba(0, 0, 0, 0.03));
         }
 
         .backup-history-choice-title {
             min-width: 0;
             display: inline-flex;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
             gap: 8px;
             width: 100%;
-            padding: 0 18px;
+            padding: 0 24px 0 0;
             color: inherit;
             font-size: 12px;
             font-weight: 700;
             line-height: 1.35;
-            text-align: center;
+            text-align: left;
             box-sizing: border-box;
         }
 
@@ -1063,8 +1068,9 @@
 
         .backup-history-choice-check {
             position: absolute;
-            top: 10px;
-            right: 10px;
+            top: 50%;
+            right: 12px;
+            transform: translateY(-50%);
             width: 18px;
             height: 18px;
             border: 1px solid var(--theme-border-primary);
@@ -1082,6 +1088,10 @@
             border-color: var(--theme-accent-color);
             background: rgba(0, 122, 255, 0.12);
             box-shadow: inset 0 0 0 1px var(--theme-accent-color);
+        }
+
+        .backup-history-choice-input:checked:hover + .backup-history-choice-content {
+            background: rgba(0, 122, 255, 0.12);
         }
 
         .backup-history-choice-input:checked + .backup-history-choice-content .backup-history-choice-check {
@@ -3253,6 +3263,10 @@
 
         /* 状态卡片样式 */
         :root {
+            --history-ops-btn-width: 29px;
+            --history-ops-btn-gap: 5px;
+            --history-ops-track-width: calc((var(--history-ops-btn-width) * 3) + (var(--history-ops-btn-gap) * 2));
+
             /* 自动备份模式 - 绿色系 */
             --theme-status-card-auto-bg: #e8f5e9;
             --theme-status-card-auto-text: #2e7d32;
@@ -6620,9 +6634,24 @@
                     </div>
 
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <h3 id="currentChangesMainTitle"
-                            style="margin: 0; font-size: 14px; color: var(--theme-text-primary); font-weight: 500;">
-                            当前变化</h3>
+                        <div class="current-changes-title-row" style="display: flex; align-items: center; flex-wrap: nowrap; gap: 7px; min-width: 0;">
+                            <h3 id="currentChangesMainTitle"
+                                style="margin: 0; font-size: 14px; color: var(--theme-text-primary); font-weight: 500; white-space: nowrap;">
+                                当前变化</h3>
+                            <div class="sync-history-title-tools" style="position: relative;">
+                                <button id="backupHistoryWebSnapshotBtn"
+                                    class="action-button history-nav-btn backup-history-header-btn"
+                                    type="button" style="display: inline-flex;">
+                                    <i class="fas fa-flask"></i>
+                                    <span class="tooltip"
+                                        style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; left: 50%; transform: translateX(-50%);">网页存档</span>
+                                </button>
+                                <div id="webSnapshotShortcutPrompt" class="web-snapshot-shortcut-prompt" style="display: none;">
+                                    <span class="prompt-text">「辅助工具」快捷键: <kbd id="webSnapshotShortcutKey">Alt+Shift+X</kbd></span>
+                                    <span id="closeWebSnapshotShortcutPrompt" class="prompt-close-btn">&times;</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- B：状态卡片（全宽）-->
@@ -6692,17 +6721,7 @@
                                         <span class="tooltip"
                                             style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; left: 50%; transform: translateX(-50%);">临时安全快照</span>
                                     </button>
-                                    <button id="backupHistoryWebSnapshotBtn"
-                                        class="action-button history-nav-btn backup-history-header-btn"
-                                        type="button" style="display: inline-flex;">
-                                        <i class="fas fa-flask"></i>
-                                        <span class="tooltip"
-                                            style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; left: 50%; transform: translateX(-50%);">网页存档</span>
-                                    </button>
-                                    <div id="webSnapshotShortcutPrompt" class="web-snapshot-shortcut-prompt" style="display: none;">
-                                        <span class="prompt-text">「辅助工具」快捷键: <kbd id="webSnapshotShortcutKey">Alt+Shift+X</kbd></span>
-                                        <span id="closeWebSnapshotShortcutPrompt" class="prompt-close-btn">&times;</span>
-                                    </div>
+
                                 </div>
                                 <!-- 分页控件（10条/页）- 紧靠“备份历史”标题右侧 -->
                                 <div id="syncHistoryPager" class="sync-history-pager" style="display: none;">

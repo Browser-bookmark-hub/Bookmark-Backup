@@ -2668,12 +2668,12 @@ const i18n = {
         'en': 'Compaction Settings'
     },
     historySlimmingSettingsDescription: {
-        'zh_CN': '选择插件本地备份历史保留哪些详情数据；未勾选的数据通常不会写入插件存储。例外：变化载荷构建失败时会自动保留一次快照；覆盖恢复记录会清空变化数据（基线重建）。',
-        'en': 'Choose which detail data the extension keeps in local backup history. Unchecked data is usually not written to extension storage. Exceptions: if change-payload generation fails, one snapshot is auto-retained; overwrite-restore records clear change data as a baseline rebuild.'
+        'zh_CN': '选择写入<span style="color: #f97316; font-weight: 500;">插件内部存储（chrome.storage）</span>的历史详情数据。未勾选的数据将不会被保存，以节省<span style="color: #f97316; font-weight: 500;">浏览器</span>的存储空间。',
+        'en': 'Choose which detailed history data to write to the <span style="color: #f97316; font-weight: 500;">extension\'s internal storage (chrome.storage)</span>. Unchecked data will not be saved to save <span style="color: #f97316; font-weight: 500;">browser</span> storage space.'
     },
     historySlimmingSettingsStrategyDescription: {
-        'zh_CN': '主 UI 的本地、云端1、云端2备份会按版本化 / 覆盖保存；这里控制的是插件内 HTML 备份历史的详情数据。',
-        'en': 'Main UI backups for Local, Cloud 1, and Cloud 2 are saved as Versioned or Overwrite. This setting only controls detail data kept in the extension HTML backup history.'
+        'zh_CN': '',
+        'en': ''
     },
     historySlimmingSaveSnapshotData: {
         'zh_CN': '保存快照数据',
@@ -10285,8 +10285,8 @@ function buildHistorySlimmingSettingsDescriptionHtml(lang = currentLang) {
     const baseText = i18n.historySlimmingSettingsDescription[lang] || i18n.historySlimmingSettingsDescription.zh_CN;
     const strategyText = i18n.historySlimmingSettingsStrategyDescription[lang] || i18n.historySlimmingSettingsStrategyDescription.zh_CN;
     return `
-        <div>${escapeHtml(baseText)}</div>
-        <div class="backup-history-slimming-strategy-note">${escapeHtml(strategyText)}</div>
+        <div>${baseText}</div>
+        ${strategyText ? `<div class="backup-history-slimming-strategy-note">${escapeHtml(strategyText)}</div>` : ''}
     `;
 }
 
