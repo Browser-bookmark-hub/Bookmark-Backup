@@ -179,6 +179,29 @@
       this.restoreDisplayOnly = false;
       this.currentUrl = window.location.href;
       this.highlights = new Map();
+      this._hasFixedOrStickyHighlights = null;
+      this._lastDocWidth = 0;
+      this._lastDocHeight = 0;
+      this._lastHelperZoom = 1;
+      this._scrollTimer = null;
+      
+      const self = this;
+      const originalSet = this.highlights.set;
+      const originalDelete = this.highlights.delete;
+      const originalClear = this.highlights.clear;
+      this.highlights.set = function(key, value) {
+        self._hasFixedOrStickyHighlights = null;
+        return originalSet.apply(this, arguments);
+      };
+      this.highlights.delete = function(key) {
+        self._hasFixedOrStickyHighlights = null;
+        return originalDelete.apply(this, arguments);
+      };
+      this.highlights.clear = function() {
+        self._hasFixedOrStickyHighlights = null;
+        return originalClear.apply(this, arguments);
+      };
+
       this.editFragments = [];
       this._lastSelectedColorCategoryId = '';
       this._lastSelectedToolCategoryId = '';
@@ -393,7 +416,8 @@
           presentationShapeTip: '支持自动识别几何形状 (圆、矩形、三角形、五角星、直线线段)',
           classicHighlight: '经典高亮',
           customColor: '自定义颜色',
-          apply: '应用'
+          apply: '应用',
+          mdNoticeHeader: '「MD 格式」是为「md正文」设计的，在「正文」中查看，可直接显示在导出的md文件里'
         },
         en: {
           selectColor: 'Select Color',
@@ -510,7 +534,8 @@
           presentationShapeTip: 'Supports auto-recognizing shapes (Circle, Rectangle, Triangle, Star, Straight Line)',
           classicHighlight: 'Classic Highlight',
           customColor: 'Custom Color',
-          apply: 'Apply'
+          apply: 'Apply',
+          mdNoticeHeader: '"MD Format" is designed for the MD body, viewed in "Content", and can be directly displayed in the exported MD file.'
         }
       };
     }
@@ -998,7 +1023,9 @@
     }
 
     formatHighlightNoteStaticText(note) {
-      return `${this.t('highlightNote')}${this.lang === 'en' ? ': ' : '：'}${this.normalizeHighlightNote(note)}`;
+      const normalized = this.normalizeHighlightNote(note);
+      if (!normalized) return '';
+      return `${this.t('highlightNote')}${this.lang === 'en' ? ': 「' : '：「'}${normalized}」`;
     }
 
     bindEvents() {
@@ -1062,6 +1089,18 @@
       if (!this.overlayRefreshListener) {
         this.overlayRefreshListener = (event) => {
           if (event && event.type === 'scroll') {
+            if (this._scrollTimer) clearTimeout(this._scrollTimer);
+            document.body.classList.add('dev1-highlighter-scrolling');
+            this._scrollTimer = setTimeout(() => {
+              document.body.classList.remove('dev1-highlighter-scrolling');
+            }, 150);
+
+            if (this._hasFixedOrStickyHighlights === null) {
+              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
+            }
+            if (!this._hasFixedOrStickyHighlights) {
+              return;
+            }
             try { this.updateFrameOverlayLayerSize(); } catch (_) { }
             try { this.groupFrameGeometries.clear(); } catch (_) { }
             try { this.overlayUpdateSoon(); } catch (_) { }
@@ -1077,6 +1116,18 @@
       if (!this.visualViewportRefreshListener && window.visualViewport) {
         this.visualViewportRefreshListener = (event) => {
           if (event && event.type === 'scroll') {
+            if (this._scrollTimer) clearTimeout(this._scrollTimer);
+            document.body.classList.add('dev1-highlighter-scrolling');
+            this._scrollTimer = setTimeout(() => {
+              document.body.classList.remove('dev1-highlighter-scrolling');
+            }, 150);
+
+            if (this._hasFixedOrStickyHighlights === null) {
+              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
+            }
+            if (!this._hasFixedOrStickyHighlights) {
+              return;
+            }
             try { this.updateFrameOverlayLayerSize(); } catch (_) { }
             try { this.groupFrameGeometries.clear(); } catch (_) { }
             try { this.overlayUpdateSoon(); } catch (_) { }
@@ -1130,6 +1181,18 @@
       if (!this.overlayRefreshListener) {
         this.overlayRefreshListener = (event) => {
           if (event && event.type === 'scroll') {
+            if (this._scrollTimer) clearTimeout(this._scrollTimer);
+            document.body.classList.add('dev1-highlighter-scrolling');
+            this._scrollTimer = setTimeout(() => {
+              document.body.classList.remove('dev1-highlighter-scrolling');
+            }, 150);
+
+            if (this._hasFixedOrStickyHighlights === null) {
+              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
+            }
+            if (!this._hasFixedOrStickyHighlights) {
+              return;
+            }
             try { this.updateFrameOverlayLayerSize(); } catch (_) { }
             try { this.groupFrameGeometries.clear(); } catch (_) { }
             try { this.overlayUpdateSoon(); } catch (_) { }
@@ -1145,6 +1208,18 @@
       if (!this.visualViewportRefreshListener && window.visualViewport) {
         this.visualViewportRefreshListener = (event) => {
           if (event && event.type === 'scroll') {
+            if (this._scrollTimer) clearTimeout(this._scrollTimer);
+            document.body.classList.add('dev1-highlighter-scrolling');
+            this._scrollTimer = setTimeout(() => {
+              document.body.classList.remove('dev1-highlighter-scrolling');
+            }, 150);
+
+            if (this._hasFixedOrStickyHighlights === null) {
+              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
+            }
+            if (!this._hasFixedOrStickyHighlights) {
+              return;
+            }
             try { this.updateFrameOverlayLayerSize(); } catch (_) { }
             try { this.groupFrameGeometries.clear(); } catch (_) { }
             try { this.overlayUpdateSoon(); } catch (_) { }
@@ -3276,6 +3351,7 @@
           const color = safeString(item.color).toLowerCase();
           if (activeVariant === 'white' && color === '#ffffff') return;
           if (activeVariant === 'black' && color === '#000000') return;
+          if (activeVariant === 'auto' && (color === '#ffffff' || color === '#000000')) return;
           grid.appendChild(this.createColorOption({
             ...item,
             variant: explicitVariant || activeVariant
@@ -3660,9 +3736,10 @@
         const blackContrast = (Math.max(bgLum, darkLum) + 0.05) / (Math.min(bgLum, darkLum) + 0.05);
         const whiteContrast = (Math.max(bgLum, 1.0) + 0.05) / (Math.min(bgLum, 1.0) + 0.05);
         
-        if (whiteContrast < 3.0) {
+        // 降低对比度阈值到1.5，使深/浅颜色强制覆盖的范围更极限，降低此规则的权重并优先采用页面主题
+        if (whiteContrast < 1.5) {
           return 'black';
-        } else if (blackContrast < 3.0) {
+        } else if (blackContrast < 1.5) {
           return 'white';
         } else {
           return this.detectPageTheme() ? 'white' : 'black';
@@ -4056,7 +4133,65 @@
         content.appendChild(modeBar);
         const notice = document.createElement('div');
         notice.className = 'dev1-dynamic-mhtml-notice';
+        notice.style.position = 'relative';
+        notice.style.paddingRight = '28px';
         content.appendChild(notice);
+
+        const noticeText = document.createElement('div');
+        notice.appendChild(noticeText);
+
+        const storage = this.getLocalStorageArea();
+        if (storage) {
+          storage.get(['dev1_md_notice_hidden'], (result) => {
+            if (result && result.dev1_md_notice_hidden === true) {
+              notice.style.setProperty('display', 'none', 'important');
+            }
+          });
+        }
+
+        const hideBtn = document.createElement('button');
+        hideBtn.type = 'button';
+        hideBtn.className = 'dev1-notice-hide-btn';
+        hideBtn.innerHTML = '<span style="transform: translateY(-0.5px) !important; display: inline-block !important;">×</span>';
+        hideBtn.title = this.lang === 'en' ? 'Hide permanently' : '不再显示';
+        hideBtn.style.cssText = `
+          position: absolute !important;
+          top: 6px !important;
+          right: 6px !important;
+          width: 16px !important;
+          height: 16px !important;
+          border: 1px solid currentColor !important;
+          border-radius: 3px !important;
+          background: transparent !important;
+          color: inherit !important;
+          font-size: 11px !important;
+          font-weight: bold !important;
+          line-height: 1 !important;
+          cursor: pointer !important;
+          opacity: 0.45 !important;
+          padding: 0 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          transition: all 0.15s ease !important;
+        `;
+        hideBtn.onmouseenter = () => {
+          hideBtn.style.opacity = '0.85';
+          hideBtn.style.background = 'rgba(0, 0, 0, 0.06)';
+        };
+        hideBtn.onmouseleave = () => {
+          hideBtn.style.opacity = '0.45';
+          hideBtn.style.background = 'transparent';
+        };
+        hideBtn.onclick = (e) => {
+          e.stopPropagation();
+          notice.style.setProperty('display', 'none', 'important');
+          if (storage) {
+            storage.set({ dev1_md_notice_hidden: true });
+          }
+        };
+        notice.appendChild(hideBtn);
+
         const grid = document.createElement('div');
         grid.className = `dev1-tool-grid ${viewMode === 'list' ? 'list-view' : 'grid-view'}`;
         content.appendChild(grid);
@@ -4065,8 +4200,10 @@
           edit.classList.toggle('active', this._mdMode === 'edit');
           htmlFormat.classList.toggle('active', !this._mdPureMode);
           pureFormat.classList.toggle('active', !!this._mdPureMode);
+          let headerNotice = this.t('mdNoticeHeader');
           let modeNotice = this._mdMode === 'edit' ? this.t('mdNoticeEdit') : this.t('mdNoticeVisual');
           let formatNotice = this._mdPureMode ? this.t('mdNoticePure') : this.t('mdNoticeHtml');
+          headerNotice = this.escapeHtml(headerNotice);
           modeNotice = this.escapeHtml(modeNotice);
           formatNotice = this.escapeHtml(formatNotice);
           const styleBracket = (str) => {
@@ -4076,9 +4213,11 @@
               .replace(/【/g, `${orangeSpanOpen}【${orangeSpanClose}`)
               .replace(/】/g, `${orangeSpanOpen}】${orangeSpanClose}`)
               .replace(/\[/g, `${orangeSpanOpen}[${orangeSpanClose}`)
-              .replace(/\]/g, `${orangeSpanOpen}]${orangeSpanClose}`);
+              .replace(/\]/g, `${orangeSpanOpen}]${orangeSpanClose}`)
+              .replace(/「/g, `${orangeSpanOpen}「${orangeSpanClose}`)
+              .replace(/」/g, `${orangeSpanOpen}」${orangeSpanClose}`);
           };
-          notice.innerHTML = `${styleBracket(modeNotice)}<br>${styleBracket(formatNotice)}`;
+          noticeText.innerHTML = `${styleBracket(headerNotice)}<br>${styleBracket(modeNotice)}<br>${styleBracket(formatNotice)}`;
           let tools = (category.tools || []).filter(tool => {
             const isEdit = this.isEditTool(tool.id);
             const matchesMode = this._mdMode === 'edit' ? isEdit : (!isEdit && tool.id !== 'md-edit-disable-highlight');
@@ -6388,9 +6527,10 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
           const blackContrast = (Math.max(bgLum, darkLum) + 0.05) / (Math.min(bgLum, darkLum) + 0.05);
           const whiteContrast = (Math.max(bgLum, 1.0) + 0.05) / (Math.min(bgLum, 1.0) + 0.05);
 
-          if (whiteContrast < 3.0) {
+          // 降低对比度阈值到1.5，使深/浅颜色强制覆盖的范围更极限，降低此规则的权重并优先采用页面主题
+          if (whiteContrast < 1.5) {
             textColor = '#0f172a';
-          } else if (blackContrast < 3.0) {
+          } else if (blackContrast < 1.5) {
             textColor = '#ffffff';
           } else {
             textColor = isDarkPage ? '#ffffff' : '#0f172a';
@@ -9091,6 +9231,12 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       const invZoom = 1 / helperZoom;
       const docWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth, window.innerWidth);
       const docHeight = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, window.innerHeight);
+      if (this._lastDocWidth === docWidth && this._lastDocHeight === docHeight && this._lastHelperZoom === helperZoom) {
+        return;
+      }
+      this._lastDocWidth = docWidth;
+      this._lastDocHeight = docHeight;
+      this._lastHelperZoom = helperZoom;
       const viewWidth = docWidth * invZoom;
       const viewHeight = docHeight * invZoom;
       this.frameOverlayLayer.style.setProperty('width', `${docWidth}px`, 'important');
@@ -9099,6 +9245,27 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       this.frameOverlayLayer.setAttribute('height', String(docHeight));
       this.frameOverlayLayer.setAttribute('viewBox', `0 0 ${viewWidth} ${viewHeight}`);
       this.frameOverlayLayer.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+    }
+
+    _checkFixedOrStickyHighlights() {
+      try {
+        const elems = this.getAllHighlightElements();
+        if (!elems.length) return false;
+        for (const el of elems) {
+          let curr = el;
+          while (curr && curr !== document.body && curr !== document.documentElement) {
+            const style = window.getComputedStyle(curr);
+            if (style) {
+              const pos = style.position;
+              if (pos === 'fixed' || pos === 'sticky') {
+                return true;
+              }
+            }
+            curr = curr.parentElement;
+          }
+        }
+      } catch (_) { }
+      return false;
     }
 
     _getFrameViewBoxZoom() {
@@ -9319,15 +9486,14 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       const cachedGeometry = this.groupFrameGeometries && this.groupFrameGeometries.get(gid);
       const overallZoom = Math.max(0.001, this._getOverallVisualZoom());
       const invZoom = 1 / overallZoom;
-      const useCachedGeometry = tool !== 'running-line'
-        && cachedGeometry
+      const useCachedGeometry = cachedGeometry
         && Array.isArray(cachedGeometry.linesDoc)
         && cachedGeometry.linesDoc.length;
       const rawLines = useCachedGeometry
         ? cachedGeometry.linesDoc.map(line => ({ ...line }))
         : this.computeLineBoxesForGroup(gid);
       if (!rawLines.length) return;
-      if (!cachedGeometry && tool !== 'running-line' && this.groupFrameGeometries) {
+      if (!cachedGeometry && this.groupFrameGeometries) {
         try {
           const freezeScrollX = window.scrollX || window.pageXOffset || 0;
           const freezeScrollY = window.scrollY || window.pageYOffset || 0;

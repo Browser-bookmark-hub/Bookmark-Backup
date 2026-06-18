@@ -2978,6 +2978,15 @@
   stroke-linejoin: round !important;
 }
 
+body.dev1-highlighter-scrolling #frame-overlay-layer path[data-kind="running-line"],
+body.dev1-highlighter-scrolling .frame-overlay-layer path[data-kind="running-line"],
+body.dev1-highlighter-scrolling .ripple-merged-box,
+body.dev1-highlighter-scrolling .ripple-merged-box-inner,
+body.dev1-highlighter-scrolling .ripple-edge,
+body.dev1-highlighter-scrolling .effect-merged-box-inner {
+  animation-play-state: paused !important;
+}
+
 #frame-overlay-layer g[data-kind="brackets"] text,
 .frame-overlay-layer g[data-kind="brackets"] text {
   font-family: inherit !important;

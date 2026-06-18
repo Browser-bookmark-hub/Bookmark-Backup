@@ -5313,7 +5313,7 @@
             background: ${isDark ? 'var(--panel-bg, #1f1f1f)' : 'var(--panel-bg, #f0f4f8)'};
             border: 1px solid var(--panel-border, ${isDark ? '#3b3b3b' : '#cbd5e1'});
             border-radius: 19px;
-            padding: 16px;
+            padding: 12px 10px;
             z-index: 10;
             display: flex;
             flex-direction: column;
@@ -5321,20 +5321,51 @@
             box-sizing: border-box;
             pointer-events: auto !important;
           `;
+
+          const scrollbarStyle = document.createElement('style');
+          scrollbarStyle.textContent = `
+            #${helpPanelId} ul::-webkit-scrollbar {
+              width: 5px !important;
+              height: 5px !important;
+            }
+            #${helpPanelId} ul::-webkit-scrollbar-track {
+              background: transparent !important;
+            }
+            #${helpPanelId} ul::-webkit-scrollbar-thumb {
+              background: ${isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.2)'} !important;
+              border-radius: 10px !important;
+            }
+            #${helpPanelId} ul::-webkit-scrollbar-thumb:hover {
+              background: ${isDark ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.35)'} !important;
+            }
+          `;
+          helpPanel.appendChild(scrollbarStyle);
           
           const helpTitle = document.createElement('div');
           helpTitle.style.cssText = 'font-weight: 750 !important; font-size: 14px !important; margin-bottom: 12px !important; text-align: left !important;';
           helpTitle.textContent = t('recording_settings_info_title', '录制说明');
           
           const list = document.createElement('ul');
-          list.style.cssText = 'margin: 0 0 16px 18px !important; padding: 0 !important; font-size: 12px !important; line-height: 1.6 !important; flex: 1 !important; overflow-y: auto !important;';
+          list.style.cssText = 'margin: 0 0 12px 14px !important; padding: 0 6px 0 0 !important; font-size: 12px !important; line-height: 1.5 !important; flex: 1 !important; overflow-y: auto !important;';
           
           const items = isChinese ? [
-            '<strong>请勿改变窗口大小：</strong>录制中途请勿 resize 窗口，否则裁剪区域对不齐会导致边缘出现红线。如需调整，请调整好后再开始录屏。',
-            '<strong>关于视频缓存：</strong>录制视频暂存在浏览器内存（RAM）中。完成录制后，无论点击<strong>“保存并删除缓存”</strong>还是<strong>“取消”</strong>，程序都会在底层立即清空并释放全部视频内存，保护您的隐私及电脑性能。'
+            '<strong style="color: #f97316;">不要改变窗口大小</strong>：录屏中途调整窗口会导致裁剪偏移、边缘露出红线。',
+            '<strong>视频缓存自动释放</strong>：录制完点击“保存并删除缓存”或“取消”都会瞬间彻底清空内存。',
+            '<strong>日常网页与办公</strong>：推荐使用 <strong>MP4 (H.264) + 60 FPS + 10M/20Mbps</strong>（兼容性最好，文件小）。',
+            '<strong>高刷新率 (120/240fps)</strong>：必须搭配 <strong>50M/100Mbps</strong> 码率（码率太低会导致运动画面变糊）。',
+            '<strong>网页视频 / 3D / 复杂动效</strong>：推荐 <strong>MP4 + 50M/100Mbps</strong>（防止剧烈运动时画面出现马赛克）。',
+            '<strong style="color: #f97316;">动态高亮 (流动线框/波纹)</strong>：推荐使用 <strong>60 FPS + 20M/50Mbps</strong>（保证高亮动画流动丝滑、无毛刺）。',
+            '<strong style="color: #f97316;">页面高亮过多导致卡顿</strong>：限制在 <strong>60 FPS</strong>，码率选 <strong>20Mbps</strong>（降低 CPU/GPU 负荷，防止掉帧）。',
+            '<strong>播放黑屏或打不开</strong>：首选 <strong>MP4</strong> 格式；遇到旧设备兼容问题可切换 <strong>WebM</strong> 备用。'
           ] : [
-            '<strong>Do not resize window:</strong> Please do not resize the browser window during recording, otherwise the crop ratio will shift and expose the red border.',
-            '<strong>About video cache:</strong> The recorded video is stored temporarily in browser memory. After recording, clicking <strong>"Save & Clear Cache"</strong> or <strong>"Cancel"</strong> will permanently delete the cache to release memory and protect your privacy.'
+            '<strong style="color: #f97316;">Do not resize window</strong>: Resizing during recording causes crop shifts and exposes the red border.',
+            '<strong>Auto memory release</strong>: Canceling or saving will instantly clear all RAM video caches.',
+            '<strong>General Web Recording</strong>: Recommended <strong>MP4 (H.264) + 60 FPS + 10M/20Mbps</strong> (Best compatibility & size).',
+            '<strong>High FPS (120/240fps)</strong>: Must use <strong>50M/100Mbps</strong> (Low bitrates will cause blurry frames).',
+            '<strong>Videos / 3D / Complex Animations</strong>: Recommended <strong>MP4 + 50M/100Mbps</strong> (Prevents pixelation during fast motions).',
+            '<strong style="color: #f97316;">Dynamic Highlights (Running Line/Ripple)</strong>: Use <strong>60 FPS + 20M/50Mbps</strong> (Keeps border animation sharp & smooth).',
+            '<strong style="color: #f97316;">Stuttering due to too many highlights</strong>: Limit to <strong>60 FPS</strong>, select <strong>20Mbps</strong> (Reduces CPU/GPU load).',
+            '<strong>Player issues / Black screen</strong>: Use <strong>MP4</strong> (Best player compatibility). Use <strong>WebM</strong> as a fallback on old devices.'
           ];
           
           items.forEach(text => {
@@ -6054,7 +6085,27 @@
           else videoEl.onloadedmetadata = resolve;
         });
 
-        // 获取视频流的实际分辨率
+        // 进一步等待分辨率在高帧率（如 120fps/240fps）或 Retina 屏幕下稳定下来（最多 500ms）
+        let lastWidth = videoEl.videoWidth;
+        let lastHeight = videoEl.videoHeight;
+        let stableCount = 0;
+        for (let i = 0; i < 10; i++) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+          const currentWidth = videoEl.videoWidth;
+          const currentHeight = videoEl.videoHeight;
+          if (currentWidth === lastWidth && currentHeight === lastHeight) {
+            stableCount++;
+            if (stableCount >= 2 && currentWidth > 0) {
+              break;
+            }
+          } else {
+            stableCount = 0;
+            lastWidth = currentWidth;
+            lastHeight = currentHeight;
+          }
+        }
+
+        // 获取视频流 of 实际分辨率
         const videoWidth = videoEl.videoWidth;
         const videoHeight = videoEl.videoHeight;
 
@@ -6073,6 +6124,15 @@
           return;
         }
 
+        // 缓存视口大小以防止高频读取触发 Layout Thrashing
+        let cachedInnerWidth = window.innerWidth;
+        let cachedInnerHeight = window.innerHeight;
+        const handleViewportResize = () => {
+          cachedInnerWidth = window.innerWidth;
+          cachedInnerHeight = window.innerHeight;
+        };
+        window.addEventListener('resize', handleViewportResize);
+
         // 计算缩放比例
         // getDisplayMedia 捕获的是整个视口内容，需要正确映射坐标
         // 使用设备像素比来计算真实的缩放
@@ -6080,12 +6140,12 @@
 
         // 计算视频分辨率与视口的比例
         // 注意：getDisplayMedia 可能捕获的分辨率与视口不同
-        const scaleX = videoWidth / window.innerWidth;
-        const scaleY = videoHeight / window.innerHeight;
+        const scaleX = videoWidth / cachedInnerWidth;
+        const scaleY = videoHeight / cachedInnerHeight;
 
         console.log('Scale calculation:', {
           videoSize: `${videoWidth}x${videoHeight}`,
-          windowSize: `${window.innerWidth}x${window.innerHeight}`,
+          windowSize: `${cachedInnerWidth}x${cachedInnerHeight}`,
           dpr,
           scaleX: scaleX.toFixed(3),
           scaleY: scaleY.toFixed(3),
@@ -6127,14 +6187,14 @@
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        const getCropCoords = () => {
-          const currentScaleX = videoEl.videoWidth / window.innerWidth;
-          const currentScaleY = videoEl.videoHeight / window.innerHeight;
+        const calculateCropCoords = (frameW, frameH) => {
+          const currentScaleX = frameW / cachedInnerWidth;
+          const currentScaleY = frameH / cachedInnerHeight;
           
-          let currentSrcX = Math.max(0, Math.min(videoEl.videoWidth - 2, Math.round(rect.left * currentScaleX)));
-          let currentSrcY = Math.max(0, Math.min(videoEl.videoHeight - 2, Math.round(rect.top * currentScaleY)));
-          let currentSrcW = Math.max(2, Math.min(videoEl.videoWidth - currentSrcX, Math.round(rect.width * currentScaleX)));
-          let currentSrcH = Math.max(2, Math.min(videoEl.videoHeight - currentSrcY, Math.round(rect.height * currentScaleY)));
+          let currentSrcX = Math.round(rect.left * currentScaleX);
+          let currentSrcY = Math.round(rect.top * currentScaleY);
+          let currentSrcW = Math.round(rect.width * currentScaleX);
+          let currentSrcH = Math.round(rect.height * currentScaleY);
           
           // Align to 2-pixel boundaries (even numbers) for WebCodecs YUV 4:2:0 format compatibility
           currentSrcX = Math.floor(currentSrcX / 2) * 2;
@@ -6142,12 +6202,14 @@
           currentSrcW = Math.floor(currentSrcW / 2) * 2;
           currentSrcH = Math.floor(currentSrcH / 2) * 2;
           
-          // Ensure they don't exceed video dimensions
-          if (currentSrcX + currentSrcW > videoEl.videoWidth) {
-            currentSrcW = Math.max(2, Math.floor((videoEl.videoWidth - currentSrcX) / 2) * 2);
+          // Ensure they don't exceed frame dimensions
+          currentSrcX = Math.max(0, Math.min(currentSrcX, frameW - 2));
+          currentSrcY = Math.max(0, Math.min(currentSrcY, frameH - 2));
+          if (currentSrcX + currentSrcW > frameW) {
+            currentSrcW = Math.max(2, Math.floor((frameW - currentSrcX) / 2) * 2);
           }
-          if (currentSrcY + currentSrcH > videoEl.videoHeight) {
-            currentSrcH = Math.max(2, Math.floor((videoEl.videoHeight - currentSrcY) / 2) * 2);
+          if (currentSrcY + currentSrcH > frameH) {
+            currentSrcH = Math.max(2, Math.floor((frameH - currentSrcY) / 2) * 2);
           }
 
           // Safety clamp
@@ -6157,13 +6219,15 @@
           return { x: currentSrcX, y: currentSrcY, w: currentSrcW, h: currentSrcH };
         };
 
+        const getCropCoords = () => calculateCropCoords(videoEl.videoWidth, videoEl.videoHeight);
+
         // Get zoom-invariant container to prevent position drift during PDF zoom/resize
         const fixedLayer = this._getZoomInvariantContainer();
 
         // 录制区域指示器 - 红框完全在录制区域外部
         // 录制区域 = rect，红框要包围它但不能进入
         const borderWidth = 3;
-        const gap = 2; // 红框内边缘与录制区域的间隙
+        const gap = 4; // 红框内边缘与录制区域的间隙，增加到4px以防小数DPR像素下边缘渗入
         const indicator = document.createElement('div');
         indicator.id = 'screen-record-area-indicator';
         indicator.style.cssText = `
@@ -6279,11 +6343,12 @@
         let animationId;
 
         // 清理函数
-        const cleanup = (discard = false) => {
+        let cleanup = (discard = false) => {
           if (discard) discardRecording = true;
           this.activeSessionCleanup = null;
           isRecording = false;
           cancelAnimationFrame(animationId);
+          window.removeEventListener('resize', handleViewportResize);
           if (worker) {
             try { worker.terminate(); } catch (_) {}
             worker = null;
@@ -6304,208 +6369,20 @@
         this.activeSessionCleanup = () => cleanup(true);
 
         let runWebCodecs = useWebCodecs;
-        if (runWebCodecs) {
-          // ===== WebCodecs + mp4-muxer 移交到 Web Worker 录制 =====
-          stopBtn.disabled = false;
+        let mainEncoder = null;
+        let mainMuxer = null;
+        let mainReader = null;
 
-          try {
-            const workerUrl = chrome.runtime.getURL('dev_1/record_worker.js');
-            const response = await fetch(workerUrl);
-            const code = await response.text();
-
-            // 将相对路径 './mp4-muxer.js' 替换为绝对路径，以便从 Blob URL 中成功加载
-            const absoluteMuxerUrl = chrome.runtime.getURL('dev_1/mp4-muxer.js');
-            const modifiedCode = code.replace(
-              /importScripts\(['"]\.\/mp4-muxer\.js['"]\);?/,
-              `importScripts('${absoluteMuxerUrl}');`
-            );
-
-            const blob = new Blob([modifiedCode], { type: 'application/javascript' });
-            const blobUrl = URL.createObjectURL(blob);
-            worker = new Worker(blobUrl);
-            URL.revokeObjectURL(blobUrl);
-          } catch (err) {
-            console.error('Failed to spawn worker via Blob URL, falling back to MediaRecorder:', err);
-            runWebCodecs = false;
-            if (worker) {
-              try { worker.terminate(); } catch (_) {}
-              worker = null;
-            }
-            // Update UI formatting badge to show WebM format since we fall back
-            formatBadge.textContent = 'WebM';
-            formatBadge.style.background = '#3b82f6';
-          }
-        }
-
-        if (runWebCodecs) {
-          // Function to get H.264 level string based on pixel count
-          const getRequiredAvcLevel = (w, h) => {
-            const pixels = w * h;
-            if (pixels <= 921600) return '1f'; // Level 3.1
-            if (pixels <= 2097152) return '29'; // Level 4.1
-            return '33'; // Level 5.1
-          };
-
-          const adjustAvcLevel = (codecStr, w, h) => {
-            if (codecStr.startsWith('avc1.')) {
-              const req = getRequiredAvcLevel(w, h);
-              const cur = codecStr.slice(-2);
-              if (parseInt(req, 16) > parseInt(cur, 16)) {
-                return codecStr.slice(0, -2) + req;
-              }
-            }
-            return codecStr;
-          };
-
-          // 确定 finalCodec
-          let finalCodec = codecProfile;
-          if (finalCodec.startsWith('avc1.')) {
-            finalCodec = adjustAvcLevel(finalCodec, width, height);
-          }
-
-          const codecConfig = {
-            codec: finalCodec,
-            width: width,
-            height: height,
-            bitrate: bitrate,
-            framerate: frameRate
-          };
-
-          try {
-            const support = await VideoEncoder.isConfigSupported(codecConfig);
-            if (!support.supported) {
-              console.warn(`Codec ${finalCodec} not supported, trying fallback codecs...`);
-              
-              // Fallback candidates in order of preference
-              const fallbacks = [
-                'avc1.640033', // H.264 High 5.1 (highly supported, high quality)
-                'avc1.420033', // H.264 Baseline 5.1 (very compatible)
-                'avc1.42001f'  // H.264 Baseline 3.1 (last resort)
-              ];
-
-              let foundFallback = false;
-              for (let cand of fallbacks) {
-                cand = adjustAvcLevel(cand, width, height);
-                const candConfig = { ...codecConfig, codec: cand };
-                try {
-                  const candSupport = await VideoEncoder.isConfigSupported(candConfig);
-                  if (candSupport.supported) {
-                    console.warn(`Falling back to supported codec: ${cand}`);
-                    finalCodec = cand;
-                    foundFallback = true;
-                    break;
-                  }
-                } catch (_) {}
-              }
-
-              if (!foundFallback) {
-                console.warn(`No fallback candidates supported, defaulting to avc1.640033`);
-                finalCodec = 'avc1.640033';
-              }
-            }
-          } catch (e) {
-            console.warn('Could not check codec support:', e);
-            finalCodec = adjustAvcLevel('avc1.640033', width, height);
-          }
-
-          const videoTrack = displayStream.getVideoTracks()[0];
-          const processor = new MediaStreamTrackProcessor({ track: videoTrack });
-          const readable = processor.readable;
-
-          // 监听 Worker 传回的消息
-          worker.onmessage = (e) => {
-            const { type, buffer, error } = e.data;
-            if (type === 'done') {
-              const blob = new Blob([buffer], { type: 'video/mp4' });
-              cleanup();
-              this._showRecordingResult(blob, 'video/mp4');
-            } else if (type === 'error') {
-              console.error('Worker error response:', error);
-              cleanup();
-              alert(t('screen_record_error', '录屏失败') + ': ' + error);
-            }
-          };
-
-          // 准备裁剪区域坐标
-          const coords = getCropCoords();
-
-          // 启动 Worker，转移 readable 所有权
-          worker.postMessage({
-            type: 'start',
-            data: {
-              readable: readable,
-              width: coords.w,
-              height: coords.h,
-              bitrate: bitrate,
-              frameRate: frameRate,
-              codecProfile: finalCodec,
-              rect: {
-                x: coords.x,
-                y: coords.y,
-                width: coords.w,
-                height: coords.h
-              }
-            }
-          }, [readable]);
-
-          // 停止录制函数
-          const stopRecording = () => {
-            if (!isRecording) return;
-            isRecording = false;
-
-            stopBtn.textContent = t('processing', '处理中...');
-            stopBtn.disabled = true;
-
-            if (worker) {
-              worker.postMessage({ type: 'stop' });
-            }
-          };
-
-          stopBtn.onclick = stopRecording;
-
-          // ESC 停止
-          const onKeyDown = (e) => {
-            if (e.key === 'Escape') {
-              stopRecording();
-              document.removeEventListener('keydown', onKeyDown);
-              document.removeEventListener('contextmenu', onContextMenu);
-            }
-          };
-          document.addEventListener('keydown', onKeyDown);
-
-          // 右键停止
-          const onContextMenu = (e) => {
-            e.preventDefault();
-            stopRecording();
-            document.removeEventListener('keydown', onKeyDown);
-            document.removeEventListener('contextmenu', onContextMenu);
-          };
-          document.addEventListener('contextmenu', onContextMenu);
-
-          // 监听流结束
-          videoTrack.addEventListener('ended', stopRecording);
-
-        } else {
-          // ===== 降级到 MediaRecorder =====
+        const runMediaRecorderFallback = () => {
           console.log('Falling back to MediaRecorder');
-
-          // Performance Optimization: Cache cropping coordinates and update only on resize to prevent Layout Thrashing
-          let cachedCoords = getCropCoords();
-          const handleResize = () => {
-            cachedCoords = getCropCoords();
-          };
-          window.addEventListener('resize', handleResize);
-
-          // Wrap cleanup to remove resize listener
-          const originalCleanup = cleanup;
-          cleanup = (discard = false) => {
-            window.removeEventListener('resize', handleResize);
-            originalCleanup(discard);
-          };
+          formatBadge.textContent = 'WebM';
+          formatBadge.style.background = '#3b82f6';
 
           const drawFrame = () => {
             if (!isRecording) return;
-            ctx.drawImage(videoEl, cachedCoords.x, cachedCoords.y, cachedCoords.w, cachedCoords.h, 0, 0, width, height);
+            // 每次绘制时动态获取最新坐标以应对高帧率下的分辨率变动或延迟稳定
+            const currentCoords = getCropCoords();
+            ctx.drawImage(videoEl, currentCoords.x, currentCoords.y, currentCoords.w, currentCoords.h, 0, 0, width, height);
             animationId = requestAnimationFrame(drawFrame);
           };
           drawFrame();
@@ -6580,6 +6457,268 @@
           };
 
           recorder.start(100);
+        };
+
+        if (runWebCodecs) {
+          stopBtn.disabled = false;
+
+          // Function to get H.264 level string based on pixel count
+          const getRequiredAvcLevel = (w, h) => {
+            const pixels = w * h;
+            if (pixels <= 921600) return '1f'; // Level 3.1
+            if (pixels <= 2097152) return '29'; // Level 4.1
+            return '33'; // Level 5.1
+          };
+
+          const adjustAvcLevel = (codecStr, w, h) => {
+            if (codecStr.startsWith('avc1.')) {
+              const req = getRequiredAvcLevel(w, h);
+              const cur = codecStr.slice(-2);
+              if (parseInt(req, 16) > parseInt(cur, 16)) {
+                return codecStr.slice(0, -2) + req;
+              }
+            }
+            return codecStr;
+          };
+
+          // 确定 finalCodec
+          let finalCodec = codecProfile;
+          if (finalCodec.startsWith('avc1.')) {
+            finalCodec = adjustAvcLevel(finalCodec, width, height);
+          }
+
+          const codecConfig = {
+            codec: finalCodec,
+            width: width,
+            height: height,
+            bitrate: bitrate,
+            framerate: frameRate
+          };
+
+          try {
+            try {
+              const support = await VideoEncoder.isConfigSupported(codecConfig);
+              if (!support.supported) {
+                console.warn(`Codec ${finalCodec} not supported, trying fallback codecs...`);
+                const fallbacks = [
+                  'avc1.640033', // H.264 High 5.1
+                  'avc1.420033', // H.264 Baseline 5.1
+                  'avc1.42001f'  // H.264 Baseline 3.1
+                ];
+                let foundFallback = false;
+                for (let cand of fallbacks) {
+                  cand = adjustAvcLevel(cand, width, height);
+                  const candConfig = { ...codecConfig, codec: cand };
+                  try {
+                    const candSupport = await VideoEncoder.isConfigSupported(candConfig);
+                    if (candSupport.supported) {
+                      console.warn(`Falling back to supported codec: ${cand}`);
+                      finalCodec = cand;
+                      foundFallback = true;
+                      break;
+                    }
+                  } catch (_) {}
+                }
+                if (!foundFallback) {
+                  console.warn(`No fallback candidates supported, defaulting to avc1.640033`);
+                  finalCodec = 'avc1.640033';
+                }
+              }
+            } catch (e) {
+              console.warn('Could not check codec support:', e);
+              finalCodec = adjustAvcLevel('avc1.640033', width, height);
+            }
+
+            // 1. Initialize MP4 Muxer on main thread
+            const isAV1 = finalCodec.startsWith('av01');
+            const isHEVC = finalCodec.startsWith('hvc1');
+            let muxerCodec = 'avc';
+            if (isAV1) {
+              muxerCodec = 'av1';
+            } else if (isHEVC) {
+              muxerCodec = 'hevc';
+            }
+
+            mainMuxer = new Mp4Muxer.Muxer({
+              target: new Mp4Muxer.ArrayBufferTarget(),
+              video: {
+                codec: muxerCodec,
+                width: width,
+                height: height
+              },
+              firstTimestampBehavior: 'offset',
+              fastStart: 'in-memory'
+            });
+
+            // 2. Initialize VideoEncoder on main thread
+            mainEncoder = new VideoEncoder({
+              output: (chunk, meta) => {
+                if (mainMuxer) {
+                  mainMuxer.addVideoChunk(chunk, meta);
+                }
+              },
+              error: (e) => {
+                console.error('VideoEncoder on main thread error:', e);
+                alert(t('screen_record_error', '录屏失败') + ': ' + (e.message || String(e)));
+                stopRecording();
+              }
+            });
+
+            const encoderConfig = {
+              codec: finalCodec,
+              width: width,
+              height: height,
+              bitrate: bitrate,
+              framerate: frameRate,
+              latencyMode: 'quality',
+              hardwareAcceleration: 'no-preference'
+            };
+            if (finalCodec.startsWith('avc1')) {
+              encoderConfig.avc = { format: 'avc' };
+            }
+            mainEncoder.configure(encoderConfig);
+
+            const videoTrack = displayStream.getVideoTracks()[0];
+            const processor = new MediaStreamTrackProcessor({ track: videoTrack });
+            mainReader = processor.readable.getReader();
+
+            // 停止录制函数
+            const stopRecording = async () => {
+              if (!isRecording) return;
+              isRecording = false;
+
+              stopBtn.textContent = t('processing', '处理中...');
+              stopBtn.disabled = true;
+
+              try {
+                if (mainReader) {
+                  try {
+                    await mainReader.cancel();
+                  } catch (_) {}
+                }
+                if (mainEncoder) {
+                  try {
+                    await mainEncoder.flush();
+                  } catch (_) {}
+                }
+                if (mainMuxer) {
+                  try {
+                    mainMuxer.finalize();
+                    const { buffer } = mainMuxer.target;
+                    const blob = new Blob([buffer], { type: 'video/mp4' });
+                    cleanup();
+                    this._showRecordingResult(blob, 'video/mp4');
+                  } catch (e) {
+                    console.error('Muxer finalization failed:', e);
+                    cleanup();
+                    alert(t('screen_record_error', '录屏失败') + ': ' + e.message);
+                  }
+                }
+              } catch (err) {
+                console.error('Stop recording error:', err);
+                cleanup();
+                alert(t('screen_record_error', '录屏失败') + ': ' + (err.message || String(err)));
+              }
+            };
+
+            stopBtn.onclick = stopRecording;
+
+            // ESC 停止
+            const onKeyDown = (e) => {
+              if (e.key === 'Escape') {
+                stopRecording();
+                document.removeEventListener('keydown', onKeyDown);
+                document.removeEventListener('contextmenu', onContextMenu);
+              }
+            };
+            document.addEventListener('keydown', onKeyDown);
+
+            // 右键停止
+            const onContextMenu = (e) => {
+              e.preventDefault();
+              stopRecording();
+              document.removeEventListener('keydown', onKeyDown);
+              document.removeEventListener('contextmenu', onContextMenu);
+            };
+            document.addEventListener('contextmenu', onContextMenu);
+
+            // 监听流结束
+            videoTrack.addEventListener('ended', stopRecording);
+
+            // Override original cleanup to clean up main thread references
+            const originalCleanup = cleanup;
+            cleanup = (discard = false) => {
+              isRecording = false;
+              mainEncoder = null;
+              mainMuxer = null;
+              mainReader = null;
+              originalCleanup(discard);
+            };
+
+            // 启动帧读取与编码循环
+            let frameCount = 0;
+            (async () => {
+              try {
+                while (isRecording) {
+                  const { done, value: frame } = await mainReader.read();
+                  if (done) {
+                    break;
+                  }
+                  if (!isRecording) {
+                    if (frame) frame.close();
+                    break;
+                  }
+
+                  let croppedFrame;
+                  try {
+                    const frameW = frame.codedWidth || frame.displayWidth;
+                    const frameH = frame.codedHeight || frame.displayHeight;
+
+                    // 根据当前 VideoFrame 真实物理分辨率，动态计算该帧的最优裁剪坐标
+                    const frameCoords = calculateCropCoords(frameW, frameH);
+
+                    croppedFrame = new VideoFrame(frame, {
+                      visibleRect: {
+                        x: frameCoords.x,
+                        y: frameCoords.y,
+                        width: frameCoords.w,
+                        height: frameCoords.h
+                      }
+                    });
+                  } catch (err) {
+                    console.error('VideoFrame cropping error:', err);
+                    if (frame) frame.close();
+                    throw err;
+                  }
+                  frame.close(); // 关闭输入帧
+
+                  if (mainEncoder) {
+                    const keyFrame = frameCount % (frameRate * 2) === 0; // 每两秒一个关键帧
+                    mainEncoder.encode(croppedFrame, { keyFrame });
+                  }
+                  croppedFrame.close(); // 关闭裁剪帧
+
+                  frameCount++;
+                }
+
+                if (isRecording) {
+                  await stopRecording();
+                }
+              } catch (loopErr) {
+                console.error('Main thread recording loop error:', loopErr);
+                cleanup();
+                alert(t('screen_record_error', '录屏失败') + ': ' + (loopErr.message || String(loopErr)));
+              }
+            })();
+
+          } catch (err) {
+            console.error('Failed to run WebCodecs on main thread, falling back to MediaRecorder:', err);
+            runWebCodecs = false;
+            cleanup(true);
+            runMediaRecorderFallback();
+          }
+        } else {
+          runMediaRecorderFallback();
         }
 
       } catch (err) {
