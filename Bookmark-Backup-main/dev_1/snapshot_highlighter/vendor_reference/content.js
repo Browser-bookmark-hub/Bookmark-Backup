@@ -7358,13 +7358,14 @@ if (window.customHighlighterLoaded) {
 
         // Apply explicit text color override from batch selection if any
         let variant = this.currentBatchColorVariant;
-        // bug2：若未同步文字变体，则根据页面主题自动决定（深色页→white，浅色页→black）
-        if (!(variant === 'white' || variant === 'black')) {
-          try { variant = this.detectPageTheme() ? 'white' : 'black'; } catch (_) { variant = undefined; }
-        }
         if (variant === 'white' || variant === 'black') {
           parts.forEach(el => {
             try { el.setAttribute('data-text-color-override', variant); } catch (_) { }
+            this.applyHighlightStyles(el, effectiveColor);
+          });
+        } else {
+          parts.forEach(el => {
+            try { el.removeAttribute('data-text-color-override'); } catch (_) { }
             this.applyHighlightStyles(el, effectiveColor);
           });
         }
@@ -7562,28 +7563,75 @@ if (window.customHighlighterLoaded) {
       let textColor = '#000000';
       let baseLuminance = null;
       try {
+        baseLuminance = this.calculateLuminance(baseBackground);
+      } catch (_) {
+        baseLuminance = 0.5;
+      }
+
+      try {
         const override = element.getAttribute('data-text-color-override');
         if (override === 'white' || override === 'black') {
           textColor = override === 'white' ? '#ffffff' : '#000000';
         } else {
-          // Prefer contrast vs highlight background for readability (more reliable than page theme).
-          baseLuminance = this.calculateLuminance(baseBackground);
-          const blackContrast = this.calculateContrast(baseLuminance, 0);
-          const whiteContrast = this.calculateContrast(baseLuminance, 1);
-          textColor = whiteContrast >= blackContrast ? '#ffffff' : '#000000';
+          // Dynamic automatic text color decision:
+          let resolved = false;
+
+          // Priority 1: Original text color (before highlight was applied)
+          const originalColor = element.getAttribute('data-original-color');
+          if (originalColor && originalColor !== 'inherit' && originalColor !== 'initial' && originalColor !== 'unset') {
+            try {
+              const origLum = this.calculateLuminance(originalColor);
+              const origContrast = this.calculateContrast(baseLuminance, origLum);
+              if (origContrast >= 3.0) {
+                textColor = originalColor;
+                resolved = true;
+              }
+            } catch (_) {}
+          }
+
+          // Priority 2: Context text color (surrounding parent text color, excluding highlights)
+          if (!resolved) {
+            let parentColor = '';
+            try {
+              if (element.parentElement) {
+                let parent = element.parentElement;
+                while (parent && parent.classList && parent.classList.contains('custom-highlight')) {
+                  parent = parent.parentElement;
+                }
+                if (parent) {
+                  parentColor = window.getComputedStyle(parent).color;
+                }
+              }
+            } catch (_) {}
+
+            if (parentColor && parentColor !== 'inherit' && parentColor !== 'initial' && parentColor !== 'unset') {
+              try {
+                const parentLum = this.calculateLuminance(parentColor);
+                const parentContrast = this.calculateContrast(baseLuminance, parentLum);
+                if (parentContrast >= 3.0) {
+                  textColor = parentColor;
+                  resolved = true;
+                }
+              } catch (_) {}
+            }
+          }
+
+          // Priority 3: Fallback (choose white or black based on best contrast against the highlight color)
+          if (!resolved) {
+            const blackContrast = this.calculateContrast(baseLuminance, 0); // 0 luminance for black
+            const whiteContrast = this.calculateContrast(baseLuminance, 1); // 1 luminance for white
+            textColor = whiteContrast >= blackContrast ? '#ffffff' : '#000000';
+          }
         }
-      } catch (_) {
+      } catch (err) {
+        // Ultimate fallback
         try {
-          baseLuminance = this.calculateLuminance(baseBackground);
           const blackContrast = this.calculateContrast(baseLuminance, 0);
           const whiteContrast = this.calculateContrast(baseLuminance, 1);
           textColor = whiteContrast >= blackContrast ? '#ffffff' : '#000000';
-        } catch (__) {
+        } catch (_) {
           textColor = '#000000';
         }
-      }
-      if (baseLuminance === null) {
-        try { baseLuminance = this.calculateLuminance(baseBackground); } catch (_) { baseLuminance = null; }
       }
 
       // Apply base styles (注意：不强制添加padding，避免变行问题)

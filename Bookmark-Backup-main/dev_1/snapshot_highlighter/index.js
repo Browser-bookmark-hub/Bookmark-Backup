@@ -5925,25 +5925,71 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         element.dataset.colorKey = this.getColorNameKeyForValue(color, textColorOverride || '', element.dataset.colorName || '');
       }
       if (textColorOverride) element.dataset.textColorOverride = textColorOverride;
-      const variantColor = textColorOverride === 'white' ? '#ffffff' : (textColorOverride === 'black' ? '#0f172a' : '');
-      
-      // Look at parent context color dynamically
-      let parentColor = '';
-      try {
-        if (element.parentElement) {
-          // If parent is a highlight itself, look at its parent to find the true context color
-          let parent = element.parentElement;
-          while (parent && parent.classList && parent.classList.contains('custom-highlight')) {
-            parent = parent.parentElement;
-          }
-          if (parent) {
-            parentColor = window.getComputedStyle(parent).color;
+      let textColor = '';
+      if (textColorOverride === 'white') {
+        textColor = '#ffffff';
+      } else if (textColorOverride === 'black') {
+        textColor = '#0f172a';
+      } else {
+        // Dynamic automatic text color:
+        let resolved = false;
+        let bgLum = 0.5;
+        try {
+          bgLum = luminance(color);
+        } catch (_) {}
+
+        // Priority 1: Original text color of the highlighted text itself (no highlight)
+        const originalColor = safeString(element.dataset.originalColor || '');
+        if (originalColor && originalColor !== 'inherit' && originalColor !== 'initial' && originalColor !== 'unset') {
+          try {
+            const origLum = luminance(originalColor);
+            const ratio = (Math.max(bgLum, origLum) + 0.05) / (Math.min(bgLum, origLum) + 0.05);
+            if (ratio >= 3.0) {
+              textColor = originalColor;
+              resolved = true;
+            }
+          } catch (_) {}
+        }
+
+        // Priority 2: Context text color (surrounding text color)
+        if (!resolved) {
+          let parentColor = '';
+          try {
+            if (element.parentElement) {
+              let parent = element.parentElement;
+              while (parent && parent.classList && parent.classList.contains('custom-highlight')) {
+                parent = parent.parentElement;
+              }
+              if (parent) {
+                parentColor = window.getComputedStyle(parent).color;
+              }
+            }
+          } catch (_) {}
+
+          if (parentColor && parentColor !== 'inherit' && parentColor !== 'initial' && parentColor !== 'unset') {
+            try {
+              const parentLum = luminance(parentColor);
+              const ratio = (Math.max(bgLum, parentLum) + 0.05) / (Math.min(bgLum, parentLum) + 0.05);
+              if (ratio >= 3.0) {
+                textColor = parentColor;
+                resolved = true;
+              }
+            } catch (_) {}
           }
         }
-      } catch (_) {}
-      
-      const originalTextColor = parentColor || safeString(element.dataset.originalColor || '');
-      const textColor = variantColor || contrastText(color, this.darkModeEnabled ? '#ffffff' : '#0f172a', originalTextColor);
+
+        // Priority 3: Fallback based on best contrast against the highlight color
+        if (!resolved) {
+          const darkColor = '#0f172a';
+          let darkLum = 0.01;
+          try {
+            darkLum = luminance(darkColor);
+          } catch (_) {}
+          const blackContrast = (Math.max(bgLum, darkLum) + 0.05) / (Math.min(bgLum, darkLum) + 0.05);
+          const whiteContrast = (Math.max(bgLum, 1.0) + 0.05) / (Math.min(bgLum, 1.0) + 0.05);
+          textColor = whiteContrast >= blackContrast ? '#ffffff' : '#0f172a';
+        }
+      }
       const renderColor = this.getRenderableColor(color, element);
       const rgba = /^#[0-9a-f]{6}$/i.test(renderColor) ? rgbaFromHex(renderColor, 0.32) : renderColor;
       const isRainbow = this.isRainbowColor(color);
