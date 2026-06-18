@@ -195,6 +195,7 @@
       this._colorPickerViewMode = 'grid';
       this._toolPickerViewMode = 'grid';
       this._mdMode = 'visual';
+      this._mdPureMode = true;
       this._collapsedToolGroups = new Set();
       this.toolbarUi = this.normalizeToolbarUi();
       this.toolbar = null;
@@ -313,7 +314,7 @@
           clearAllOption: '清除全部',
           clearAllDesc: '高亮、批注和编辑',
           clearVisualDesc: '高亮和批注',
-          clearEditDesc: '页面编辑内容',
+          clearEditDesc: '页面编辑内容 (会刷新网页)',
           clearConfirmTitle: '确认清除',
           batchConfirmTitle: '确认删除',
           confirmDeleteItems: '删除 {count} 个选中项目？',
@@ -347,6 +348,9 @@
           viewList: '列表视图',
           visualMode: '视觉模式',
           editMode: '编辑模式',
+          mdFormatHtml: 'HTML (带颜色)',
+          mdFormatPure: 'MD',
+          mdPureColorless: '正常颜色',
           toolGroupBoxes: '框线',
           toolGroupBrackets: '括号',
           toolGroupPills: '胶囊',
@@ -372,7 +376,7 @@
           tool_presentation: '演示笔',
           tool_presentation_desc: '用于演示或指示，支持形状识别与自动消失',
           presentationNotice: '给演示用的，录制视频的时候可以指示。',
-          markdownNotice: '在「MD正文」中，只有这里的「MD格式」工具会生效。',
+          markdownNotice: '编辑模式可以删除、增加里边的文字，选择工具后将对选中文本应用格式，执行后会自动切回输入状态。',
           presentationLineStyle: '线条样式',
           presentationLineSolid: '实线',
           presentationLineDashed: '虚线',
@@ -423,7 +427,7 @@
           clearAllOption: 'Clear All',
           clearAllDesc: 'Highlights, annotations, and page edits',
           clearVisualDesc: 'Highlights and annotations',
-          clearEditDesc: 'Page edits',
+          clearEditDesc: 'Page edits (will refresh page)',
           clearConfirmTitle: 'Confirm Clear',
           batchConfirmTitle: 'Confirm Delete',
           confirmDeleteItems: 'Delete {count} selected items?',
@@ -457,6 +461,9 @@
           viewList: 'List View',
           visualMode: 'Visual Mode',
           editMode: 'Edit Mode',
+          mdFormatHtml: 'HTML (Colored)',
+          mdFormatPure: 'MD',
+          mdPureColorless: 'Normal',
           toolGroupBoxes: 'Boxes',
           toolGroupBrackets: 'Brackets',
           toolGroupPills: 'Pills',
@@ -482,7 +489,7 @@
           tool_presentation: 'Presentation Pen',
           tool_presentation_desc: 'Used for presentation or indicators, supports shape recognition and auto-disappearance',
           presentationNotice: 'For presentations. Can be used as an indicator when recording video.',
-          markdownNotice: 'In "MD Content", only the "MD Format" tools will take effect.',
+          markdownNotice: 'In edit mode, you can type, add, or delete text. Selecting a format tool applies it once, then automatically switches back to typing.',
           presentationLineStyle: 'Line Style',
           presentationLineSolid: 'Solid',
           presentationLineDashed: 'Dashed',
@@ -758,6 +765,7 @@
               lang: normalizeLang(this.lang),
               visible: true,
               namespace: this.storageNamespace(url),
+              config: this.config || {},
               updatedAt: now()
             }
           }, () => {
@@ -822,10 +830,26 @@
       this.currentColorVariant = toolbar.colorVariant || 'auto';
       this.currentColorKey = toolbar.colorNameKey || this.getColorNameKeyForValue(this.currentColor, this.currentColorVariant, toolbar.colorName || '');
       this.currentColorName = this.getColorNameForValue(this.currentColor, this.currentColorVariant, toolbar.colorName || '', this.currentColorKey);
-      if (toolbar.tool) this.currentTool = toolbar.tool;
+      if (toolbar.tool) {
+        this.currentTool = toolbar.tool;
+        if (this.isEditTool(this.currentTool)) {
+          this.currentTool = 'md-mark';
+          this._mdMode = 'visual';
+        }
+      }
       this.currentToolName = this.getToolNameForId(this.currentTool, toolbar.toolName || '');
       this._colorPickerViewMode = toolbar.colorPickerViewMode === 'list' ? 'list' : 'grid';
       this._toolPickerViewMode = toolbar.toolPickerViewMode === 'list' ? 'list' : 'grid';
+      this._mdPureMode = toolbar.mdPureMode !== undefined ? !!toolbar.mdPureMode : true;
+      const isUnderlineOrStrikethroughActive = ['md-underline', 'md-strikethrough', 'md-edit-strikethrough'].includes(this.currentTool);
+      const isSupOrSubActive = ['md-sup', 'md-sub', 'md-edit-sup', 'md-edit-sub'].includes(this.currentTool);
+      if (this._mdPureMode && isSupOrSubActive) {
+        this.currentTool = this.isEditTool(this.currentTool) ? 'md-edit-disable-highlight' : 'md-mark';
+        this.currentToolName = this.getToolNameForId(this.currentTool);
+      } else if (!this._mdPureMode && isUnderlineOrStrikethroughActive) {
+        this.currentTool = this.isEditTool(this.currentTool) ? 'md-edit-disable-highlight' : 'md-mark';
+        this.currentToolName = this.getToolNameForId(this.currentTool);
+      }
       this.presentationPenStyle = toolbar.presentationPenStyle || 'dashed';
       let loadedDelay = toolbar.presentationPenDisappearDelay !== undefined ? Number(toolbar.presentationPenDisappearDelay) : 200;
       let immediately = toolbar.presentationPenDisappearImmediately !== undefined 
@@ -872,6 +896,7 @@
       this._colorPickerViewMode = 'grid';
       this._toolPickerViewMode = 'grid';
       this._mdMode = 'visual';
+      this._mdPureMode = true;
       this.toolbarUi = this.normalizeToolbarUi();
       this._editOriginalByXPath.clear();
     }
@@ -891,6 +916,7 @@
           rgbPickerLastColor: this._rgbPickerLastColor || '',
           colorPickerViewMode: this._colorPickerViewMode === 'list' ? 'list' : 'grid',
           toolPickerViewMode: this._toolPickerViewMode === 'list' ? 'list' : 'grid',
+          mdPureMode: !!this._mdPureMode,
           presentationPenStyle: this.presentationPenStyle || 'dashed',
           presentationPenDisappearDelay: this.presentationPenDisappearDelay !== undefined ? this.presentationPenDisappearDelay : 200,
           presentationPenDisappearImmediately: this.presentationPenDisappearImmediately !== undefined ? this.presentationPenDisappearImmediately : false,
@@ -913,10 +939,10 @@
 
     requestSave(immediate = false) {
       if (immediate) {
-        this.saveState().catch(() => { });
-        return;
+        return this.saveState().catch(() => { });
       }
       this.saveSoon();
+      return Promise.resolve();
     }
 
     normalizeHighlightNote(value) {
@@ -2262,7 +2288,15 @@
         const colorDot = indicator.querySelector('.indicator-color');
         const toolIcon = indicator.querySelector('.indicator-tool');
         if (colorDot) {
-          this.applyColorPreview(colorDot, this.currentColor, this.currentColorKey || this.currentColor);
+          if (this._mdPureMode && this.currentTool && this.currentTool.startsWith('md-')) {
+            if (this.currentTool === 'md-mark' || this.currentTool === 'md-edit-mark') {
+              this.applyColorPreview(colorDot, '#FFD54F', 'pure-yellow');
+            } else {
+              this.applyColorPreview(colorDot, 'transparent', 'pure-transparent');
+            }
+          } else {
+            this.applyColorPreview(colorDot, this.currentColor, this.currentColorKey || this.currentColor);
+          }
         }
         if (toolIcon) {
           const tool = this.findTool(this.currentTool);
@@ -2308,13 +2342,18 @@
       const entry = this.ensureHighlightEntryFromElement(highlightEl) || {};
       const color = entry.color || highlightEl.dataset.color || this.currentColor;
       const colorVariant = entry.textColorOverride || highlightEl.dataset.textColorOverride || '';
-      const colorName = this.getColorNameForValue(color, colorVariant, entry.colorName || highlightEl.dataset.colorName || '', entry.colorNameKey || highlightEl.dataset.colorKey || '');
       const toolId = entry.toolStyle || highlightEl.dataset.toolStyle || 'highlight';
+      const isMdPure = (highlightEl.dataset.mdPure !== undefined ? highlightEl.dataset.mdPure === 'true' : (entry.mdPureMode !== undefined ? !!entry.mdPureMode : !!this._mdPureMode)) && toolId.startsWith('md-');
+      let colorName = this.getColorNameForValue(color, colorVariant, entry.colorName || highlightEl.dataset.colorName || '', entry.colorNameKey || highlightEl.dataset.colorKey || '');
+      if (isMdPure) {
+        colorName = (toolId === 'md-mark' || toolId === 'md-edit-mark') ? this.t('categoryYellow') : this.t('mdPureColorless');
+      }
       const toolName = this.getToolNameForId(toolId);
       const noteText = this.normalizeHighlightNote(entry.note != null ? entry.note : highlightEl.dataset.highlightNote || '');
       const noteInputId = `dev1-highlight-note-${hashUrl(highlightId)}`;
       const noteLabel = this.getHighlightNoteLabel(entry, highlightEl);
-      const accent = this.getUiAccent(color, highlightEl);
+      const actionPanelColor = isMdPure ? (this.darkModeEnabled ? '#94a3b8' : '#475569') : color;
+      const accent = this.getUiAccent(actionPanelColor, highlightEl);
       const panel = this.createPanel('highlight-action-panel', highlightEl);
       this.applyPickerTheme(panel);
       panel.classList.add('dev1-highlight-action-tooltip');
@@ -2341,7 +2380,13 @@
         </div>
       `;
       const swatch = panel.querySelector('.dev1-highlight-action-swatch');
-      if (swatch) this.applyColorPreview(swatch, color, entry.colorNameKey || highlightEl.dataset.colorKey || color);
+      if (swatch) {
+        let swatchColor = color;
+        if (isMdPure) {
+          swatchColor = (toolId === 'md-mark' || toolId === 'md-edit-mark') ? '#FFD54F' : 'transparent';
+        }
+        this.applyColorPreview(swatch, swatchColor, entry.colorNameKey || highlightEl.dataset.colorKey || color);
+      }
       const noteLabelEl = panel.querySelector('.dev1-highlight-note-label');
       const refreshNoteLabel = () => {
         if (noteLabelEl) noteLabelEl.textContent = this.getHighlightNoteLabel(this.highlights.get(highlightId) || entry, highlightEl);
@@ -3802,7 +3847,7 @@
             ? preferredCategoryId
             : (categories[0] && categories[0].id));
       categories.forEach((category, index) => {
-        if (category.id === 'markdown') {
+        if (category.id === 'markdown' || category.id === 'presentation') {
           const divider = document.createElement('div');
           divider.className = 'dev1-picker-divider';
           sidebar.appendChild(divider);
@@ -3813,30 +3858,43 @@
         btn.dataset.categoryId = category.id;
         btn.innerHTML = `<span class="dev1-category-icon">${this.escapeHtml(category.icon || '')}</span><span>${this.escapeHtml(category.title)}</span>`;
         btn.addEventListener('click', () => {
-          sidebar.querySelectorAll('.category-btn').forEach(el => this.stylePickerCategoryButton(el, false, accentColor));
-          this.stylePickerCategoryButton(btn, true, accentColor);
+          const catAccent = (category.id === 'markdown' && this._mdPureMode) ? (this.darkModeEnabled ? '#94a3b8' : '#475569') : accentColor;
+          this.applyPickerColorFrame(panel, catAccent);
+          sidebar.querySelectorAll('.category-btn').forEach(el => {
+            const elCatId = el.dataset.categoryId;
+            const elAccent = (elCatId === 'markdown' && this._mdPureMode) ? (this.darkModeEnabled ? '#94a3b8' : '#475569') : accentColor;
+            this.stylePickerCategoryButton(el, false, elAccent);
+          });
+          this.stylePickerCategoryButton(btn, true, catAccent);
           this._lastSelectedToolCategoryId = category.id;
           if (category.id === 'markdown' && (this._mdEditModeActive || this.isEditTool(this.currentTool))) this._mdMode = 'edit';
           renderCategory(category);
         });
         btn.addEventListener('mouseenter', () => {
           if (!btn.classList.contains('active')) {
-            const accent = this.getUiAccent(accentColor, btn);
+            const catAccent = (category.id === 'markdown' && this._mdPureMode) ? (this.darkModeEnabled ? '#94a3b8' : '#475569') : accentColor;
+            const accent = this.getUiAccent(catAccent, btn);
             btn.style.setProperty('background', accent.soft, 'important');
             btn.style.setProperty('color', this.darkModeEnabled ? '#fff' : accent.visibleColor, 'important');
             btn.style.setProperty('border-left', `3px solid ${accent.visibleColor}`, 'important');
           }
         });
         btn.addEventListener('mouseleave', () => {
-          if (!btn.classList.contains('active')) this.stylePickerCategoryButton(btn, false);
+          if (!btn.classList.contains('active')) {
+            const catAccent = (category.id === 'markdown' && this._mdPureMode) ? (this.darkModeEnabled ? '#94a3b8' : '#475569') : accentColor;
+            this.stylePickerCategoryButton(btn, false, catAccent);
+          }
         });
         sidebar.appendChild(btn);
         if (category.id === activeId) {
-          this.stylePickerCategoryButton(btn, true, accentColor);
+          const catAccent = (category.id === 'markdown' && this._mdPureMode) ? (this.darkModeEnabled ? '#94a3b8' : '#475569') : accentColor;
+          this.applyPickerColorFrame(panel, catAccent);
+          this.stylePickerCategoryButton(btn, true, catAccent);
           if (category.id === 'markdown' && (this._mdEditModeActive || this.isEditTool(this.currentTool))) this._mdMode = 'edit';
           renderCategory(category);
         } else {
-          this.stylePickerCategoryButton(btn, false, accentColor);
+          const catAccent = (category.id === 'markdown' && this._mdPureMode) ? (this.darkModeEnabled ? '#94a3b8' : '#475569') : accentColor;
+          this.stylePickerCategoryButton(btn, false, catAccent);
         }
       });
       document.body.appendChild(panel);
@@ -3940,14 +3998,37 @@
       if (category.id === 'markdown') {
         const modeBar = document.createElement('div');
         modeBar.className = 'dev1-md-mode-bar';
+        
+        const leftGroup = document.createElement('div');
+        leftGroup.className = 'dev1-md-mode-left';
+        leftGroup.style.display = 'flex';
+        leftGroup.style.gap = '6px';
+        
         const visual = document.createElement('button');
         visual.type = 'button';
         visual.textContent = this.t('visualMode');
         const edit = document.createElement('button');
         edit.type = 'button';
         edit.textContent = this.t('editMode');
-        modeBar.appendChild(visual);
-        modeBar.appendChild(edit);
+        leftGroup.appendChild(visual);
+        leftGroup.appendChild(edit);
+        modeBar.appendChild(leftGroup);
+
+        const rightGroup = document.createElement('div');
+        rightGroup.className = 'dev1-md-mode-right';
+        rightGroup.style.display = 'flex';
+        rightGroup.style.gap = '6px';
+
+        const htmlFormat = document.createElement('button');
+        htmlFormat.type = 'button';
+        htmlFormat.textContent = this.t('mdFormatHtml');
+        const pureFormat = document.createElement('button');
+        pureFormat.type = 'button';
+        pureFormat.textContent = this.t('mdFormatPure');
+        rightGroup.appendChild(htmlFormat);
+        rightGroup.appendChild(pureFormat);
+        modeBar.appendChild(rightGroup);
+        
         content.appendChild(modeBar);
         const notice = document.createElement('div');
         notice.className = 'dev1-dynamic-mhtml-notice';
@@ -3959,15 +4040,27 @@
         const renderMarkdown = () => {
           visual.classList.toggle('active', this._mdMode !== 'edit');
           edit.classList.toggle('active', this._mdMode === 'edit');
+          htmlFormat.classList.toggle('active', !this._mdPureMode);
+          pureFormat.classList.toggle('active', !!this._mdPureMode);
           let tools = (category.tools || []).filter(tool => {
             const isEdit = this.isEditTool(tool.id);
-            return this._mdMode === 'edit' ? isEdit : (!isEdit && tool.id !== 'md-edit-disable-highlight');
+            const matchesMode = this._mdMode === 'edit' ? isEdit : (!isEdit && tool.id !== 'md-edit-disable-highlight');
+            if (!matchesMode) return false;
+
+            const isUnderlineOrStrikethrough = ['md-underline', 'md-strikethrough', 'md-edit-strikethrough'].includes(tool.id);
+            const isSupOrSub = ['md-sup', 'md-sub', 'md-edit-sup', 'md-edit-sub'].includes(tool.id);
+            if (this._mdPureMode) {
+              if (isSupOrSub) return false;
+            } else {
+              if (isUnderlineOrStrikethrough) return false;
+            }
+            return true;
           });
           if (this._mdMode === 'edit') {
             const order = [
               'md-edit-disable-highlight',
               'md-edit-bold', 'md-edit-italic', 'md-edit-bold-italic', 'md-edit-strikethrough',
-              'md-edit-mark', 'md-edit-code-inline', 'md-edit-sup', 'md-edit-sub',
+              'md-edit-mark', 'md-edit-code-inline', 'md-edit-sup', 'md-edit-sub', 'md-edit-footnote',
               'md-edit-link', 'md-edit-image', 'md-edit-table',
               'md-edit-h1', 'md-edit-h2', 'md-edit-h3', 'md-edit-ul', 'md-edit-ol',
               'md-edit-task', 'md-edit-quote', 'md-edit-code', 'md-edit-hr'
@@ -3995,6 +4088,50 @@
         edit.addEventListener('click', () => {
           this._mdMode = 'edit';
           if (!pickerContext) this.enterMdEditMode();
+          renderMarkdown();
+        });
+        htmlFormat.addEventListener('click', () => {
+          this._mdPureMode = false;
+          const isUnderlineOrStrikethroughActive = ['md-underline', 'md-strikethrough', 'md-edit-strikethrough'].includes(this.currentTool);
+          if (isUnderlineOrStrikethroughActive) {
+            this.currentTool = this._mdMode === 'edit' ? 'md-edit-disable-highlight' : 'md-mark';
+            this.currentToolName = this.getToolNameForId(this.currentTool);
+          }
+          this.updateCursorStyle();
+          this.updatePermanentToolbarIndicator();
+          this.requestSave(true);
+          const pickerPanel = content.closest && content.closest('.highlight-tool-picker');
+          if (pickerPanel) {
+            const accentColor = this.getPickerContextAccentColor(pickerContext);
+            const catAccent = this._mdPureMode ? (this.darkModeEnabled ? '#94a3b8' : '#475569') : accentColor;
+            this.applyPickerColorFrame(pickerPanel, catAccent);
+            const activeTab = pickerPanel.querySelector('.category-btn-markdown');
+            if (activeTab) {
+              this.stylePickerCategoryButton(activeTab, true, catAccent);
+            }
+          }
+          renderMarkdown();
+        });
+        pureFormat.addEventListener('click', () => {
+          this._mdPureMode = true;
+          const isSupOrSubActive = ['md-sup', 'md-sub', 'md-edit-sup', 'md-edit-sub'].includes(this.currentTool);
+          if (isSupOrSubActive) {
+            this.currentTool = this._mdMode === 'edit' ? 'md-edit-disable-highlight' : 'md-mark';
+            this.currentToolName = this.getToolNameForId(this.currentTool);
+          }
+          this.updateCursorStyle();
+          this.updatePermanentToolbarIndicator();
+          this.requestSave(true);
+          const pickerPanel = content.closest && content.closest('.highlight-tool-picker');
+          if (pickerPanel) {
+            const accentColor = this.getPickerContextAccentColor(pickerContext);
+            const catAccent = this._mdPureMode ? (this.darkModeEnabled ? '#94a3b8' : '#475569') : accentColor;
+            this.applyPickerColorFrame(pickerPanel, catAccent);
+            const activeTab = pickerPanel.querySelector('.category-btn-markdown');
+            if (activeTab) {
+              this.stylePickerCategoryButton(activeTab, true, catAccent);
+            }
+          }
           renderMarkdown();
         });
         renderMarkdown();
@@ -4075,36 +4212,93 @@
       return btn;
     }
 
+    getToolDescription(tool) {
+      if (!tool) return '';
+      const isPure = !!this._mdPureMode;
+      const id = tool.id;
+      if (id === 'md-bold' || id === 'md-edit-bold') {
+        return isPure ? '**text**' : '**<font color="color">text</font>**';
+      }
+      if (id === 'md-italic' || id === 'md-edit-italic') {
+        return isPure ? '*text*' : '*<font color="color">text</font>*';
+      }
+      if (id === 'md-bold-italic' || id === 'md-edit-bold-italic') {
+        return isPure ? '***text***' : '***<font color="color">text</font>***';
+      }
+      if (id === 'md-mark' || id === 'md-edit-mark') {
+        return isPure ? '==text==' : '<mark style="background:color">text</mark>';
+      }
+      if (id === 'md-underline') {
+        return '<u>text</u>';
+      }
+      if (id === 'md-strikethrough' || id === 'md-edit-strikethrough') {
+        return '~~text~~';
+      }
+      if (id === 'md-sup' || id === 'md-edit-sup') {
+        return isPure ? '^sup^' : '<sup style="color:color">text</sup>';
+      }
+      if (id === 'md-sub' || id === 'md-edit-sub') {
+        return isPure ? '~sub~' : '<sub style="color:color">text</sub>';
+      }
+      if (id === 'md-code-inline' || id === 'md-edit-code-inline') {
+        return isPure ? '`code`' : '<code style="font-family: monospace; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; color: color;">code</code>';
+      }
+      if (id === 'md-footnote' || id === 'md-edit-footnote') {
+        return isPure ? '^[footnote]' : '^[<font color="color">footnote</font>]';
+      }
+      return tool.description || '';
+    }
+
     createToolOption(tool, viewMode = 'grid', pickerContext = null) {
       const btn = document.createElement('div');
       btn.tabIndex = 0;
       btn.setAttribute('role', 'button');
       btn.className = `tool-option ${viewMode === 'list' ? 'list-option' : 'grid-option'}`;
       btn.dataset.toolId = tool.id;
-      const toolAccent = this.applyOptionAccent(btn, this.getPickerContextAccentColor(pickerContext) || '#1976d2');
+      const isMdPure = this._mdPureMode && tool.id.startsWith('md-');
+      const accentColor = isMdPure ? (this.darkModeEnabled ? '#94a3b8' : '#475569') : (this.getPickerContextAccentColor(pickerContext) || '#1976d2');
+      const toolAccent = this.applyOptionAccent(btn, accentColor);
       const icon = document.createElement('span');
       icon.className = 'tool-icon';
       const iconMarkup = this.getToolIconMarkup(tool);
-      if (safeString(iconMarkup).trim().startsWith('<svg')) icon.innerHTML = iconMarkup;
-      else icon.textContent = tool.icon || '•';
+      if (safeString(iconMarkup).trim().startsWith('<svg')) {
+        icon.innerHTML = iconMarkup;
+      } else {
+        icon.textContent = tool.icon || '•';
+        if (tool.icon && tool.icon.length > 2) {
+          icon.style.setProperty('font-size', '13px', 'important');
+        }
+      }
       const name = document.createElement('span');
       name.className = 'tool-name';
       name.textContent = tool.name;
       btn.appendChild(icon);
       btn.appendChild(name);
+      const descText = this.getToolDescription(tool);
       if (viewMode === 'list') {
         const help = document.createElement('span');
         help.className = 'tool-help-btn';
         help.textContent = '?';
         const tooltip = document.createElement('span');
         tooltip.className = 'tool-help-tooltip';
-        tooltip.textContent = tool.description || '';
+        tooltip.textContent = descText;
         help.appendChild(tooltip);
         btn.appendChild(help);
       } else {
         const desc = document.createElement('span');
         desc.className = 'tool-desc';
-        desc.textContent = tool.description || '';
+        desc.textContent = descText;
+        if (!this._mdPureMode && tool.id.startsWith('md-')) {
+          desc.style.setProperty('text-align', 'left', 'important');
+          desc.style.setProperty('white-space', 'normal', 'important');
+          desc.style.setProperty('word-break', 'break-all', 'important');
+          desc.style.setProperty('display', 'block', 'important');
+          desc.style.setProperty('width', '100%', 'important');
+          desc.style.setProperty('box-sizing', 'border-box', 'important');
+          desc.style.setProperty('overflow', 'visible', 'important');
+          desc.style.setProperty('-webkit-line-clamp', 'unset', 'important');
+          desc.style.setProperty('max-height', 'none', 'important');
+        }
         btn.appendChild(desc);
       }
       const activeToolId = pickerContext && pickerContext.toolId ? pickerContext.toolId : this.currentTool;
@@ -4320,6 +4514,8 @@
           tool('md-mark', '高亮', 'Mark', '==', '==text==', '==text=='),
           tool('md-sup', '上标', 'Superscript', 'X²', '^sup^', '^sup^'),
           tool('md-sub', '下标', 'Subscript', 'X₂', '~sub~', '~sub~'),
+          tool('md-code-inline', '行内代码', 'Inline Code', '`', '`code`', '`code`'),
+          tool('md-footnote', '行内脚注', 'Inline Footnote', '^[]', '^[footnote]', '^[footnote]'),
           tool('md-edit-disable-highlight', '暂时屏蔽高亮', 'Disable Highlight', '🚫', '清空工具', 'Temporarily disable selection highlighting', { isAction: true }),
           tool('md-edit-h1', 'H1 标题', 'H1 Heading', 'H1', '# text', '# text'),
           tool('md-edit-h2', 'H2 标题', 'H2 Heading', 'H2', '## text', '## text'),
@@ -4340,10 +4536,8 @@
           tool('md-edit-mark', '高亮', 'Mark', '==', '==text==', '==text=='),
           tool('md-edit-code-inline', '行内代码', 'Inline Code', '`', '`code`', '`code`'),
           tool('md-edit-sup', '上标', 'Superscript', 'X²', '^sup^', '^sup^'),
-          tool('md-edit-sub', '下标', 'Subscript', 'X₂', '~sub~', '~sub~')
-        ] },
-        { id: 'presentation', title: this.t('tool_presentation'), icon: '🖋️', tools: [
-          tool('presentation-pen', '演示笔', 'Presentation Pen', '🖋️', '用于临时画画，可自动识别形状', 'Used for temporary drawing, supports auto shape recognition')
+          tool('md-edit-sub', '下标', 'Subscript', 'X₂', '~sub~', '~sub~'),
+          tool('md-edit-footnote', '行内脚注', 'Inline Footnote', '^[]', '^[footnote]', '^[footnote]')
         ] },
         { id: 'lines', title: this.t('toolsLines'), icon: '📏', tools: [
           tool('underline', '下划线', 'Underline', 'U̲', '直线下划线', 'Straight underline'),
@@ -4389,6 +4583,9 @@
           tool('spotlight', '聚光灯', 'Spotlight', '🔦', '径向聚光背景', 'Radial spotlight'),
           tool('gradient', '渐变', 'Gradient', '🎚️', '渐变背景', 'Gradient background')
         ] },
+        { id: 'presentation', title: this.t('tool_presentation'), icon: '🖋️', tools: [
+          tool('presentation-pen', '演示笔', 'Presentation Pen', '🖋️', '用于临时画画，可自动识别形状', 'Used for temporary drawing, supports auto shape recognition')
+        ] },
         { id: 'dynamic', title: this.t('toolsDynamic'), icon: '🎞️', tools: [
           tool('running-line', '流动线框', 'Running Line', '⬚↻', '动画边框', 'Animated border'),
           tool('neon-blink', '霓虹闪烁', 'Neon Blink', '🌬', '闪烁霓虹', 'Blinking neon'),
@@ -4430,6 +4627,12 @@
     }
 
     getCurrentColorName() {
+      if (this._mdPureMode && this.currentTool && this.currentTool.startsWith('md-')) {
+        if (this.currentTool === 'md-mark' || this.currentTool === 'md-edit-mark') {
+          return this.t('categoryYellow');
+        }
+        return this.t('mdPureColorless');
+      }
       return this.getColorNameForValue(this.currentColor, this.currentColorVariant, this.currentColorName || this.currentColor, this.currentColorKey || '');
     }
 
@@ -4556,14 +4759,23 @@
       title.textContent = this.t('clearConfirmTitle');
       const body = document.createElement('div');
       body.className = 'dev1-confirm-body';
-      body.textContent = `${label} (${count})`;
+      body.style.whiteSpace = 'pre-line';
+      const willRefresh = (mode === 'edit') || (mode === 'all' && this.getEditFragmentCount() > 0);
+      let bodyText = `${label} (${count})`;
+      if (willRefresh) {
+        bodyText += '\n' + (this.lang === 'zh_CN' ? '(会刷新网页以还原文本)' : '(will refresh page to restore text)');
+      }
+      body.textContent = bodyText;
       panel.appendChild(title);
       panel.appendChild(body);
-      panel.appendChild(this.createOperationButton(this.t('confirm'), () => {
+      panel.appendChild(this.createOperationButton(this.t('confirm'), async () => {
         this.clearByMode(mode);
         this.showToast(this.t('cleared'));
-        this.requestSave(true);
+        await this.requestSave(true);
         this.closeTransientPanelByKey('activeOperationsPanel');
+        if (willRefresh) {
+          window.location.reload();
+        }
       }, { danger: true, icon: '✓' }));
       panel.appendChild(this.createOperationButton(this.t('cancel'), () => {
         this.closeTransientPanelByKey('activeOperationsPanel');
@@ -4994,6 +5206,22 @@
         event.stopPropagation();
         this.showMdSource(target);
       };
+      this._mdBeforeInputHandler = (event) => {
+        if (!this._mdEditModeActive) return;
+        try {
+          if (event && event.type === 'keydown') {
+            if (['Control', 'Alt', 'Meta', 'Shift', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+              return;
+            }
+          }
+          const selection = window.getSelection();
+          if (!selection || !selection.rangeCount) return;
+          const block = this.findNearestEditableBlock(selection.getRangeAt(0).commonAncestorContainer);
+          if (block && !this.isUiElement(block)) {
+            this.captureEditBlockBefore(block);
+          }
+        } catch (_) {}
+      };
       this._mdInputHandler = () => {
         clearTimeout(this._mdRenderTimer);
         this._mdRenderTimer = setTimeout(() => {
@@ -5004,6 +5232,8 @@
       document.addEventListener('keydown', this._mdEscapeHandler, true);
       document.addEventListener('click', this._mdClickHandler, true);
       document.addEventListener('input', this._mdInputHandler, true);
+      document.addEventListener('keydown', this._mdBeforeInputHandler, true);
+      document.addEventListener('beforeinput', this._mdBeforeInputHandler, true);
       this.updatePermanentToolbarIndicator();
     }
 
@@ -5016,9 +5246,14 @@
       if (this._mdEscapeHandler) document.removeEventListener('keydown', this._mdEscapeHandler, true);
       if (this._mdClickHandler) document.removeEventListener('click', this._mdClickHandler, true);
       if (this._mdInputHandler) document.removeEventListener('input', this._mdInputHandler, true);
+      if (this._mdBeforeInputHandler) {
+        document.removeEventListener('keydown', this._mdBeforeInputHandler, true);
+        document.removeEventListener('beforeinput', this._mdBeforeInputHandler, true);
+      }
       this._mdEscapeHandler = null;
       this._mdClickHandler = null;
       this._mdInputHandler = null;
+      this._mdBeforeInputHandler = null;
       ['md-edit-mode-overlay', 'md-edit-mode-hint', 'md-edit-help-panel', 'dev1-md-edit-cursor-style'].forEach(id => {
         const node = document.getElementById(id);
         if (node) node.remove();
@@ -5214,6 +5449,17 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       this.upsertEditFragment(fragment);
       this.requestSave(true);
       this.showToast(this.t('mdEditApplied'));
+
+      // Reset active tool to 'md-edit-disable-highlight' (Temporarily disable highlight) so it is one-time use
+      this.currentTool = 'md-edit-disable-highlight';
+      this.currentToolName = this.getToolNameForId(this.currentTool);
+      this.updatePermanentToolbarIndicator();
+      if (this.activeToolPicker) {
+        this.activeToolPicker.querySelectorAll('.tool-option').forEach(option => {
+          option.classList.toggle('active', option.dataset.toolId === this.currentTool);
+        });
+      }
+
       return true;
     }
 
@@ -5329,8 +5575,10 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       span.dataset.mdTool = tool.id;
       span.dataset.mdColor = this.currentColor;
       span.dataset.mdColorVariant = this.currentColorVariant || '';
+      span.dataset.mdPure = this._mdPureMode ? 'true' : 'false';
+      span.setAttribute('data-md-pure', this._mdPureMode ? 'true' : 'false');
       span.contentEditable = 'false';
-      span.innerHTML = this.renderMdToolHtml(tool.id, text, source, this.currentColor, this.currentColorVariant);
+      span.innerHTML = this.renderMdToolHtml(tool.id, text, source, this.currentColor, this.currentColorVariant, this._mdPureMode);
       return span;
     }
 
@@ -5342,16 +5590,22 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         case 'md-edit-bold-italic': return `***${value}***`;
         case 'md-edit-strikethrough': return `~~${value}~~`;
         case 'md-edit-mark': return `==${value}==`;
+        case 'md-code-inline':
         case 'md-edit-code-inline': return `\`${value}\``;
         case 'md-edit-sup': return `^${value}^`;
         case 'md-edit-sub': return `~${value}~`;
-        case 'md-edit-h1': return `# ${value}`;
-        case 'md-edit-h2': return `## ${value}`;
-        case 'md-edit-h3': return `### ${value}`;
-        case 'md-edit-ul': return `- ${value}`;
-        case 'md-edit-ol': return `1. ${value}`;
-        case 'md-edit-task': return `- [ ] ${value}`;
-        case 'md-edit-quote': return `> ${value}`;
+        case 'md-footnote':
+        case 'md-edit-footnote': return `^[${value}]`;
+        case 'md-edit-h1': return value.split('\n').map(line => line.trim() === '' ? line : `# ${line}`).join('\n');
+        case 'md-edit-h2': return value.split('\n').map(line => line.trim() === '' ? line : `## ${line}`).join('\n');
+        case 'md-edit-h3': return value.split('\n').map(line => line.trim() === '' ? line : `### ${line}`).join('\n');
+        case 'md-edit-ul': return value.split('\n').map(line => line.trim() === '' ? line : `- ${line}`).join('\n');
+        case 'md-edit-ol': {
+          let count = 1;
+          return value.split('\n').map(line => line.trim() === '' ? line : `${count++}. ${line}`).join('\n');
+        }
+        case 'md-edit-task': return value.split('\n').map(line => line.trim() === '' ? line : `- [ ] ${line}`).join('\n');
+        case 'md-edit-quote': return value.split('\n').map(line => `> ${line}`).join('\n');
         case 'md-edit-code': return `\`\`\`\n${value}\n\`\`\``;
         case 'md-edit-hr': return '---';
         case 'md-edit-link': return `[${value}](url)`;
@@ -5368,35 +5622,66 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       }
     }
 
-    renderMdToolHtml(toolId, text, source = '', colorOverride = '', variantOverride = '') {
+    renderMdToolHtml(toolId, text, source = '', colorOverride = '', variantOverride = '', isPure = null) {
+      if (isPure === null) {
+        isPure = !!this._mdPureMode;
+      }
       const escaped = this.escapeHtml(text);
       const color = colorOverride || this.currentColor || '#1976d2';
-      const renderColor = this.getRenderableColor(color);
+      const renderColor = isPure ? (this.darkModeEnabled ? '#888888' : '#666666') : this.getRenderableColor(color);
       const colorVariant = variantOverride || this.currentColorVariant || '';
       const resolvedVariant = this.resolveColorVariant(color, colorVariant);
       const variant = resolvedVariant === 'white' ? '#ffffff' : '#0f172a';
-      const isRainbow = this.isRainbowColor(color);
+      const isRainbow = !isPure && this.isRainbowColor(color);
       const rainbow = isRainbow ? this.buildRainbowGradient(color, { textContent: text || source || '' }) : '';
-      const textStyle = isRainbow
+      const textStyle = isPure ? '' : (isRainbow
         ? `background:${rainbow};-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;`
-        : `color:${variant};`;
-      const softBg = isRainbow ? this.buildRainbowGradient(color, { textContent: text || source || '' }, 0.28) : rgbaFromHex(renderColor, 0.18);
+        : `color:${variant};`);
+      const softBg = isPure ? (this.darkModeEnabled ? 'rgba(255, 213, 79, 0.3)' : 'rgba(255, 213, 79, 0.4)') : (isRainbow ? this.buildRainbowGradient(color, { textContent: text || source || '' }, 0.28) : rgbaFromHex(renderColor, 0.18));
       switch (toolId) {
         case 'md-edit-bold': return `<strong style="${textStyle}">${escaped}</strong>`;
         case 'md-edit-italic': return `<em style="${textStyle}">${escaped}</em>`;
         case 'md-edit-bold-italic': return `<strong style="${textStyle}"><em>${escaped}</em></strong>`;
         case 'md-edit-strikethrough': return `<del style="${textStyle}text-decoration-color:${renderColor};text-decoration-thickness:2px;">${escaped}</del>`;
-        case 'md-edit-mark': return `<mark style="background:${softBg};color:${resolvedVariant === 'white' ? '#ffffff' : '#0f172a'};border-radius:3px;padding:1px 3px;">${escaped}</mark>`;
-        case 'md-edit-code-inline': return `<code style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:${this.darkModeEnabled ? 'rgba(45,45,45,.92)' : 'rgba(244,244,244,.96)'};border:1px solid ${rgbaFromHex(renderColor, 0.45)};border-radius:4px;padding:1px 4px;${textStyle}">${escaped}</code>`;
+        case 'md-edit-mark': return `<mark style="background:${softBg};color:${isPure ? 'inherit' : (resolvedVariant === 'white' ? '#ffffff' : '#0f172a')};border-radius:3px;padding:1px 3px;">${escaped}</mark>`;
+        case 'md-code-inline':
+        case 'md-edit-code-inline': {
+          const codeStyle = isPure ? `color:${this.darkModeEnabled ? '#f8fafc' : '#0f172a'};` : textStyle;
+          return `<code style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:${this.darkModeEnabled ? 'rgba(45,45,45,.92)' : 'rgba(244,244,244,.96)'};border:1px solid ${rgbaFromHex(renderColor, 0.45)};border-radius:4px;padding:1px 4px;${codeStyle}">${escaped}</code>`;
+        }
         case 'md-edit-sup': return `<sup style="${textStyle}">${escaped}</sup>`;
         case 'md-edit-sub': return `<sub style="${textStyle}">${escaped}</sub>`;
-        case 'md-edit-h1': return `<span style="${textStyle}font-size:2em;font-weight:700;">${escaped}</span>`;
-        case 'md-edit-h2': return `<span style="${textStyle}font-size:1.5em;font-weight:700;">${escaped}</span>`;
-        case 'md-edit-h3': return `<span style="${textStyle}font-size:1.17em;font-weight:700;">${escaped}</span>`;
-        case 'md-edit-ul': return `<span style="${textStyle}">• ${escaped}</span>`;
-        case 'md-edit-ol': return `<span style="${textStyle}">1. ${escaped}</span>`;
-        case 'md-edit-task': return `<span style="${textStyle}">☐ ${escaped}</span>`;
-        case 'md-edit-quote': return `<span style="border-left:3px solid ${renderColor};padding-left:8px;${textStyle}">${escaped}</span>`;
+        case 'md-footnote':
+        case 'md-edit-footnote': return `<sup style="${textStyle}font-size:0.75em;vertical-align:super;">^[${escaped}]</sup>`;
+        case 'md-edit-h1': {
+          const lines = escaped.split('\n');
+          return lines.map(line => line.trim() === '' ? '<br>' : `<span style="display:block;${textStyle}font-size:2em;font-weight:700;">${line}</span>`).join('');
+        }
+        case 'md-edit-h2': {
+          const lines = escaped.split('\n');
+          return lines.map(line => line.trim() === '' ? '<br>' : `<span style="display:block;${textStyle}font-size:1.5em;font-weight:700;">${line}</span>`).join('');
+        }
+        case 'md-edit-h3': {
+          const lines = escaped.split('\n');
+          return lines.map(line => line.trim() === '' ? '<br>' : `<span style="display:block;${textStyle}font-size:1.17em;font-weight:700;">${line}</span>`).join('');
+        }
+        case 'md-edit-ul': {
+          const lines = escaped.split('\n');
+          return lines.map(line => line.trim() === '' ? '<br>' : `<span style="display:block;${textStyle}">• ${line}</span>`).join('');
+        }
+        case 'md-edit-ol': {
+          const lines = escaped.split('\n');
+          let count = 1;
+          return lines.map(line => line.trim() === '' ? '<br>' : `<span style="display:block;${textStyle}">${count++}. ${line}</span>`).join('');
+        }
+        case 'md-edit-task': {
+          const lines = escaped.split('\n');
+          return lines.map(line => line.trim() === '' ? '<br>' : `<span style="display:block;${textStyle}">☐ ${line}</span>`).join('');
+        }
+        case 'md-edit-quote': {
+          const lines = escaped.split('\n');
+          return lines.map(line => `<span style="display:block;border-left:3px solid ${renderColor};padding-left:8px;${textStyle}">${line || '&nbsp;'}</span>`).join('');
+        }
         case 'md-edit-code': return `<pre style="display:inline-block;margin:2px 0;padding:6px 8px;border-radius:5px;background:${this.darkModeEnabled ? '#2d2d2d' : '#f4f4f4'};"><code style="${textStyle}">${escaped}</code></pre>`;
         case 'md-edit-hr': return `<span style="display:inline-block;width:8em;border-bottom:2px solid ${renderColor};vertical-align:middle;"></span>`;
         case 'md-edit-link': return `<a href="javascript:void(0)" style="${textStyle}text-decoration:underline;text-underline-offset:2px;cursor:text;">${escaped}</a>`;
@@ -5476,6 +5761,11 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       element.contentEditable = 'true';
       element.classList.add('md-editing-source');
       if (isTable) element.classList.add('md-editing-table');
+      try {
+        const bg = this.findEffectiveBackground(element);
+        const txtColor = contrastText(bg);
+        element.style.setProperty('color', txtColor, 'important');
+      } catch (_) { }
       this._currentMdSourceElement = element;
       const finish = () => this.finishMdSourceEdit(element);
       element._dev1MdSourceBlur = finish;
@@ -5500,10 +5790,14 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       element.setAttribute('data-md-source', source);
       element.contentEditable = 'false';
       element.classList.remove('md-editing-source', 'md-editing-image', 'md-editing-table');
+      try {
+        element.style.removeProperty('color');
+      } catch (_) { }
       const text = this.extractMdPlainText(source, toolId);
       const color = element.getAttribute('data-md-color') || this.currentColor || '#1976d2';
       const variant = element.getAttribute('data-md-color-variant') || this.currentColorVariant || '';
-      element.innerHTML = this.renderMdToolHtml(toolId, text, source, color, variant);
+      const isPure = element.getAttribute('data-md-pure') !== null ? element.getAttribute('data-md-pure') === 'true' : !!this._mdPureMode;
+      element.innerHTML = this.renderMdToolHtml(toolId, text, source, color, variant, isPure);
       if (this._currentMdSourceElement === element) this._currentMdSourceElement = null;
       this.updateEditFragmentAfterElement(element);
     }
@@ -5516,16 +5810,19 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         case 'md-edit-bold-italic': return raw.replace(/^\*\*\*|\*\*\*$/g, '');
         case 'md-edit-strikethrough': return raw.replace(/^~~|~~$/g, '');
         case 'md-edit-mark': return raw.replace(/^==|==$/g, '');
+        case 'md-code-inline':
         case 'md-edit-code-inline': return raw.replace(/^`|`$/g, '');
         case 'md-edit-sup': return raw.replace(/^\^|\^$/g, '');
         case 'md-edit-sub': return raw.replace(/^~|~$/g, '');
-        case 'md-edit-h1': return raw.replace(/^#\s+/, '');
-        case 'md-edit-h2': return raw.replace(/^##\s+/, '');
-        case 'md-edit-h3': return raw.replace(/^###\s+/, '');
-        case 'md-edit-ul': return raw.replace(/^-\s+/, '');
-        case 'md-edit-ol': return raw.replace(/^\d+\.\s+/, '');
-        case 'md-edit-task': return raw.replace(/^-\s+\[[ x]\]\s+/i, '');
-        case 'md-edit-quote': return raw.replace(/^>\s?/, '');
+        case 'md-footnote':
+        case 'md-edit-footnote': return raw.replace(/^\^\[|\]$/g, '');
+        case 'md-edit-h1': return raw.split('\n').map(line => line.replace(/^#\s+/, '')).join('\n');
+        case 'md-edit-h2': return raw.split('\n').map(line => line.replace(/^##\s+/, '')).join('\n');
+        case 'md-edit-h3': return raw.split('\n').map(line => line.replace(/^###\s+/, '')).join('\n');
+        case 'md-edit-ul': return raw.split('\n').map(line => line.replace(/^-\s+/, '')).join('\n');
+        case 'md-edit-ol': return raw.split('\n').map(line => line.replace(/^\d+\.\s+/, '')).join('\n');
+        case 'md-edit-task': return raw.split('\n').map(line => line.replace(/^-\s+\[[ x]\]\s+/i, '')).join('\n');
+        case 'md-edit-quote': return raw.split('\n').map(line => line.replace(/^>\s?/, '')).join('\n');
         case 'md-edit-code': return raw.replace(/^```\n?/, '').replace(/\n?```$/, '');
         default: return raw;
       }
@@ -5695,6 +5992,47 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       const source = element.getAttribute('data-md-source') || element.textContent || '';
       const color = element.getAttribute('data-md-color') || this.currentColor || '#1976d2';
       const text = this.extractMdPlainText(source, toolId) || element.textContent || source;
+      const isPure = element.getAttribute('data-md-pure') !== null ? element.getAttribute('data-md-pure') === 'true' : !!this._mdPureMode;
+      if (isPure) {
+        switch (toolId) {
+          case 'md-edit-mark': return `==${text}==`;
+          case 'md-edit-bold': return `**${text}**`;
+          case 'md-edit-italic': return `*${text}*`;
+          case 'md-edit-bold-italic': return `***${text}***`;
+          case 'md-edit-strikethrough': return `~~${text}~~`;
+          case 'md-code-inline':
+          case 'md-edit-code-inline': return `\`${text}\``;
+          case 'md-edit-sup': return `^${text}^`;
+          case 'md-edit-sub': return `~${text}~`;
+          case 'md-footnote':
+          case 'md-edit-footnote': return `^[${text}]`;
+          case 'md-edit-h1': return text.split('\n').map(line => line.trim() === '' ? line : `# ${line}`).join('\n');
+          case 'md-edit-h2': return text.split('\n').map(line => line.trim() === '' ? line : `## ${line}`).join('\n');
+          case 'md-edit-h3': return text.split('\n').map(line => line.trim() === '' ? line : `### ${line}`).join('\n');
+          case 'md-edit-ul': return text.split('\n').map(line => line.trim() === '' ? line : `- ${line}`).join('\n');
+          case 'md-edit-ol': {
+            let count = 1;
+            return text.split('\n').map(line => line.trim() === '' ? line : `${count++}. ${line}`).join('\n');
+          }
+          case 'md-edit-task': {
+            const match = safeString(source).match(/^-\s+\[([ x])\]\s+/i);
+            const state = match && /^x$/i.test(match[1]) ? 'x' : ' ';
+            return text.split('\n').map(line => line.trim() === '' ? line : `- [${state}] ${line}`).join('\n');
+          }
+          case 'md-edit-quote': return text.split('\n').map(line => `> ${line}`).join('\n');
+          case 'md-edit-code': return `\`\`\`\n${text}\n\`\`\``;
+          case 'md-edit-hr': return '---';
+          case 'md-edit-link': {
+            const match = safeString(source).match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+            return match ? `[${match[1]}](${match[2]})` : text;
+          }
+          case 'md-edit-image':
+          case 'md-edit-table':
+            return safeString(source || text);
+          default:
+            return text || source;
+        }
+      }
       const font = value => this.wrapMarkdownHtmlColor(value, color, 'font');
       const mark = value => this.wrapMarkdownHtmlColor(value, color, 'background');
       switch (toolId) {
@@ -5703,22 +6041,26 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         case 'md-edit-italic': return `*${font(text)}*`;
         case 'md-edit-bold-italic': return `***${font(text)}***`;
         case 'md-edit-strikethrough': return `~~${font(text)}~~`;
-        case 'md-edit-code-inline': return `<code style="color:${this.normalizeMarkdownHtmlColor(color)}">${this.escapeHtml(text)}</code>`;
+        case 'md-code-inline':
+        case 'md-edit-code-inline': return `<code style="font-family: monospace; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; color: ${this.normalizeMarkdownHtmlColor(color)};">${this.escapeHtml(text)}</code>`;
         case 'md-edit-sup': return `<sup style="color:${this.normalizeMarkdownHtmlColor(color)}">${this.escapeHtml(text)}</sup>`;
         case 'md-edit-sub': return `<sub style="color:${this.normalizeMarkdownHtmlColor(color)}">${this.escapeHtml(text)}</sub>`;
-        case 'md-edit-h1': return `# ${font(text)}`;
-        case 'md-edit-h2': return `## ${font(text)}`;
-        case 'md-edit-h3': return `### ${font(text)}`;
-        case 'md-edit-ul': return `- ${font(text)}`;
+        case 'md-footnote':
+        case 'md-edit-footnote': return `^[${font(text)}]`;
+        case 'md-edit-h1': return text.split('\n').map(line => line.trim() === '' ? line : `# ${font(line)}`).join('\n');
+        case 'md-edit-h2': return text.split('\n').map(line => line.trim() === '' ? line : `## ${font(line)}`).join('\n');
+        case 'md-edit-h3': return text.split('\n').map(line => line.trim() === '' ? line : `### ${font(line)}`).join('\n');
+        case 'md-edit-ul': return text.split('\n').map(line => line.trim() === '' ? line : `- ${font(line)}`).join('\n');
         case 'md-edit-ol': {
-          const match = safeString(source).match(/^(\d+)\.\s+/);
-          return `${match ? match[1] : '1'}. ${font(text)}`;
+          let count = 1;
+          return text.split('\n').map(line => line.trim() === '' ? line : `${count++}. ${font(line)}`).join('\n');
         }
         case 'md-edit-task': {
           const match = safeString(source).match(/^-\s+\[([ x])\]\s+/i);
-          return `- [${match && /^x$/i.test(match[1]) ? 'x' : ' '}] ${font(text)}`;
+          const state = match && /^x$/i.test(match[1]) ? 'x' : ' ';
+          return text.split('\n').map(line => line.trim() === '' ? line : `- [${state}] ${font(line)}`).join('\n');
         }
-        case 'md-edit-quote': return `> ${font(text)}`;
+        case 'md-edit-quote': return text.split('\n').map(line => `> ${font(line)}`).join('\n');
         case 'md-edit-code': return `\`\`\`\n${text}\n\`\`\``;
         case 'md-edit-hr': return '---';
         case 'md-edit-link': {
@@ -5798,6 +6140,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         timestamp: now(),
         url: this.currentUrl,
         pageTitle: document.title || '',
+        mdPureMode: !!this._mdPureMode,
         segments
       };
       this.highlights.set(id, entry);
@@ -5896,6 +6239,10 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       span.dataset.partIndex = String(partIndex || 0);
       span.dataset.text = selected;
       span.dataset.timestamp = String(now());
+      const entry = this.highlights.get(id);
+      const isPure = entry && entry.mdPureMode !== undefined ? !!entry.mdPureMode : !!this._mdPureMode;
+      span.dataset.mdPure = isPure ? 'true' : 'false';
+      span.setAttribute('data-md-pure', isPure ? 'true' : 'false');
       try {
         const originalColor = node.parentElement ? window.getComputedStyle(node.parentElement).color : '';
         if (originalColor) span.dataset.originalColor = originalColor;
@@ -6493,6 +6840,29 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       } catch (_) { }
     }
 
+    refreshAllMarkdownHighlightStyles() {
+      // Refresh normal highlights
+      document.querySelectorAll('.custom-highlight[data-tool-style]').forEach(el => {
+        const tool = el.dataset.toolStyle || 'highlight';
+        if (tool.startsWith('md-')) {
+          const color = el.dataset.color || this.currentColor;
+          const textColorOverride = el.dataset.textColorOverride || '';
+          this.applyHighlightStyles(el, color, tool, textColorOverride);
+        }
+      });
+      // Refresh MD rendered content (edit fragments)
+      document.querySelectorAll('.md-rendered-content[data-md-tool]').forEach(el => {
+        const toolId = el.dataset.mdTool || '';
+        const source = el.dataset.mdSource || el.textContent || '';
+        const color = el.dataset.mdColor || this.currentColor;
+        const text = this.extractMdPlainText(source, toolId) || el.textContent || source;
+        const colorVariant = el.dataset.mdColorVariant || '';
+        const isPure = el.getAttribute('data-md-pure') !== null ? el.getAttribute('data-md-pure') === 'true' : !!this._mdPureMode;
+        
+        el.innerHTML = this.renderMdToolHtml(toolId, text, source, color, colorVariant, isPure);
+      });
+    }
+
     applyBracketDomStyle(element, tool, renderColor) {
       const bracketMap = {
         'brackets-corner': ['「', '」'],
@@ -6732,6 +7102,120 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         element.style.background = 'transparent';
         element.style.backgroundColor = 'transparent';
       };
+      let isPure = !!this._mdPureMode;
+      if (element && element.dataset && element.dataset.mdPure !== undefined) {
+        isPure = element.dataset.mdPure === 'true';
+      } else {
+        const gid = element && element.getAttribute && element.getAttribute('data-highlight-id');
+        const entry = gid ? this.highlights.get(gid) : null;
+        if (entry && entry.mdPureMode !== undefined) {
+          isPure = !!entry.mdPureMode;
+        }
+      }
+      if (isPure) {
+        clearBg();
+        element.style.color = 'inherit';
+        element.style.textDecoration = 'none';
+        element.style.fontWeight = 'normal';
+        element.style.fontStyle = 'normal';
+        element.style.verticalAlign = 'baseline';
+        element.style.fontSize = 'inherit';
+        element.style.lineHeight = 'inherit';
+        element.style.border = 'none';
+        element.style.borderRadius = '0';
+        element.style.padding = '0';
+        this.removeRainbowLine(element);
+        switch (id) {
+          case 'md-bold':
+          case 'md-edit-bold':
+            element.style.fontWeight = '700';
+            return true;
+          case 'md-italic':
+          case 'md-edit-italic':
+            element.style.fontStyle = 'italic';
+            return true;
+          case 'md-bold-italic':
+          case 'md-edit-bold-italic':
+            element.style.fontWeight = '700';
+            element.style.fontStyle = 'italic';
+            return true;
+          case 'md-underline':
+            element.style.textDecoration = 'underline';
+            return true;
+          case 'md-strikethrough':
+          case 'md-edit-strikethrough':
+            element.style.textDecoration = 'line-through';
+            return true;
+          case 'md-mark':
+          case 'md-edit-mark':
+            element.style.background = this.darkModeEnabled ? 'rgba(255, 213, 79, 0.3)' : 'rgba(255, 213, 79, 0.4)';
+            element.style.borderRadius = '2px';
+            element.style.padding = '1px 2px';
+            element.style.color = 'inherit';
+            return true;
+          case 'md-sup':
+          case 'md-edit-sup':
+            element.style.verticalAlign = 'super';
+            element.style.fontSize = '0.75em';
+            element.style.lineHeight = '0';
+            return true;
+          case 'md-sub':
+          case 'md-edit-sub':
+            element.style.verticalAlign = 'sub';
+            element.style.fontSize = '0.75em';
+            element.style.lineHeight = '0';
+            return true;
+          case 'md-footnote':
+          case 'md-edit-footnote':
+            element.style.verticalAlign = 'super';
+            element.style.fontSize = '0.75em';
+            element.style.lineHeight = '0';
+            element.style.color = 'inherit';
+            return true;
+          case 'md-edit-h1':
+            element.style.fontSize = '2em';
+            element.style.fontWeight = '700';
+            return true;
+          case 'md-edit-h2':
+            element.style.fontSize = '1.5em';
+            element.style.fontWeight = '700';
+            return true;
+          case 'md-edit-h3':
+            element.style.fontSize = '1.17em';
+            element.style.fontWeight = '700';
+            return true;
+          case 'md-edit-ul':
+          case 'md-edit-ol':
+          case 'md-edit-task':
+            element.style.paddingLeft = '2px';
+            return true;
+          case 'md-edit-quote':
+            element.style.borderLeft = `3px solid ${this.darkModeEnabled ? '#555' : '#ccc'}`;
+            element.style.paddingLeft = '8px';
+            return true;
+          case 'md-edit-code':
+          case 'md-code-inline':
+          case 'md-edit-code-inline':
+            element.style.background = this.darkModeEnabled ? 'rgba(45,45,45,.92)' : 'rgba(244,244,244,.96)';
+            element.style.border = `1px solid ${this.darkModeEnabled ? '#444' : '#ddd'}`;
+            element.style.borderRadius = '4px';
+            element.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+            element.style.padding = id === 'md-edit-code' ? '4px 6px' : '1px 4px';
+            element.style.color = this.darkModeEnabled ? '#f8fafc' : '#0f172a';
+            return true;
+          case 'md-edit-hr':
+            element.style.borderBottom = `2px solid ${this.darkModeEnabled ? '#555' : '#ccc'}`;
+            element.style.paddingBottom = '2px';
+            element.style.color = 'transparent';
+            return true;
+          case 'md-edit-link':
+            element.style.textDecoration = 'underline';
+            element.style.textUnderlineOffset = '2px';
+            return true;
+          default:
+            return true;
+        }
+      }
       switch (id) {
         case 'md-bold':
         case 'md-edit-bold':
@@ -6803,6 +7287,14 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
           element.style.lineHeight = '0';
           applyTextColor();
           return true;
+        case 'md-footnote':
+        case 'md-edit-footnote':
+          clearBg();
+          element.style.verticalAlign = 'super';
+          element.style.fontSize = '0.75em';
+          element.style.lineHeight = '0';
+          element.style.color = isTransparent ? readableText : solidColor;
+          return true;
         case 'md-edit-h1':
           clearBg();
           element.style.fontSize = '2em';
@@ -6835,6 +7327,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
           element.style.color = 'inherit';
           return true;
         case 'md-edit-code':
+        case 'md-code-inline':
         case 'md-edit-code-inline':
           element.style.background = this.darkModeEnabled ? 'rgba(45,45,45,.92)' : 'rgba(244,244,244,.96)';
           element.style.border = `1px solid ${this.hexToRgba(solidColor, isTransparent ? 0.35 : 0.45)}`;
@@ -7684,7 +8177,14 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
           return;
         }
         document.body.classList.add('highlighter-cursor');
-        const activeColor = this._cursorColorOverride || this.currentColor || '#69C0FF';
+        let activeColor = this._cursorColorOverride || this.currentColor || '#69C0FF';
+        if (this._mdPureMode && safeString(this.currentTool).startsWith('md-')) {
+          if (this.currentTool === 'md-mark' || this.currentTool === 'md-edit-mark') {
+            activeColor = '#FFD54F';
+          } else {
+            activeColor = this.darkModeEnabled ? '#94a3b8' : '#475569';
+          }
+        }
         if (this.isRainbowColor(activeColor) && this.getRainbowVariant(activeColor) === 'random') {
           this._startCursorAnimation(activeColor);
           return;

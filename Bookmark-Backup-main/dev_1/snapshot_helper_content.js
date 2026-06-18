@@ -1736,6 +1736,7 @@
         this.config = normalizeConfig(config);
         this._renderPanel();
         if (this.host) this.host.style.display = '';
+        this._persistAutoRestoreMarker();
         return { success: true };
       }
 
@@ -1763,6 +1764,7 @@
         if (hlApi && typeof hlApi.hide === 'function') {
           try { hlApi.hide(); } catch (_) {}
         }
+        this._clearAutoRestoreMarker();
 
         return { success: true };
       }
@@ -1801,6 +1803,7 @@
         if (hlApi && typeof hlApi.hide === 'function') {
           try { hlApi.hide(); } catch (_) {}
         }
+        this._clearAutoRestoreMarker();
 
         return { success: true };
       }
@@ -2045,8 +2048,63 @@
       return cleanup;
     }
 
-    // Screenshot Features
-    // Method replaced by inline HTML template structure inside _renderPanel
+    async _persistAutoRestoreMarker() {
+      if (!chrome || !chrome.storage || !chrome.storage.local) return;
+      const tabId = this.config && this.config.existingTabId;
+      const url = this.config && this.config.url;
+      if (tabId == null || !url) return;
+      const hash = (str) => {
+        let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+        for (let i = 0, ch; i < str.length; i++) {
+          ch = str.charCodeAt(i);
+          h1 = Math.imul(h1 ^ ch, 2654435761);
+          h2 = Math.imul(h2 ^ ch, 1597334677);
+        }
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+        return ((h2 >>> 0).toString(36) + (h1 >>> 0).toString(36)).slice(0, 20);
+      };
+      const key = `dev1_snapshot_helper_autorestore_${Math.floor(tabId)}_${hash(url)}`;
+      try {
+        await new Promise((resolve, reject) => {
+          chrome.storage.local.set({
+            [key]: {
+              v: 1,
+              tabId,
+              url,
+              config: this.config || {},
+              visible: true,
+              updatedAt: Date.now()
+            }
+          }, () => {
+            if (chrome.runtime && chrome.runtime.lastError) reject(chrome.runtime.lastError);
+            else resolve();
+          });
+        });
+      } catch (_) {}
+    }
+
+    async _clearAutoRestoreMarker() {
+      if (!chrome || !chrome.storage || !chrome.storage.local) return;
+      const tabId = this.config && this.config.existingTabId;
+      const url = this.config && this.config.url;
+      if (tabId == null || !url) return;
+      const hash = (str) => {
+        let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+        for (let i = 0, ch; i < str.length; i++) {
+          ch = str.charCodeAt(i);
+          h1 = Math.imul(h1 ^ ch, 2654435761);
+          h2 = Math.imul(h2 ^ ch, 1597334677);
+        }
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+        return ((h2 >>> 0).toString(36) + (h1 >>> 0).toString(36)).slice(0, 20);
+      };
+      const key = `dev1_snapshot_helper_autorestore_${Math.floor(tabId)}_${hash(url)}`;
+      try {
+        await new Promise(resolve => chrome.storage.local.remove(key, resolve));
+      } catch (_) {}
+    }
 
     _getScopedStorage() {
       return window.__dev1TabScopedStorage || null;

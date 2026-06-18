@@ -5558,10 +5558,13 @@ if (browserAPI?.tabs?.onRemoved && typeof browserAPI.tabs.onRemoved.addListener 
     browserAPI.tabs.onRemoved.addListener(async (tabId, removeInfo = {}) => {
         const scopedPrefix = `dev1_scoped_${tabId}_`;
         const autoRestorePrefix = dev1BuildSnapshotHighlighterAutoRestorePrefix(tabId);
+        const helperPrefix = `dev1_snapshot_helper_autorestore_${tabId}_`;
         try {
             const all = await browserAPI.storage.local.get(null);
             const keysToRemove = Object.keys(all || {}).filter(k => (
-                k.startsWith(scopedPrefix) || (autoRestorePrefix && k.startsWith(autoRestorePrefix))
+                k.startsWith(scopedPrefix) || 
+                (autoRestorePrefix && k.startsWith(autoRestorePrefix)) ||
+                k.startsWith(helperPrefix)
             ));
             if (keysToRemove.length > 0) {
                 await browserAPI.storage.local.remove(keysToRemove);
@@ -6258,6 +6261,8 @@ async function dev1ExtractMarkdownArticle(tabId) {
     const result = await dev1ExecuteScript(id, () => {
         try {
             const Defuddle = window.__DEV1_DEFUDDLE_FULL;
+            const instance = window.__dev1SnapshotHighlighter && window.__dev1SnapshotHighlighter._instance;
+            const mdPureMode = instance ? !!instance._mdPureMode : false;
             const createMarkdownContent = Defuddle && typeof Defuddle.createMarkdownContent === 'function'
                 ? Defuddle.createMarkdownContent
                 : null;
@@ -6306,6 +6311,7 @@ async function dev1ExtractMarkdownArticle(tabId) {
                 const source = String(node.getAttribute('data-md-source') || node.textContent || '');
                 const toolId = String(node.getAttribute('data-md-tool') || '');
                 const color = normalizeMarkdownHtmlColor(node.getAttribute('data-md-color') || '#1976d2');
+                const itemMdPureMode = node.getAttribute('data-md-pure') !== null ? node.getAttribute('data-md-pure') === 'true' : mdPureMode;
                 const escapeHtml = (text) => String(text || '').replace(/[&<>"']/g, (ch) => ({
                     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
                 }[ch]));
@@ -6315,16 +6321,17 @@ async function dev1ExtractMarkdownArticle(tabId) {
                     if (toolId === 'md-edit-bold-italic') return source.replace(/^\*\*\*|\*\*\*$/g, '');
                     if (toolId === 'md-edit-strikethrough') return source.replace(/^~~|~~$/g, '');
                     if (toolId === 'md-edit-mark') return source.replace(/^==|==$/g, '');
-                    if (toolId === 'md-edit-code-inline') return source.replace(/^`|`$/g, '');
+                    if (toolId === 'md-edit-code-inline' || toolId === 'md-code-inline') return source.replace(/^`|`$/g, '');
                     if (toolId === 'md-edit-sup') return source.replace(/^\^|\^$/g, '');
                     if (toolId === 'md-edit-sub') return source.replace(/^~|~$/g, '');
-                    if (toolId === 'md-edit-h1') return source.replace(/^#\s+/, '');
-                    if (toolId === 'md-edit-h2') return source.replace(/^##\s+/, '');
-                    if (toolId === 'md-edit-h3') return source.replace(/^###\s+/, '');
-                    if (toolId === 'md-edit-ul') return source.replace(/^-\s+/, '');
-                    if (toolId === 'md-edit-ol') return source.replace(/^\d+\.\s+/, '');
-                    if (toolId === 'md-edit-task') return source.replace(/^-\s+\[[ x]\]\s+/i, '');
-                    if (toolId === 'md-edit-quote') return source.replace(/^>\s?/, '');
+                    if (toolId === 'md-edit-footnote' || toolId === 'md-footnote') return source.replace(/^\^\[|\]$/g, '');
+                    if (toolId === 'md-edit-h1') return source.split('\n').map(line => line.replace(/^#\s+/, '')).join('\n');
+                    if (toolId === 'md-edit-h2') return source.split('\n').map(line => line.replace(/^##\s+/, '')).join('\n');
+                    if (toolId === 'md-edit-h3') return source.split('\n').map(line => line.replace(/^###\s+/, '')).join('\n');
+                    if (toolId === 'md-edit-ul') return source.split('\n').map(line => line.replace(/^-\s+/, '')).join('\n');
+                    if (toolId === 'md-edit-ol') return source.split('\n').map(line => line.replace(/^\d+\.\s+/, '')).join('\n');
+                    if (toolId === 'md-edit-task') return source.split('\n').map(line => line.replace(/^-\s+\[[ x]\]\s+/i, '')).join('\n');
+                    if (toolId === 'md-edit-quote') return source.split('\n').map(line => line.replace(/^>\s?/, '')).join('\n');
                     if (toolId === 'md-edit-code') return source.replace(/^```\n?/, '').replace(/\n?```$/, '');
                     if (toolId === 'md-edit-link') {
                         const match = source.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
@@ -6332,6 +6339,46 @@ async function dev1ExtractMarkdownArticle(tabId) {
                     }
                     return node.textContent || source;
                 })();
+                if (itemMdPureMode) {
+                    switch (toolId) {
+                        case 'md-edit-mark': return `==${plain}==`;
+                        case 'md-edit-bold': return `**${plain}**`;
+                        case 'md-edit-italic': return `*${plain}*`;
+                        case 'md-edit-bold-italic': return `***${plain}***`;
+                        case 'md-edit-strikethrough': return `~~${plain}~~`;
+                        case 'md-code-inline':
+                        case 'md-edit-code-inline': return `\`${plain}\``;
+                        case 'md-edit-sup': return `^${plain}^`;
+                        case 'md-edit-sub': return `~${plain}~`;
+                        case 'md-footnote':
+                        case 'md-edit-footnote': return `^[${plain}]`;
+                        case 'md-edit-h1': return plain.split('\n').map(line => line.trim() === '' ? line : `# ${line}`).join('\n');
+                        case 'md-edit-h2': return plain.split('\n').map(line => line.trim() === '' ? line : `## ${line}`).join('\n');
+                        case 'md-edit-h3': return plain.split('\n').map(line => line.trim() === '' ? line : `### ${line}`).join('\n');
+                        case 'md-edit-ul': return plain.split('\n').map(line => line.trim() === '' ? line : `- ${line}`).join('\n');
+                        case 'md-edit-ol': {
+                            let count = 1;
+                            return plain.split('\n').map(line => line.trim() === '' ? line : `${count++}. ${line}`).join('\n');
+                        }
+                        case 'md-edit-task': {
+                            const match = source.match(/^-\s+\[([ x])\]\s+/i);
+                            const state = match && /^x$/i.test(match[1]) ? 'x' : ' ';
+                            return plain.split('\n').map(line => line.trim() === '' ? line : `- [${state}] ${line}`).join('\n');
+                        }
+                        case 'md-edit-quote': return plain.split('\n').map(line => `> ${line}`).join('\n');
+                        case 'md-edit-code': return source;
+                        case 'md-edit-hr': return '---';
+                        case 'md-edit-link': {
+                            const match = source.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+                            return match ? `[${match[1]}](${match[2]})` : plain;
+                        }
+                        case 'md-edit-image':
+                        case 'md-edit-table':
+                            return source;
+                        default:
+                            return plain || source;
+                    }
+                }
                 const wrapLines = (value, wrap) => String(value || '').split('\n').map((line) => (
                     line.trim() ? wrap(escapeHtml(line)) : line
                 )).join('\n');
@@ -6342,22 +6389,24 @@ async function dev1ExtractMarkdownArticle(tabId) {
                 if (toolId === 'md-edit-italic') return `*${font(plain)}*`;
                 if (toolId === 'md-edit-bold-italic') return `***${font(plain)}***`;
                 if (toolId === 'md-edit-strikethrough') return `~~${font(plain)}~~`;
-                if (toolId === 'md-edit-code-inline') return `<code style="color:${color}">${escapeHtml(plain)}</code>`;
+                if (toolId === 'md-edit-code-inline' || toolId === 'md-code-inline') return `<code style="font-family: monospace; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; color: ${color};">${escapeHtml(plain)}</code>`;
                 if (toolId === 'md-edit-sup') return `<sup style="color:${color}">${escapeHtml(plain)}</sup>`;
                 if (toolId === 'md-edit-sub') return `<sub style="color:${color}">${escapeHtml(plain)}</sub>`;
-                if (toolId === 'md-edit-h1') return `# ${font(plain)}`;
-                if (toolId === 'md-edit-h2') return `## ${font(plain)}`;
-                if (toolId === 'md-edit-h3') return `### ${font(plain)}`;
-                if (toolId === 'md-edit-ul') return `- ${font(plain)}`;
+                if (toolId === 'md-edit-footnote' || toolId === 'md-footnote') return `^[<font color="${color}">${escapeHtml(plain)}</font>]`;
+                if (toolId === 'md-edit-h1') return plain.split('\n').map(line => line.trim() === '' ? line : `# ${font(line)}`).join('\n');
+                if (toolId === 'md-edit-h2') return plain.split('\n').map(line => line.trim() === '' ? line : `## ${font(line)}`).join('\n');
+                if (toolId === 'md-edit-h3') return plain.split('\n').map(line => line.trim() === '' ? line : `### ${font(line)}`).join('\n');
+                if (toolId === 'md-edit-ul') return plain.split('\n').map(line => line.trim() === '' ? line : `- ${font(line)}`).join('\n');
                 if (toolId === 'md-edit-ol') {
-                    const match = source.match(/^(\d+)\.\s+/);
-                    return `${match ? match[1] : '1'}. ${font(plain)}`;
+                    let count = 1;
+                    return plain.split('\n').map(line => line.trim() === '' ? line : `${count++}. ${font(line)}`).join('\n');
                 }
                 if (toolId === 'md-edit-task') {
                     const match = source.match(/^-\s+\[([ x])\]\s+/i);
-                    return `- [${match && /^x$/i.test(match[1]) ? 'x' : ' '}] ${font(plain)}`;
+                    const state = match && /^x$/i.test(match[1]) ? 'x' : ' ';
+                    return plain.split('\n').map(line => line.trim() === '' ? line : `- [${state}] ${font(line)}`).join('\n');
                 }
-                if (toolId === 'md-edit-quote') return `> ${font(plain)}`;
+                if (toolId === 'md-edit-quote') return plain.split('\n').map(line => `> ${font(line)}`).join('\n');
                 if (toolId === 'md-edit-code') return source;
                 if (toolId === 'md-edit-hr') return '---';
                 if (toolId === 'md-edit-link') {
@@ -6374,9 +6423,46 @@ async function dev1ExtractMarkdownArticle(tabId) {
                 const color = normalizeMarkdownHtmlColor(
                     node.getAttribute('data-color') || node.style.color || node.style.backgroundColor || '#1976d2'
                 );
+                const itemMdPureMode = node.getAttribute('data-md-pure') !== null ? node.getAttribute('data-md-pure') === 'true' : mdPureMode;
                 const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (ch) => ({
                     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
                 }[ch]));
+                if (itemMdPureMode) {
+                    switch (toolId) {
+                        case 'md-mark':
+                        case 'md-edit-mark': return `==${text}==`;
+                        case 'md-bold':
+                        case 'md-edit-bold': return `**${text}**`;
+                        case 'md-italic':
+                        case 'md-edit-italic': return `*${text}*`;
+                        case 'md-bold-italic':
+                        case 'md-edit-bold-italic': return `***${text}***`;
+                        case 'md-strikethrough':
+                        case 'md-edit-strikethrough': return `~~${text}~~`;
+                        case 'md-underline': return `<u>${text}</u>`;
+                        case 'md-sup':
+                        case 'md-edit-sup': return `^${text}^`;
+                        case 'md-sub':
+                        case 'md-edit-sub': return `~${text}~`;
+                        case 'md-code-inline':
+                        case 'md-edit-code-inline': return `\`${text}\``;
+                        case 'md-footnote':
+                        case 'md-edit-footnote': return `^[${text}]`;
+                        case 'md-edit-h1': return `# ${text}`;
+                        case 'md-edit-h2': return `## ${text}`;
+                        case 'md-edit-h3': return `### ${text}`;
+                        case 'md-edit-ul': return `- ${text}`;
+                        case 'md-edit-ol': return `1. ${text}`;
+                        case 'md-edit-task': return `- [ ] ${text}`;
+                        case 'md-edit-quote': return `> ${text}`;
+                        case 'md-edit-code': return `\`\`\`\n${text}\n\`\`\``;
+                        case 'md-edit-hr': return '---';
+                        case 'md-edit-link': return `[${text}](url)`;
+                        case 'md-edit-image': return /^!\[[^\]]*\]\([^)]+\)$/i.test(text) ? text : `![${escapeHtml(text || 'image')}](url)`;
+                        case 'md-edit-table': return text.includes('|') ? text : `| ${escapeHtml(text || 'A')} | B |\n| --- | --- |`;
+                        default: return text;
+                    }
+                }
                 const wrapLines = (value, wrap) => String(value || '').split('\n').map((line) => (
                     line.trim() ? wrap(escapeHtml(line)) : line
                 )).join('\n');
@@ -6398,7 +6484,10 @@ async function dev1ExtractMarkdownArticle(tabId) {
                     case 'md-edit-sup': return `<sup style="color:${color}">${escapeHtml(text)}</sup>`;
                     case 'md-sub':
                     case 'md-edit-sub': return `<sub style="color:${color}">${escapeHtml(text)}</sub>`;
-                    case 'md-edit-code-inline': return `<code style="color:${color}">${escapeHtml(text)}</code>`;
+                    case 'md-code-inline':
+                    case 'md-edit-code-inline': return `<code style="font-family: monospace; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; color: ${color};">${escapeHtml(text)}</code>`;
+                    case 'md-footnote':
+                    case 'md-edit-footnote': return `^[<font color="${color}">${escapeHtml(text)}</font>]`;
                     case 'md-edit-h1': return `# ${font(text)}`;
                     case 'md-edit-h2': return `## ${font(text)}`;
                     case 'md-edit-h3': return `### ${font(text)}`;
@@ -6574,6 +6663,8 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
     const result = await dev1ExecuteScript(id, (pageUrl, customTemplate, userNotes, userArticle) => {
         try {
             const Defuddle = window.__DEV1_DEFUDDLE_FULL;
+            const instance = window.__dev1SnapshotHighlighter && window.__dev1SnapshotHighlighter._instance;
+            const mdPureMode = instance ? !!instance._mdPureMode : false;
             const createMarkdownContent = Defuddle && typeof Defuddle.createMarkdownContent === 'function'
                 ? Defuddle.createMarkdownContent
                 : null;
@@ -6624,6 +6715,7 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
                 const source = String(node.getAttribute('data-md-source') || node.textContent || '');
                 const toolId = String(node.getAttribute('data-md-tool') || '');
                 const color = normalizeMarkdownHtmlColor(node.getAttribute('data-md-color') || '#1976d2');
+                const itemMdPureMode = node.getAttribute('data-md-pure') !== null ? node.getAttribute('data-md-pure') === 'true' : mdPureMode;
                 const escapeHtml = (text) => String(text || '').replace(/[&<>"']/g, (ch) => ({
                     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
                 }[ch]));
@@ -6633,16 +6725,17 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
                     if (toolId === 'md-edit-bold-italic') return source.replace(/^\*\*\*|\*\*\*$/g, '');
                     if (toolId === 'md-edit-strikethrough') return source.replace(/^~~|~~$/g, '');
                     if (toolId === 'md-edit-mark') return source.replace(/^==|==$/g, '');
-                    if (toolId === 'md-edit-code-inline') return source.replace(/^`|`$/g, '');
+                    if (toolId === 'md-edit-code-inline' || toolId === 'md-code-inline') return source.replace(/^`|`$/g, '');
                     if (toolId === 'md-edit-sup') return source.replace(/^\^|\^$/g, '');
                     if (toolId === 'md-edit-sub') return source.replace(/^~|~$/g, '');
-                    if (toolId === 'md-edit-h1') return source.replace(/^#\s+/, '');
-                    if (toolId === 'md-edit-h2') return source.replace(/^##\s+/, '');
-                    if (toolId === 'md-edit-h3') return source.replace(/^###\s+/, '');
-                    if (toolId === 'md-edit-ul') return source.replace(/^-\s+/, '');
-                    if (toolId === 'md-edit-ol') return source.replace(/^\d+\.\s+/, '');
-                    if (toolId === 'md-edit-task') return source.replace(/^-\s+\[[ x]\]\s+/i, '');
-                    if (toolId === 'md-edit-quote') return source.replace(/^>\s?/, '');
+                    if (toolId === 'md-edit-footnote' || toolId === 'md-footnote') return source.replace(/^\^\[|\]$/g, '');
+                    if (toolId === 'md-edit-h1') return source.split('\n').map(line => line.replace(/^#\s+/, '')).join('\n');
+                    if (toolId === 'md-edit-h2') return source.split('\n').map(line => line.replace(/^##\s+/, '')).join('\n');
+                    if (toolId === 'md-edit-h3') return source.split('\n').map(line => line.replace(/^###\s+/, '')).join('\n');
+                    if (toolId === 'md-edit-ul') return source.split('\n').map(line => line.replace(/^-\s+/, '')).join('\n');
+                    if (toolId === 'md-edit-ol') return source.split('\n').map(line => line.replace(/^\d+\.\s+/, '')).join('\n');
+                    if (toolId === 'md-edit-task') return source.split('\n').map(line => line.replace(/^-\s+\[[ x]\]\s+/i, '')).join('\n');
+                    if (toolId === 'md-edit-quote') return source.split('\n').map(line => line.replace(/^>\s?/, '')).join('\n');
                     if (toolId === 'md-edit-code') return source.replace(/^```\n?/, '').replace(/\n?```$/, '');
                     if (toolId === 'md-edit-link') {
                         const match = source.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
@@ -6650,6 +6743,46 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
                     }
                     return node.textContent || source;
                 })();
+                if (itemMdPureMode) {
+                    switch (toolId) {
+                        case 'md-edit-mark': return `==${plain}==`;
+                        case 'md-edit-bold': return `**${plain}**`;
+                        case 'md-edit-italic': return `*${plain}*`;
+                        case 'md-edit-bold-italic': return `***${plain}***`;
+                        case 'md-edit-strikethrough': return `~~${plain}~~`;
+                        case 'md-code-inline':
+                        case 'md-edit-code-inline': return `\`${plain}\``;
+                        case 'md-edit-sup': return `^${plain}^`;
+                        case 'md-edit-sub': return `~${plain}~`;
+                        case 'md-footnote':
+                        case 'md-edit-footnote': return `^[${plain}]`;
+                        case 'md-edit-h1': return plain.split('\n').map(line => line.trim() === '' ? line : `# ${line}`).join('\n');
+                        case 'md-edit-h2': return plain.split('\n').map(line => line.trim() === '' ? line : `## ${line}`).join('\n');
+                        case 'md-edit-h3': return plain.split('\n').map(line => line.trim() === '' ? line : `### ${line}`).join('\n');
+                        case 'md-edit-ul': return plain.split('\n').map(line => line.trim() === '' ? line : `- ${line}`).join('\n');
+                        case 'md-edit-ol': {
+                            let count = 1;
+                            return plain.split('\n').map(line => line.trim() === '' ? line : `${count++}. ${line}`).join('\n');
+                        }
+                        case 'md-edit-task': {
+                            const match = source.match(/^-\s+\[([ x])\]\s+/i);
+                            const state = match && /^x$/i.test(match[1]) ? 'x' : ' ';
+                            return plain.split('\n').map(line => line.trim() === '' ? line : `- [${state}] ${line}`).join('\n');
+                        }
+                        case 'md-edit-quote': return plain.split('\n').map(line => `> ${line}`).join('\n');
+                        case 'md-edit-code': return source;
+                        case 'md-edit-hr': return '---';
+                        case 'md-edit-link': {
+                            const match = source.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+                            return match ? `[${match[1]}](${match[2]})` : plain;
+                        }
+                        case 'md-edit-image':
+                        case 'md-edit-table':
+                            return source;
+                        default:
+                            return plain || source;
+                    }
+                }
                 const wrapLines = (value, wrap) => String(value || '').split('\n').map((line) => (
                     line.trim() ? wrap(escapeHtml(line)) : line
                 )).join('\n');
@@ -6660,22 +6793,24 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
                 if (toolId === 'md-edit-italic') return `*${font(plain)}*`;
                 if (toolId === 'md-edit-bold-italic') return `***${font(plain)}***`;
                 if (toolId === 'md-edit-strikethrough') return `~~${font(plain)}~~`;
-                if (toolId === 'md-edit-code-inline') return `<code style="color:${color}">${escapeHtml(plain)}</code>`;
+                if (toolId === 'md-edit-code-inline' || toolId === 'md-code-inline') return `<code style="font-family: monospace; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; color: ${color};">${escapeHtml(plain)}</code>`;
                 if (toolId === 'md-edit-sup') return `<sup style="color:${color}">${escapeHtml(plain)}</sup>`;
                 if (toolId === 'md-edit-sub') return `<sub style="color:${color}">${escapeHtml(plain)}</sub>`;
-                if (toolId === 'md-edit-h1') return `# ${font(plain)}`;
-                if (toolId === 'md-edit-h2') return `## ${font(plain)}`;
-                if (toolId === 'md-edit-h3') return `### ${font(plain)}`;
-                if (toolId === 'md-edit-ul') return `- ${font(plain)}`;
+                if (toolId === 'md-edit-footnote' || toolId === 'md-footnote') return `^[<font color="${color}">${escapeHtml(plain)}</font>]`;
+                if (toolId === 'md-edit-h1') return plain.split('\n').map(line => line.trim() === '' ? line : `# ${font(line)}`).join('\n');
+                if (toolId === 'md-edit-h2') return plain.split('\n').map(line => line.trim() === '' ? line : `## ${font(line)}`).join('\n');
+                if (toolId === 'md-edit-h3') return plain.split('\n').map(line => line.trim() === '' ? line : `### ${font(line)}`).join('\n');
+                if (toolId === 'md-edit-ul') return plain.split('\n').map(line => line.trim() === '' ? line : `- ${font(line)}`).join('\n');
                 if (toolId === 'md-edit-ol') {
-                    const match = source.match(/^(\d+)\.\s+/);
-                    return `${match ? match[1] : '1'}. ${font(plain)}`;
+                    let count = 1;
+                    return plain.split('\n').map(line => line.trim() === '' ? line : `${count++}. ${font(line)}`).join('\n');
                 }
                 if (toolId === 'md-edit-task') {
                     const match = source.match(/^-\s+\[([ x])\]\s+/i);
-                    return `- [${match && /^x$/i.test(match[1]) ? 'x' : ' '}] ${font(plain)}`;
+                    const state = match && /^x$/i.test(match[1]) ? 'x' : ' ';
+                    return plain.split('\n').map(line => line.trim() === '' ? line : `- [${state}] ${font(line)}`).join('\n');
                 }
-                if (toolId === 'md-edit-quote') return `> ${font(plain)}`;
+                if (toolId === 'md-edit-quote') return plain.split('\n').map(line => `> ${font(line)}`).join('\n');
                 if (toolId === 'md-edit-code') return source;
                 if (toolId === 'md-edit-hr') return '---';
                 if (toolId === 'md-edit-link') {
@@ -6692,9 +6827,46 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
                 const color = normalizeMarkdownHtmlColor(
                     node.getAttribute('data-color') || node.style.color || node.style.backgroundColor || '#1976d2'
                 );
+                const itemMdPureMode = node.getAttribute('data-md-pure') !== null ? node.getAttribute('data-md-pure') === 'true' : mdPureMode;
                 const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (ch) => ({
                     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
                 }[ch]));
+                if (itemMdPureMode) {
+                    switch (toolId) {
+                        case 'md-mark':
+                        case 'md-edit-mark': return `==${text}==`;
+                        case 'md-bold':
+                        case 'md-edit-bold': return `**${text}**`;
+                        case 'md-italic':
+                        case 'md-edit-italic': return `*${text}*`;
+                        case 'md-bold-italic':
+                        case 'md-edit-bold-italic': return `***${text}***`;
+                        case 'md-strikethrough':
+                        case 'md-edit-strikethrough': return `~~${text}~~`;
+                        case 'md-underline': return `<u>${text}</u>`;
+                        case 'md-sup':
+                        case 'md-edit-sup': return `^${text}^`;
+                        case 'md-sub':
+                        case 'md-edit-sub': return `~${text}~`;
+                        case 'md-code-inline':
+                        case 'md-edit-code-inline': return `\`${text}\``;
+                        case 'md-footnote':
+                        case 'md-edit-footnote': return `^[${text}]`;
+                        case 'md-edit-h1': return `# ${text}`;
+                        case 'md-edit-h2': return `## ${text}`;
+                        case 'md-edit-h3': return `### ${text}`;
+                        case 'md-edit-ul': return `- ${text}`;
+                        case 'md-edit-ol': return `1. ${text}`;
+                        case 'md-edit-task': return `- [ ] ${text}`;
+                        case 'md-edit-quote': return `> ${text}`;
+                        case 'md-edit-code': return `\`\`\`\n${text}\n\`\`\``;
+                        case 'md-edit-hr': return '---';
+                        case 'md-edit-link': return `[${text}](url)`;
+                        case 'md-edit-image': return /^!\[[^\]]*\]\([^)]+\)$/i.test(text) ? text : `![${escapeHtml(text || 'image')}](url)`;
+                        case 'md-edit-table': return text.includes('|') ? text : `| ${escapeHtml(text || 'A')} | B |\n| --- | --- |`;
+                        default: return text;
+                    }
+                }
                 const wrapLines = (value, wrap) => String(value || '').split('\n').map((line) => (
                     line.trim() ? wrap(escapeHtml(line)) : line
                 )).join('\n');
@@ -6716,7 +6888,10 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
                     case 'md-edit-sup': return `<sup style="color:${color}">${escapeHtml(text)}</sup>`;
                     case 'md-sub':
                     case 'md-edit-sub': return `<sub style="color:${color}">${escapeHtml(text)}</sub>`;
-                    case 'md-edit-code-inline': return `<code style="color:${color}">${escapeHtml(text)}</code>`;
+                    case 'md-code-inline':
+                    case 'md-edit-code-inline': return `<code style="font-family: monospace; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; color: ${color};">${escapeHtml(text)}</code>`;
+                    case 'md-footnote':
+                    case 'md-edit-footnote': return `^[<font color="${color}">${escapeHtml(text)}</font>]`;
                     case 'md-edit-h1': return `# ${font(text)}`;
                     case 'md-edit-h2': return `## ${font(text)}`;
                     case 'md-edit-h3': return `### ${font(text)}`;
@@ -7233,7 +7408,7 @@ async function dev1IsSnapshotHighlighterPdfPage(tabId) {
     }
 }
 
-async function dev1SetSnapshotHighlighterAutoRestoreMarker(tabId, url, lang = 'zh_CN') {
+async function dev1SetSnapshotHighlighterAutoRestoreMarker(tabId, url, lang = 'zh_CN', config = {}) {
     const id = dev1NormalizeTabId(tabId);
     const normalizedUrl = String(url || '').trim();
     const key = dev1BuildSnapshotHighlighterAutoRestoreKey(id, normalizedUrl);
@@ -7247,6 +7422,7 @@ async function dev1SetSnapshotHighlighterAutoRestoreMarker(tabId, url, lang = 'z
                 lang: lang === 'en' ? 'en' : 'zh_CN',
                 visible: true,
                 namespace: `${DEV1_SNAPSHOT_HIGHLIGHTER_STORAGE_PREFIX}${dev1HashUrl(normalizedUrl)}`,
+                config: config || {},
                 updatedAt: Date.now()
             }
         });
@@ -7300,31 +7476,131 @@ async function dev1TryAutoRestoreSnapshotHighlighterForTab(tabId, tab = {}, opti
     const normUrl = dev1NormalizeUrlForComparison(url);
     if (requireMarker && (!marker || marker.visible !== true || dev1NormalizeUrlForComparison(marker.url) !== normUrl)) return false;
     if (!scopedEntry || typeof scopedEntry !== 'object' || dev1NormalizeUrlForComparison(scopedEntry.u) !== normUrl) return false;
-    if (!dev1SnapshotHighlighterStateHasVisibleData(scopedEntry.v)) return false;
+    if (!requireMarker && !dev1SnapshotHighlighterStateHasVisibleData(scopedEntry.v)) return false;
     if (await dev1IsSnapshotHighlighterPdfPage(id)) return false;
 
+    await dev1ExecuteScriptFile(id, 'dev_1/mp4-muxer.js');
     await dev1ExecuteScriptFile(id, 'dev_1/tab_scoped_storage.js');
+    await dev1ExecuteScriptFile(id, 'dev_1/snapshot_helper_content.js');
     try {
         await dev1ExecuteScriptFile(id, 'dev_1/snapshot_highlighter/history_hook.js', 'MAIN');
     } catch (_) { }
     await dev1InsertCssFile(id, 'dev_1/snapshot_highlighter/styles.css');
     await dev1ExecuteScriptFile(id, 'dev_1/snapshot_highlighter/index.js');
-    const result = await dev1ExecuteScript(id, (highlighterConfig) => {
-        const api = window.__dev1SnapshotHighlighter;
-        if (!api || typeof api.show !== 'function') return { success: false };
-        return api.show(highlighterConfig);
-    }, [{
+
+    const mergedConfig = {
         lang: marker?.lang === 'en' || options?.lang === 'en' ? 'en' : 'zh_CN',
-        source: options?.source || (requireMarker ? 'snapshot_highlighter_autorestore' : 'snapshot_helper_existing_highlights'),
         title: String(tabInfo?.title || '').trim(),
         url,
         domain: parsed.hostname || '',
         existingTabId: id,
         tabId: id,
+        ...(marker?.config || {}),
+        source: options?.source || (requireMarker ? 'snapshot_highlighter_autorestore' : 'snapshot_helper_existing_highlights')
+    };
+
+    try {
+        await dev1ExecuteScript(id, (helperConfig) => {
+            const api = window.__dev1SnapshotHelper;
+            if (api && typeof api.show === 'function') {
+                api.show(helperConfig);
+            }
+        }, [mergedConfig]);
+    } catch (_) {}
+
+    const highlighterConfig = {
+        ...mergedConfig,
         restoreOnly: options?.restoreOnly !== false,
         suppressToolbar: options?.suppressToolbar !== false
-    }]);
+    };
+
+    const result = await dev1ExecuteScript(id, (cfg) => {
+        const api = window.__dev1SnapshotHighlighter;
+        if (!api || typeof api.show !== 'function') return { success: false };
+        return api.show(cfg);
+    }, [highlighterConfig]);
+
     return !!(result && result.success === true);
+}
+
+if (browserAPI?.tabs?.onUpdated && typeof browserAPI.tabs.onUpdated.addListener === 'function') {
+    browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo = {}, tab = {}) => {
+        if (changeInfo.status === 'complete' && tab.url) {
+            const id = dev1NormalizeTabId(tabId);
+            if (id == null) return;
+            const url = tab.url;
+            if (!url.startsWith('http://') && !url.startsWith('https://')) return;
+
+            const helperMarkerKey = `dev1_snapshot_helper_autorestore_${Math.floor(id)}_${dev1HashUrl(url)}`;
+            const highlighterMarkerKey = dev1BuildSnapshotHighlighterAutoRestoreKey(id, url);
+
+            try {
+                const stored = await browserAPI.storage.local.get([helperMarkerKey, highlighterMarkerKey]);
+                const helperMarker = stored && stored[helperMarkerKey];
+                const highlighterMarker = stored && stored[highlighterMarkerKey];
+
+                const helperActive = helperMarker && helperMarker.visible === true && dev1NormalizeUrlForComparison(helperMarker.url) === dev1NormalizeUrlForComparison(url);
+                const highlighterActive = highlighterMarker && highlighterMarker.visible === true && dev1NormalizeUrlForComparison(highlighterMarker.url) === dev1NormalizeUrlForComparison(url);
+
+                if (helperActive || highlighterActive) {
+                    const configSource = (highlighterActive ? highlighterMarker : helperMarker)?.config || {};
+                    const mergedConfig = {
+                        lang: (highlighterActive ? highlighterMarker : helperMarker)?.lang === 'en' ? 'en' : 'zh_CN',
+                        title: String(tab.title || '').trim(),
+                        url,
+                        domain: new URL(url).hostname || '',
+                        existingTabId: id,
+                        tabId: id,
+                        ...configSource,
+                        source: highlighterActive ? 'snapshot_highlighter_autorestore' : 'snapshot_helper_autorestore'
+                    };
+
+                    await dev1ExecuteScriptFile(id, 'dev_1/mp4-muxer.js');
+                    await dev1ExecuteScriptFile(id, 'dev_1/tab_scoped_storage.js');
+                    await dev1ExecuteScriptFile(id, 'dev_1/snapshot_helper_content.js');
+
+                    try {
+                        await dev1ExecuteScript(id, (helperConfig) => {
+                            const api = window.__dev1SnapshotHelper;
+                            if (api && typeof api.show === 'function') {
+                                api.show(helperConfig);
+                            }
+                        }, [mergedConfig]);
+                    } catch (_) {}
+
+                    if (highlighterActive) {
+                        try {
+                            await dev1ExecuteScriptFile(id, 'dev_1/snapshot_highlighter/history_hook.js', 'MAIN');
+                        } catch (_) { }
+                        await dev1InsertCssFile(id, 'dev_1/snapshot_highlighter/styles.css');
+                        await dev1ExecuteScriptFile(id, 'dev_1/snapshot_highlighter/index.js');
+
+                        const highlighterConfig = {
+                            ...mergedConfig,
+                            restoreOnly: false,
+                            suppressToolbar: false
+                        };
+                        await dev1ExecuteScript(id, (cfg) => {
+                            const api = window.__dev1SnapshotHighlighter;
+                            if (api && typeof api.show === 'function') {
+                                api.show(cfg);
+                            }
+                        }, [highlighterConfig]);
+                    }
+                } else {
+                    const helperPrefix = `dev1_snapshot_helper_autorestore_${Math.floor(id)}_`;
+                    const highlighterPrefix = dev1BuildSnapshotHighlighterAutoRestorePrefix(id);
+                    const all = await browserAPI.storage.local.get(null);
+                    const keysToRemove = Object.keys(all || {}).filter(k => 
+                        k.startsWith(helperPrefix) || (highlighterPrefix && k.startsWith(highlighterPrefix))
+                    );
+                    if (keysToRemove.length > 0) {
+                        await browserAPI.storage.local.remove(keysToRemove);
+                    }
+                }
+            } catch (_) {}
+        }
+    });
 }
 
 async function dev1ToggleSnapshotHighlighterForTab(message = {}, sender = {}) {
@@ -7389,7 +7665,7 @@ async function dev1ToggleSnapshotHighlighterForTab(message = {}, sender = {}) {
     if (result.visible === false) {
         await dev1ClearSnapshotHighlighterAutoRestoreMarkers(tabId);
     } else {
-        await dev1SetSnapshotHighlighterAutoRestoreMarker(tabId, parsed.toString(), lang);
+        await dev1SetSnapshotHighlighterAutoRestoreMarker(tabId, parsed.toString(), lang, config);
     }
     return {
         success: true,
