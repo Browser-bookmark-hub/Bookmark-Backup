@@ -328,7 +328,7 @@ const restoreImportTargetTreeCache = new Map(); // folderId -> { folders, stats 
 const restoreImportTargetTreeLoading = new Map(); // folderId -> Promise
 const restoreImportTargetPathCache = new Map(); // folderId -> fullPath
 let restoreComparisonState = null; // 二级 UI 中部统计区状态
-const RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT = 300;
+const RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT = 500;
 const RESTORE_PATCH_THRESHOLD_MIN_COUNT = 0;
 const RESTORE_PATCH_THRESHOLD_MAX_COUNT = 100000;
 const RESTORE_SETTING_STRATEGY_KEY = 'restoreStrategyPreference';
@@ -5061,7 +5061,7 @@ let revertModalInited = false;
 let revertPreflight = null; // { strategy, changeMap, currentTree, targetTree }
 let revertSnapshotCache = null; // lastBookmarkData
 
-const REVERT_PATCH_THRESHOLD_DEFAULT_COUNT = 300;
+const REVERT_PATCH_THRESHOLD_DEFAULT_COUNT = 500;
 const REVERT_PATCH_THRESHOLD_MIN_COUNT = 0;
 const REVERT_PATCH_THRESHOLD_MAX_COUNT = 100000;
 const REVERT_SETTING_STRATEGY_KEY = 'revertStrategyPreference';

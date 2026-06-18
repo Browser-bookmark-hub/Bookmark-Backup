@@ -12763,7 +12763,7 @@ function showRestoreModal(versions, source) {
             : '提示：覆盖策略在扩展内只显示当前覆盖快照。若使用云端2（GitHub），旧的覆盖版本可到仓库提交历史里查看或回退；当前弹窗仍只读取当前分支里的最新文件。';
     };
 
-    const RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT = 300;
+    const RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT = 500;
     const RESTORE_PATCH_THRESHOLD_MIN_COUNT = 0;
     const RESTORE_PATCH_THRESHOLD_MAX_COUNT = 100000;
 

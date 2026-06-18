@@ -18418,7 +18418,7 @@ function assertBookmarkTreeContent(snapshotTree, preferredLang = 'zh_CN', mode =
     throw new Error(buildEmptySnapshotError(preferredLang, mode));
 }
 
-const REVERT_PATCH_THRESHOLD_DEFAULT_COUNT = 300;
+const REVERT_PATCH_THRESHOLD_DEFAULT_COUNT = 500;
 const REVERT_PATCH_THRESHOLD_MIN_COUNT = 0;
 const REVERT_PATCH_THRESHOLD_MAX_COUNT = 100000;
 
