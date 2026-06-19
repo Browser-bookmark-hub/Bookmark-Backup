@@ -18,7 +18,7 @@
 - **备份历史时间线**：记录备份历史、备注、数据能力和可恢复状态，方便回溯与导出。
 - **安全恢复体系**：支持覆盖恢复、补丁式恢复/撤销、合并导入，并在高风险操作前生成临时安全快照。
 - **手动备份提醒**：在手动模式下结合书签变化状态、循环提醒、准点提醒和浏览器焦点状态提醒用户备份。
-- **网页快照辅助**：支持 MHTML 与 MD（Markdown）两种网页快照导出；MD 基于 Obsidian Clipper 的 MIT 开源核心算法（defuddle.createMarkdownContent）移植。
+- **网页快照辅助**：支持基于 Chrome 官方 `pageCapture.saveAsMHTML` 的 MHTML 格式与基于 [Obsidian Clipper](https://github.com/obsidianmd/obsidian-clipper) 开源算法的 Markdown (MD) 格式导出，提供高亮划线标记工具，并配合队列与即时注入机制实现任意网页深度留存。
 - **升级兼容**：对 v2.1 旧历史记录和旧备份产物做兼容处理；没有快照数据的旧记录会作为可读日志保留。
 - **中英文 + 主题切换**：支持中英文界面、明暗主题和浏览器主题跟随。
 
@@ -45,7 +45,7 @@ Bookmark-Backup-main/
 - **当前变化**：查看当前书签树相对备份基线的数量、结构和内容变化。
 - **备份历史**：按时间线查看备份记录、备注、可恢复能力、导出与搜索。
 - **恢复与安全快照**：从历史记录或安全快照执行恢复、撤销、合并导入等高风险操作。
-- **网页快照**：将网页保存为 MHTML / MD（Markdown），并提供截图/录屏等辅助留存能力。
+- **网页快照**：将网页深度存档为 MHTML / Markdown (MD) 格式，支持划线高亮标记，并提供截图/录屏等辅助留存能力。
 
 ### 安装入口
 - **GitHub Releases**：[下载发布包](https://github.com/kwenxu/Bookmark-Backup/releases)，适合手动安装或保留指定版本。
@@ -101,7 +101,7 @@ It treats the browser bookmark tree as a versioned asset. Each backup creates a 
 - **Backup history timeline**: review backup records, notes, restore capability, export options, and searchable history.
 - **Safety recovery system**: overwrite restore, patch restore/revert, import merge, and temporary safety snapshots before high-risk writes.
 - **Manual backup reminders**: cyclic and fixed-time reminders that react to actual bookmark changes and browser focus state.
-- **Web snapshot helper**: supports both MHTML and MD (Markdown) snapshot export; MD is migrated from Obsidian Clipper’s MIT-licensed core algorithm (`defuddle.createMarkdownContent`), with screenshot/recording helper tools.
+- **Web snapshot helper**: Supports MHTML exports based on Chrome's official `pageCapture.saveAsMHTML` API and Markdown (MD) exports using [Obsidian Clipper](https://github.com/obsidianmd/obsidian-clipper)'s open-source algorithm, featuring highlighting tools and scheduled queue or instant page injection.
 - **Upgrade compatibility**: legacy v2.1 history and backup artifacts are handled where possible; record-only entries remain readable as logs.
 - **Bilingual UI + themes**: Chinese/English UI, light/dark themes, and browser theme following.
 
@@ -135,7 +135,7 @@ Bookmark-Backup-main/
 - **Current changes**: inspect changes between the current bookmark tree and the backup baseline.
 - **Backup history**: browse timeline records, notes, restore capability, exports, and search.
 - **Recovery and safety snapshots**: restore, revert, merge, or recover from safety snapshots.
-- **Web snapshot**: save pages as MHTML / MD (Markdown) and use screenshot/recording helpers when needed.
+- **Web snapshot**: Archive webpages as MHTML / Markdown (MD) format with highlighter tools and screenshot/recording helpers when needed.
 
 ### Install Links
 - **GitHub Releases**: [download release packages](https://github.com/kwenxu/Bookmark-Backup/releases) for manual installation or version pinning.

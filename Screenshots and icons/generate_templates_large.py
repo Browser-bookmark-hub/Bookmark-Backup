@@ -70,28 +70,55 @@ def generate_promo(bg_path, icon_path, ui_path, title_text, subtitle_text, outpu
     bg = resize_and_crop(bg, (1280, 800))
     bg_w, bg_h = bg.size
     
-    # 2. Icon
-    icon = Image.open(icon_path).convert("RGBA")
-    icon_size = 140
-    icon = icon.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
-    icon = add_rounded_corners(icon, 30)
-    # Removing shadow for icon as requested
-    icon_shadowed = icon
-    
-    # 3. UI Screenshot
+    # 2. UI Screenshot
     ui = Image.open(ui_path).convert("RGBA")
-    target_ui_width = 960
     ui_ratio = ui.height / ui.width
+
+
+    # Determine layout parameters dynamically based on screenshot ratio
+    if ui_ratio > 0.58:
+        # Tall screenshots (like Highlighter UI): scale down, shrink icon, touch bottom edge, shift text up
+        target_ui_width = 860
+        bottom_margin = 0
+        icon_size = 110
+        icon_y = 20
+        max_ratio = 0.75
+        title_font_size = 42
+        sub_font_size = 24
+        text_y_offset = -15
+        spacing = int(spacing * 0.75)
+    else:
+        # Wide screenshots (like settings/history): full width, touch bottom, regular icon
+        target_ui_width = 960
+        bottom_margin = 0
+        icon_size = 140
+        icon_y = 40
+        max_ratio = 0.58
+        title_font_size = 52
+        sub_font_size = 28
+        text_y_offset = 0
+
+    # Apply cropping only if the screenshot exceeds the max allowed ratio
+    if ui_ratio > max_ratio:
+        crop_height = int(ui.width * max_ratio)
+        ui = ui.crop((0, 0, ui.width, crop_height))
+        ui_ratio = max_ratio
+
+    target_ui_width = target_ui_width
     target_ui_height = int(target_ui_width * ui_ratio)
     ui = ui.resize((target_ui_width, target_ui_height), Image.Resampling.LANCZOS)
     ui = add_top_rounded_corners(ui, 12)
-    # Removing shadow as requested by the user
     ui_shadowed = ui
+
+    # 3. Icon
+    icon = Image.open(icon_path).convert("RGBA")
+    icon = icon.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
+    icon = add_rounded_corners(icon, 30)
+    icon_shadowed = icon
     
     # Positioning
     # Icon moved to top-left corner
     icon_x = 40
-    icon_y = 40
     
     final_img = Image.new("RGBA", (bg_w, bg_h))
     final_img.paste(bg, (0, 0))
@@ -101,15 +128,16 @@ def generate_promo(bg_path, icon_path, ui_path, title_text, subtitle_text, outpu
     draw = ImageDraw.Draw(final_img)
     try:
         # Load the provided fonts, fallback to default if missing
-        font_title = ImageFont.truetype(font_title_path, 52, index=font_title_index)
-        font_sub = ImageFont.truetype(font_sub_path, 28, index=font_sub_index)
+        font_title = ImageFont.truetype(font_title_path, title_font_size, index=font_title_index)
+        font_sub = ImageFont.truetype(font_sub_path, sub_font_size, index=font_sub_index)
     except:
         font_title = ImageFont.load_default()
         font_sub = ImageFont.load_default()
             
-    # UI screenshot pushed down to exactly touch the bottom edge
-    ui_y = bg_h - ui_shadowed.height
+    # UI screenshot pushed down, leaving bottom_margin
+    ui_y = bg_h - ui_shadowed.height - bottom_margin
     ui_x = (bg_w - ui_shadowed.width) // 2
+
 
     # Calculate text block height to center it vertically above the UI screenshot
     available_space = ui_y
@@ -126,8 +154,8 @@ def generate_promo(bg_path, icon_path, ui_path, title_text, subtitle_text, outpu
     else:
         total_text_h = title_h
         
-    # Center text block in the space above the screenshot and apply block_offset_y
-    title_y = (available_space - total_text_h) // 2 + block_offset_y
+    # Center text block in the space above the screenshot and apply block_offset_y & text_y_offset
+    title_y = (available_space - total_text_h) // 2 + block_offset_y + text_y_offset
     title_x = (bg_w - title_w) // 2
     
     # Clean text rendering (boldness comes from the font itself)
@@ -168,72 +196,136 @@ def generate_promo(bg_path, icon_path, ui_path, title_text, subtitle_text, outpu
     print(f"Saved {output_path}")
 
 if __name__ == '__main__':
-    bg_path = "/Users/kk/Desktop/ChatGPT Image 2026年5月6日 23_34_05.png"
-    icon_path = "/Users/kk/Desktop/B.jpg"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    out_dir = "/Users/kk/Desktop/store_assets"
+    # 1. Background Image fallback
+    bg_path = "/Users/kk/Desktop/ChatGPT Image 2026年5月6日 23_34_05.png"
+    if not os.path.exists(bg_path):
+        bg_path = os.path.join(script_dir, "背景图.png")
+        
+    # 2. Icon Image fallback
+    icon_path = "/Users/kk/Desktop/B.jpg"
+    if not os.path.exists(icon_path):
+        icon_path = os.path.join(os.path.dirname(script_dir), "Bookmark-Backup-main", "icons", "icon128.png")
+    
+    out_dir = os.path.join(script_dir, "v3.5")
+    os.makedirs(out_dir, exist_ok=True)
+
+
+    # ==================== v3.5 NEW FEATURES ====================
+    
+    # English Version (Web Archive - Batch, using Highlighter screenshot)
+    archive_ui_en = os.path.join(script_dir, "v3.5", "高亮工具en.png")
+    if os.path.exists(archive_ui_en):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=archive_ui_en,
+            title_text="Web Archive (Batch)",
+            subtitle_text="Archive any webpage via scheduled queues or temporary page injection",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-Archive-EN.jpg"),
+            font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_title_index=1,
+            font_sub_index=0,
+            spacing=35,
+            title_offset_y=8,
+            block_offset_y=20
+        )
+
+    # Chinese Version (Web Archive - Batch, using Highlighter screenshot)
+    archive_ui_zh = os.path.join(script_dir, "v3.5", "高亮工具zh.png")
+    if os.path.exists(archive_ui_zh):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=archive_ui_zh,
+            title_text="快照存档(批量)",
+            subtitle_text="以预定队列/临时注入的形式，对任意页面进行网页快照存档",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-Archive-ZH.jpg"),
+            font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_title_index=2,
+            font_sub_index=0,
+            spacing=22,
+            block_offset_y=20
+        )
+
+
+
+
+    # ==================== v3.0 EXISTING FEATURES ====================
 
     # English Version (Settings Page)
-    generate_promo(
-        bg_path=bg_path,
-        icon_path=icon_path,
-        ui_path="/Users/kk/Desktop/设置与初始化 en.png",
-        title_text="Preferences",
-        subtitle_text="Configure flexible backup strategies and secure data recovery mechanisms",
-        output_path=os.path.join(out_dir, "Bookmark-Backup-Settings-EN.jpg"),
-        font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
-        font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
-        font_title_index=1, # Helvetica Neue Bold
-        font_sub_index=0,   # Helvetica Neue Regular
-        spacing=35,         # Larger spacing for English
-        title_offset_y=8,   # Nudge English title UP slightly
-        block_offset_y=20   # Move text block DOWN slightly
-    )
+    settings_ui_en = "/Users/kk/Desktop/设置与初始化 en.png"
+    if os.path.exists(settings_ui_en):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=settings_ui_en,
+            title_text="Preferences",
+            subtitle_text="Configure flexible backup strategies and secure data recovery mechanisms",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-Settings-EN.jpg"),
+            font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_title_index=1,
+            font_sub_index=0,
+            spacing=35,
+            title_offset_y=8,
+            block_offset_y=20
+        )
     
     # Chinese Version (Settings Page)
-    generate_promo(
-        bg_path=bg_path,
-        icon_path=icon_path,
-        ui_path="/Users/kk/Desktop/设置与初始化 zh.png",
-        title_text="偏好设置",
-        subtitle_text="灵活配置多种备份策略，提供安全可靠的恢复机制",
-        output_path=os.path.join(out_dir, "Bookmark-Backup-Settings-ZH.jpg"),
-        font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
-        font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
-        font_title_index=2, # Hiragino Sans GB W6 (Bold)
-        font_sub_index=0,   # Hiragino Sans GB W3 (Regular)
-        spacing=22          # Normal spacing for Chinese
-    )
+    settings_ui_zh = "/Users/kk/Desktop/设置与初始化 zh.png"
+    if os.path.exists(settings_ui_zh):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=settings_ui_zh,
+            title_text="偏好设置",
+            subtitle_text="灵活配置多种备份策略，提供安全可靠的恢复机制",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-Settings-ZH.jpg"),
+            font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_title_index=2,
+            font_sub_index=0,
+            spacing=22
+        )
 
     # English Version (Backup History)
-    generate_promo(
-        bg_path=bg_path,
-        icon_path=icon_path,
-        ui_path="/Users/kk/Desktop/备份历史html en.png",
-        title_text="Backup History",
-        subtitle_text="Bookmark version management, making every modification fully traceable",
-        output_path=os.path.join(out_dir, "Bookmark-Backup-History-EN.jpg"),
-        font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
-        font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
-        font_title_index=1,
-        font_sub_index=0,
-        spacing=35,
-        title_offset_y=8,
-        block_offset_y=40   # Move text block DOWN slightly more
-    )
+    history_ui_en = "/Users/kk/Desktop/备份历史html en.png"
+    if os.path.exists(history_ui_en):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=history_ui_en,
+            title_text="Backup History",
+            subtitle_text="Bookmark version management, making every modification fully traceable",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-History-EN.jpg"),
+            font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_title_index=1,
+            font_sub_index=0,
+            spacing=35,
+            title_offset_y=8,
+            block_offset_y=40
+        )
 
     # Chinese Version (Backup History)
-    generate_promo(
-        bg_path=bg_path,
-        icon_path=icon_path,
-        ui_path="/Users/kk/Desktop/备份历史html zh.png",
-        title_text="备份历史",
-        subtitle_text="书签版本管理，让一切都有迹可循",
-        output_path=os.path.join(out_dir, "Bookmark-Backup-History-ZH.jpg"),
-        font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
-        font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
-        font_title_index=2,
-        font_sub_index=0,
-        spacing=22,
-        block_offset_y=20   # Move text block DOWN slightly
-    )
+    history_ui_zh = "/Users/kk/Desktop/备份历史html zh.png"
+    if os.path.exists(history_ui_zh):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=history_ui_zh,
+            title_text="备份历史",
+            subtitle_text="书签版本管理，让一切都有迹可循",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-History-ZH.jpg"),
+            font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_title_index=2,
+            font_sub_index=0,
+            spacing=22,
+            block_offset_y=20
+        )
+

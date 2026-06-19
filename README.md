@@ -5,6 +5,33 @@
 [![Microsoft Edge Add-ons](https://img.shields.io/badge/Edge_Add--ons-Available-0078D7?logo=microsoftedge&logoColor=white)](https://microsoftedge.microsoft.com/addons/detail/%E4%B9%A6%E7%AD%BE%E5%A4%87%E4%BB%BDbookmark-backup/klopopehpngheikchkjgkmplgmbfodek)
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/dbdpgedioldmeooemjanbjlhgpocafbc?color=0F9D58&logo=googlechrome&logoColor=white&label=Chrome+Web+Store)](https://chromewebstore.google.com/detail/dbdpgedioldmeooemjanbjlhgpocafbc)
 
+> [!NOTE]
+> **最新版本 v3.5.0 更新内容**：
+> - **网页快照深度增强**：
+>   - 新增对 **高亮标记工具** 与 **Markdown (MD) 格式** 导出的支持，快照保存算法参考了 Obsidian Clipper。
+>   - 选择高亮工具时默认采用「MD 格式」的 `{==}` 格式，高亮标记可直接导出至 Markdown 文件中；而其他带有特殊样式效果的标记则可以直接在导出的 MHTML 快照中完整查看。
+> - **补丁算法重构与优化**：
+>   - 重构了**补丁恢复**与**补丁撤销**事务，引入了精确的节点差异合并算法以提高稳定性。自动切换阈值设定为 500 条。
+>   - 删除了原有的“中断恢复面板”及“后置校验机制”，将安全保护完全收拢至更稳定可靠的 **临时安全快照**。
+> - **UI 修正与快捷键重构**：
+>   - 优化并精简了配置设置页面，支持在记录中直观添加和显示备注。
+>   - 重构了全局快捷键（修改为 `Alt/Option + Shift` 组合键），避免与页面原有快捷操作发生冲突：
+>     - `Alt / Option + Shift + Z`：激活扩展（代替原 `Alt+A`）
+>     - `Alt / Option + Shift + C`：打开当前变化（代替原 `Alt+C`）
+>     - `Alt / Option + Shift + T`：打开备份历史（代替原 `Alt+H`）
+>     - `Alt / Option + Shift + X`：打开当前页快照工具（代替原 `Alt+W` / `Alt+1`）
+>
+> <table>
+>   <tr>
+>     <td align="center" width="50%">
+>       <img width="380" alt="网页存档 zh" src="Screenshots and icons/v3.5/网页存档zh.png" />
+>     </td>
+>     <td align="center" width="50%">
+>       <img width="380" alt="高亮工具 zh" src="Screenshots and icons/v3.5/高亮工具zh.png" />
+>     </td>
+>   </tr>
+> </table>
+
 ### 简介
 `书签备份` 是一款面向 Chrome / Edge 的 Git 式书签版本管理、备份历史追踪与安全恢复扩展。
 
@@ -18,7 +45,7 @@
 - **备份历史时间线**：记录备份历史、备注、数据能力和可恢复状态，方便回溯与导出。
 - **安全恢复体系**：支持覆盖恢复、补丁式恢复/撤销、合并导入，并在高风险操作前生成临时安全快照。
 - **手动备份提醒**：在手动模式下结合书签变化状态、循环提醒、准点提醒和浏览器焦点状态提醒用户备份。
-- **网页快照辅助**：提供基于 Chrome 官方 `pageCapture.saveAsMHTML` 的网页快照能力，并配合截图/录屏辅助工具用于页面留存。
+- **网页快照辅助**：支持基于 Chrome 官方 `pageCapture.saveAsMHTML` 的 MHTML 格式与基于 [Obsidian Clipper](https://github.com/obsidianmd/obsidian-clipper) 开源算法的 Markdown (MD) 格式导出，提供高亮划线标记工具，并配合队列与即时注入机制实现任意网页深度留存。
 - **升级兼容**：对 v2.1 旧历史记录和旧备份产物做兼容处理；没有快照数据的旧记录会作为可读日志保留。
 - **中英文 + 主题切换**：支持中英文界面、明暗主题和浏览器主题跟随。
 
@@ -52,7 +79,7 @@ Bookmark-Backup-3.0/
 - **当前变化**：查看当前书签树相对备份基线的数量、结构和内容变化。
 - **备份历史**：按时间线查看备份记录、备注、可恢复能力、导出与搜索。
 - **恢复与安全快照**：从历史记录或安全快照执行恢复、撤销、合并导入等高风险操作。
-- **网页快照**：将网页保存为 MHTML，并提供截图/录屏等辅助留存能力。
+- **网页快照**：将网页深度存档为 MHTML / Markdown (MD) 格式，支持划线高亮标记，并提供截图/录屏等辅助留存能力。
 
 ### 安装入口
 - **GitHub Releases**：[下载发布包](https://github.com/kwenxu/Bookmark-Backup/releases)，适合手动安装或保留指定版本。
@@ -91,6 +118,33 @@ Bookmark-Backup-3.0/
 
 ## English
 
+> [!NOTE]
+> **Latest Version v3.5.0 Highlights**:
+> - **Enhanced Web Snapshot**:
+>   - Added support for **Highlighter tools** and **Markdown (MD) format** export, adopting the open-source algorithm from Obsidian Clipper.
+>   - Defaults to the MD-compatible `{==}` format for highlight selection, which can be exported directly into Markdown files; other styles with special effects can be fully preserved and viewed directly in exported MHTML snapshots.
+> - **Refactored Patch Algorithm & Optimization**:
+>   - Re-implemented **Patch Restore** and **Patch Revert** transactions by introducing a precise node diff merging algorithm to enhance stability. Set the automatic patch/overwrite switching threshold to 500 entries.
+>   - Removed the deprecated "Interrupted Restore Panel" and "Post-apply verification mechanism", centralizing risk mitigation into the more reliable **Temporary Safety Snapshot**.
+> - **UI Refinements & Shortcut Redesign**:
+>   - Streamlined the settings interface and added direct notes entry/display for history records.
+>   - Redesigned global extension shortcuts using `Alt/Option + Shift` combinations to prevent key conflicts with existing webpage functions:
+>     - `Alt / Option + Shift + Z`: Activate the extension (previously `Alt+A`)
+>     - `Alt / Option + Shift + C`: Open Current Changes (previously `Alt+C`)
+>     - `Alt / Option + Shift + T`: Open Backup History (previously `Alt+H`)
+>     - `Alt / Option + Shift + X`: Open Quick Snapshot Tool (previously `Alt+W` / `Alt+1`)
+>
+> <table>
+>   <tr>
+>     <td align="center" width="50%">
+>       <img width="380" alt="Web Snapshot en" src="Screenshots and icons/v3.5/网页存档en.png" />
+>     </td>
+>     <td align="center" width="50%">
+>       <img width="380" alt="Highlighter en" src="Screenshots and icons/v3.5/高亮工具en.png" />
+>     </td>
+>   </tr>
+> </table>
+
 ### Overview
 `Bookmark Backup` is a Git-style bookmark versioning, backup-history tracking, and safety-recovery extension for Chrome / Edge.
 
@@ -104,7 +158,7 @@ It treats the browser bookmark tree as a versioned asset. Each backup creates a 
 - **Backup history timeline**: review backup records, notes, restore capability, export options, and searchable history.
 - **Safety recovery system**: overwrite restore, patch restore/revert, import merge, and temporary safety snapshots before high-risk writes.
 - **Manual backup reminders**: cyclic and fixed-time reminders that react to actual bookmark changes and browser focus state.
-- **Web snapshot helper**: MHTML snapshots through Chrome’s official `pageCapture.saveAsMHTML` API, with screenshot/recording helper tools.
+- **Web snapshot helper**: Supports MHTML exports based on Chrome's official `pageCapture.saveAsMHTML` API and Markdown (MD) exports using [Obsidian Clipper](https://github.com/obsidianmd/obsidian-clipper)'s open-source algorithm, featuring highlighting tools and scheduled queue or instant page injection.
 - **Upgrade compatibility**: legacy v2.1 history and backup artifacts are handled where possible; record-only entries remain readable as logs.
 - **Bilingual UI + themes**: Chinese/English UI, light/dark themes, and browser theme following.
 
@@ -138,7 +192,7 @@ Bookmark-Backup-3.0/
 - **Current changes**: inspect changes between the current bookmark tree and the backup baseline.
 - **Backup history**: browse timeline records, notes, restore capability, exports, and search.
 - **Recovery and safety snapshots**: restore, revert, merge, or recover from safety snapshots.
-- **Web snapshot**: save pages as MHTML and use screenshot/recording helpers when needed.
+- **Web snapshot**: Archive webpages as MHTML / Markdown (MD) format with highlighter tools and screenshot/recording helpers when needed.
 
 ### Install Links
 - **GitHub Releases**: [download release packages](https://github.com/kwenxu/Bookmark-Backup/releases) for manual installation or version pinning.

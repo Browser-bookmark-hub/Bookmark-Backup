@@ -7,6 +7,61 @@
 
 ---
 
+## v3.5.0
+
+- **网页快照深度增强**：
+  - 新增对 **高亮标记工具** 与 **Markdown (MD) 格式** 导出的支持，快照保存算法参考了 Obsidian Clipper。
+  - 选择高亮工具时默认采用「MD 格式」的 `{==}` 格式，高亮标记可直接导出至 Markdown 文件中；而其他带有特殊样式效果的标记则可以直接在导出的 MHTML 快照中完整查看。
+- **补丁算法重构与优化**：
+  - 重构了**补丁恢复**与**补丁撤销**事务，引入了精确的节点差异合并算法以提高稳定性。自动切换阈值设定为 500 条。
+  - 删除了原有的“中断恢复面板”及“后置校验机制”，将安全保护完全收拢至更稳定可靠的 **临时安全快照**。
+- **UI 修正与快捷键重构**：
+  - 优化并精简了配置设置页面，支持在记录中直观添加和显示备注。
+  - 重构了全局快捷键（修改为 `Alt/Option + Shift` 组合键），避免与页面原有快捷操作发生冲突：
+    - `Alt / Option + Shift + Z`：激活扩展（代替原 `Alt+A`）
+    - `Alt / Option + Shift + C`：打开当前变化（代替原 `Alt+C`）
+    - `Alt / Option + Shift + T`：打开备份历史（代替原 `Alt+H`）
+    - `Alt / Option + Shift + X`：打开当前页快照工具（代替原 `Alt+W` / `Alt+1`）
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img width="380" alt="网页存档 zh" src="https://github.com/user-attachments/assets/75408a01-99e4-4592-922f-f39f3e353716" />
+    </td>
+    <td align="center" width="50%">
+      <img width="380" alt="高亮工具 zh" src="https://github.com/user-attachments/assets/6427c56f-1ef1-4009-91c3-a465a931ae42" />
+    </td>
+  </tr>
+</table>
+
+---
+
+## v3.0.6
+
+- 优化扩展图标资源，修复商店版图标过大及部分环境无法解码的问题，并显著减小安装包体积。
+- 新增当前页面快捷网页快照工具，并整理当前可用快捷键：
+  - `Alt / Option + A`：激活扩展
+  - `Alt / Option + C`：打开当前变化
+  - `Alt / Option + H`：打开备份历史
+  - `Alt / Option + W`：打开当前页快照工具（在当前焦点浏览页面中直接打开网页快照辅助悬浮窗）
+- 优化网页快照 UI 与导出体验，调整并统一快照文件保存路径。
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img width="260" alt="录屏设置 zh" src="https://github.com/user-attachments/assets/6ff24a5c-af0f-4aa3-8b50-81c3725b28b1" />
+    </td>
+    <td align="center" width="33%">
+      <img width="260" alt="网页快照悬浮窗 zh" src="https://github.com/user-attachments/assets/f5b2680b-cd4a-4a3b-bdd6-83632af9e950" />
+    </td>
+    <td align="center" width="33%">
+      <img width="260" alt="长截图 zh" src="https://github.com/user-attachments/assets/5197fbc2-41c3-426d-b3a1-cb420082161b" />
+    </td>
+  </tr>
+</table>
+
+---
+
 ## v3.0
 
 1. 新增云端 2：支持 GitHub Repo 备份，包含仓库、分支、Base Path、Token 配置与连接测试。
@@ -76,6 +131,61 @@
 
 <a name="english"></a>
 # Release Notes
+
+---
+
+## v3.5.0
+
+- **Enhanced Web Snapshot**:
+  - Added support for **Highlighter tools** and **Markdown (MD) format** export, adopting the open-source algorithm from Obsidian Clipper.
+  - Defaults to the MD-compatible `{==}` format for highlight selection, which can be exported directly into Markdown files; other styles with special effects can be fully preserved and viewed directly in exported MHTML snapshots.
+- **Refactored Patch Algorithm & Optimization**:
+  - Re-implemented **Patch Restore** and **Patch Revert** transactions by introducing a precise node diff merging algorithm to enhance stability. Set the automatic patch/overwrite switching threshold to 500 entries.
+  - Removed the deprecated "Interrupted Restore Panel" and "Post-apply verification mechanism", centralizing risk mitigation into the more reliable **Temporary Safety Snapshot**.
+- **UI Refinements & Shortcut Redesign**:
+  - Streamlined the settings interface and added direct notes entry/display for history records.
+  - Redesigned global extension shortcuts using `Alt/Option + Shift` combinations to prevent key conflicts with existing webpage functions:
+    - `Alt / Option + Shift + Z`: Activate the extension (previously `Alt+A`)
+    - `Alt / Option + Shift + C`: Open Current Changes (previously `Alt+C`)
+    - `Alt / Option + Shift + T`: Open Backup History (previously `Alt+H`)
+    - `Alt / Option + Shift + X`: Open Quick Snapshot Tool (previously `Alt+W` / `Alt+1`)
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img width="380" alt="Web Snapshot en" src="https://github.com/user-attachments/assets/5cc5762a-1544-4ad0-99db-282639295fa4" />
+    </td>
+    <td align="center" width="50%">
+      <img width="380" alt="Highlighter en" src="https://github.com/user-attachments/assets/f2c527f9-8bc2-4474-a524-a33ef44989f4" />
+    </td>
+  </tr>
+</table>
+
+---
+
+## v3.0.6
+
+- Optimized extension icon assets, fixed oversized store icons and decoding issues in some environments, and significantly reduced package size.
+- Added a quick Web Snapshot tool for the current page, with the available shortcuts organized as:
+  - `Alt / Option + A`: Activate the extension
+  - `Alt / Option + C`: Open Current Changes
+  - `Alt / Option + H`: Open Backup History
+  - `Alt / Option + W`: Open Quick Snapshot Tool (opens the Web Snapshot helper floating panel directly on the currently focused browsing page)
+- Improved the Web Snapshot UI and export experience, with adjusted and unified snapshot file save paths.
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img width="260" alt="Recording settings en" src="https://github.com/user-attachments/assets/3c14627a-d757-4e33-930f-9090c7a09fd8" />
+    </td>
+    <td align="center" width="33%">
+      <img width="260" alt="Web Snapshot floating panel en" src="https://github.com/user-attachments/assets/b632238e-2f1f-4200-81cc-e4b16465f554" />
+    </td>
+    <td align="center" width="33%">
+      <img width="260" alt="Long screenshot en" src="https://github.com/user-attachments/assets/83cba3ed-dfd1-491e-912b-ae36406e906d" />
+    </td>
+  </tr>
+</table>
 
 ---
 

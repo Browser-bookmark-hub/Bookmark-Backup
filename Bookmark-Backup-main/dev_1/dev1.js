@@ -34,8 +34,8 @@
     const QUEUE_BATCH_SIZE_DEFAULT = 10;
     const QUEUE_BATCH_SIZE_MIN = 1;
     const QUEUE_BATCH_SIZE_MAX = 50;
-    const QUEUE_TABLE_COLUMN_DEFAULT_WIDTHS = [112, 58, 52, 320, 280, 150, 190, 180];
-    const QUEUE_TABLE_COLUMN_MIN_WIDTHS = [80, 48, 48, 180, 180, 110, 120, 120];
+    const QUEUE_TABLE_COLUMN_DEFAULT_WIDTHS = [112, 120, 52, 320, 280, 150, 190, 180];
+    const QUEUE_TABLE_COLUMN_MIN_WIDTHS = [80, 90, 48, 180, 180, 110, 120, 120];
 
     function createEmptyFilterOptions() {
         return {

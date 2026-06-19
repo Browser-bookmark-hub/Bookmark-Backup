@@ -80,8 +80,16 @@ def generate_promo(bg_path, icon_path, ui_path, title_text, subtitle_text, outpu
     
     # 3. UI Screenshot
     ui = Image.open(ui_path).convert("RGBA")
-    target_ui_width = 960
+    
+    # Automatically crop overly tall screenshots from the bottom to prevent overlapping with text
+    max_ratio = 0.58
     ui_ratio = ui.height / ui.width
+    if ui_ratio > max_ratio:
+        crop_height = int(ui.width * max_ratio)
+        ui = ui.crop((0, 0, ui.width, crop_height))
+        ui_ratio = max_ratio
+
+    target_ui_width = 960
     target_ui_height = int(target_ui_width * ui_ratio)
     ui = ui.resize((target_ui_width, target_ui_height), Image.Resampling.LANCZOS)
     ui = add_top_rounded_corners(ui, 12)
@@ -169,101 +177,123 @@ def generate_promo(bg_path, icon_path, ui_path, title_text, subtitle_text, outpu
     print(f"Saved {output_path}")
 
 if __name__ == '__main__':
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 1. Background Image fallback
     bg_path = "/Users/kk/Desktop/ChatGPT Image 2026年5月6日 23_34_05.png"
+    if not os.path.exists(bg_path):
+        bg_path = os.path.join(script_dir, "背景图.png")
+        
+    # 2. Icon Image fallback
     icon_path = "/Users/kk/Desktop/B.jpg"
+    if not os.path.exists(icon_path):
+        icon_path = os.path.join(os.path.dirname(script_dir), "Bookmark-Backup-main", "icons", "icon128.png")
     
     out_dir = "/Users/kk/Desktop/store_assets"
+    os.makedirs(out_dir, exist_ok=True)
     
-    # English Version
-    generate_promo(
-        bg_path=bg_path,
-        icon_path=icon_path,
-        ui_path="/Users/kk/Desktop/主UI en.png",
-        title_text="Main View",
-        subtitle_text="Your primary interface to access and manage everything quickly",
-        output_path=os.path.join(out_dir, "Bookmark-Backup-EN.jpg"),
-        font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
-        font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
-        font_title_index=1, # Helvetica Neue Bold
-        font_sub_index=0,   # Helvetica Neue Regular
-        spacing=35,         # Larger spacing for English
-        title_offset_y=8    # Nudge English title UP slightly
-    )
+    # English Version (Main View)
+    ui_main_en = "/Users/kk/Desktop/主UI en.png"
+    if os.path.exists(ui_main_en):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=ui_main_en,
+            title_text="Main View",
+            subtitle_text="Your primary interface to access and manage everything quickly",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-EN.jpg"),
+            font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_title_index=1, # Helvetica Neue Bold
+            font_sub_index=0,   # Helvetica Neue Regular
+            spacing=35,         # Larger spacing for English
+            title_offset_y=8    # Nudge English title UP slightly
+        )
     
-    # Chinese Version
-    generate_promo(
-        bg_path=bg_path,
-        icon_path=icon_path,
-        ui_path="/Users/kk/Desktop/主UI zh.png",
-        title_text="主视图",
-        subtitle_text="主要操作界面，在这里快速直达您的所有内容",
-        output_path=os.path.join(out_dir, "Bookmark-Backup-ZH.jpg"),
-        font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
-        font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
-        font_title_index=2, # Hiragino Sans GB W6 (Bold)
-        font_sub_index=0,   # Hiragino Sans GB W3 (Regular)
-        spacing=22          # Normal spacing for Chinese
-    )
+    # Chinese Version (Main View)
+    ui_main_zh = "/Users/kk/Desktop/主UI zh.png"
+    if os.path.exists(ui_main_zh):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=ui_main_zh,
+            title_text="主视图",
+            subtitle_text="主要操作界面，在这里快速直达您的所有内容",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-ZH.jpg"),
+            font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_title_index=2, # Hiragino Sans GB W6 (Bold)
+            font_sub_index=0,   # Hiragino Sans GB W3 (Regular)
+            spacing=22          # Normal spacing for Chinese
+        )
 
     # English Version (Sync Page)
-    generate_promo(
-        bg_path=bg_path,
-        icon_path=icon_path,
-        ui_path="/Users/kk/Desktop/多端串行备份 en.png",
-        title_text="Sequential Backup",
-        subtitle_text="Supports both local and cloud environments for multi-device backup",
-        output_path=os.path.join(out_dir, "Bookmark-Backup-Sync-EN.jpg"),
-        font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
-        font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
-        font_title_index=1, # Helvetica Neue Bold
-        font_sub_index=0,   # Helvetica Neue Regular
-        spacing=35,         # Larger spacing for English
-        title_offset_y=16   # Nudge English title UP slightly more
-    )
+    ui_sync_en = "/Users/kk/Desktop/多端串行备份 en.png"
+    if os.path.exists(ui_sync_en):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=ui_sync_en,
+            title_text="Sequential Backup",
+            subtitle_text="Supports both local and cloud environments for multi-device backup",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-Sync-EN.jpg"),
+            font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_title_index=1, # Helvetica Neue Bold
+            font_sub_index=0,   # Helvetica Neue Regular
+            spacing=35,         # Larger spacing for English
+            title_offset_y=16   # Nudge English title UP slightly more
+        )
     
     # Chinese Version (Sync Page)
-    generate_promo(
-        bg_path=bg_path,
-        icon_path=icon_path,
-        ui_path="/Users/kk/Desktop/多端串行备份 zh.png",
-        title_text="多端串行备份",
-        subtitle_text="支持本地与云端双环境，实现多端备份",
-        output_path=os.path.join(out_dir, "Bookmark-Backup-Sync-ZH.jpg"),
-        font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
-        font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
-        font_title_index=2, # Hiragino Sans GB W6 (Bold)
-        font_sub_index=0,   # Hiragino Sans GB W3 (Regular)
-        spacing=22,         # Normal spacing for Chinese
-        title_offset_y=8    # Nudge Chinese title UP slightly
-    )
+    ui_sync_zh = "/Users/kk/Desktop/多端串行备份 zh.png"
+    if os.path.exists(ui_sync_zh):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=ui_sync_zh,
+            title_text="多端串行备份",
+            subtitle_text="支持本地与云端双环境，实现多端备份",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-Sync-ZH.jpg"),
+            font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_title_index=2, # Hiragino Sans GB W6 (Bold)
+            font_sub_index=0,   # Hiragino Sans GB W3 (Regular)
+            spacing=22,         # Normal spacing for Chinese
+            title_offset_y=8    # Nudge Chinese title UP slightly
+        )
 
     # English Version (Current Changes)
-    generate_promo(
-        bg_path=bg_path,
-        icon_path=icon_path,
-        ui_path="/Users/kk/Desktop/当前变化html en.png",
-        title_text="Current Changes",
-        subtitle_text="Clearly compare bookmark additions, deletions, moves, and modifications at a glance",
-        output_path=os.path.join(out_dir, "Bookmark-Backup-Changes-EN.jpg"),
-        font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
-        font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
-        font_title_index=1,
-        font_sub_index=0,
-        spacing=35,
-        title_offset_y=8
-    )
+    ui_changes_en = "/Users/kk/Desktop/当前变化html en.png"
+    if os.path.exists(ui_changes_en):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=ui_changes_en,
+            title_text="Current Changes",
+            subtitle_text="Clearly compare bookmark additions, deletions, moves, and modifications at a glance",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-Changes-EN.jpg"),
+            font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
+            font_title_index=1,
+            font_sub_index=0,
+            spacing=35,
+            title_offset_y=8
+        )
 
     # Chinese Version (Current Changes)
-    generate_promo(
-        bg_path=bg_path,
-        icon_path=icon_path,
-        ui_path="/Users/kk/Desktop/当前变化html zh.png",
-        title_text="当前变化",
-        subtitle_text="清晰对比书签的增删移改，所有变化一目了然",
-        output_path=os.path.join(out_dir, "Bookmark-Backup-Changes-ZH.jpg"),
-        font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
-        font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
-        font_title_index=2,
-        font_sub_index=0,
-        spacing=22
-    )
+    ui_changes_zh = "/Users/kk/Desktop/当前变化html zh.png"
+    if os.path.exists(ui_changes_zh):
+        generate_promo(
+            bg_path=bg_path,
+            icon_path=icon_path,
+            ui_path=ui_changes_zh,
+            title_text="当前变化",
+            subtitle_text="清晰对比书签的增删移改，所有变化一目了然",
+            output_path=os.path.join(out_dir, "Bookmark-Backup-Changes-ZH.jpg"),
+            font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
+            font_title_index=2,
+            font_sub_index=0,
+            spacing=22
+        )
