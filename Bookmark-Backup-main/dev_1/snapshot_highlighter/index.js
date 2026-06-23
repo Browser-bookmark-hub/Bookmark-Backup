@@ -660,6 +660,76 @@
       });
     }
 
+    async loadGlobalColorAndTool() {
+      const storage = this.getLocalStorageArea();
+      let colorData = null;
+      let toolData = null;
+      if (storage) {
+        try {
+          const result = await new Promise(resolve => {
+            storage.get(['highlighter_global_color', 'highlighter_global_tool'], (res) => {
+              resolve(res || {});
+            });
+          });
+          colorData = result.highlighter_global_color;
+          toolData = result.highlighter_global_tool;
+        } catch (_) {}
+      } else {
+        try {
+          const colorStr = localStorage.getItem('highlighter_global_color');
+          const toolStr = localStorage.getItem('highlighter_global_tool');
+          if (colorStr) colorData = JSON.parse(colorStr);
+          if (toolStr) toolData = JSON.parse(toolStr);
+        } catch (_) {}
+      }
+
+      if (colorData && colorData.color) {
+        this.currentColor = colorData.color;
+        this.currentColorVariant = colorData.variant || 'auto';
+        this.currentColorKey = colorData.key || this.getColorNameKeyForValue(this.currentColor, this.currentColorVariant);
+        this.currentColorName = colorData.name || this.getColorNameForValue(this.currentColor, this.currentColorVariant, '', this.currentColorKey);
+      }
+      if (toolData && toolData.id) {
+        this.currentTool = toolData.id;
+        if (this.isEditTool(this.currentTool)) {
+          this.currentTool = 'md-mark';
+        }
+        this.currentToolName = toolData.name || this.getToolNameForId(this.currentTool);
+        if (this.isEditTool(this.currentTool)) {
+          this._mdMode = 'edit';
+        } else {
+          this._mdMode = 'visual';
+        }
+      }
+    }
+
+    saveGlobalColorAndTool() {
+      const storage = this.getLocalStorageArea();
+      const colorData = {
+        color: this.currentColor,
+        variant: this.currentColorVariant,
+        key: this.currentColorKey,
+        name: this.currentColorName
+      };
+      const toolData = {
+        id: this.currentTool,
+        name: this.currentToolName
+      };
+      if (storage) {
+        try {
+          storage.set({
+            highlighter_global_color: colorData,
+            highlighter_global_tool: toolData
+          });
+        } catch (_) {}
+      } else {
+        try {
+          localStorage.setItem('highlighter_global_color', JSON.stringify(colorData));
+          localStorage.setItem('highlighter_global_tool', JSON.stringify(toolData));
+        } catch (_) {}
+      }
+    }
+
     async show(config = {}) {
       if (this.isPdfLikePage()) {
         return { success: false, pdf: true, error: this.t('unavailablePdf') };
@@ -669,6 +739,7 @@
       this.lang = normalizeLang(this.config.lang || this.lang);
       if (!this.config.existingTabId && this.config.tabId) this.config.existingTabId = this.config.tabId;
       this.restoreDisplayOnly = !!restoreOnly;
+      await this.loadGlobalColorAndTool();
       if (this.currentUrl !== window.location.href) {
         await this.handleUrlChange(window.location.href);
       }
@@ -859,18 +930,7 @@
         }
       });
       const toolbar = state.toolbar || {};
-      if (toolbar.color) this.currentColor = toolbar.color;
-      this.currentColorVariant = toolbar.colorVariant || 'auto';
-      this.currentColorKey = toolbar.colorNameKey || this.getColorNameKeyForValue(this.currentColor, this.currentColorVariant, toolbar.colorName || '');
-      this.currentColorName = this.getColorNameForValue(this.currentColor, this.currentColorVariant, toolbar.colorName || '', this.currentColorKey);
-      if (toolbar.tool) {
-        this.currentTool = toolbar.tool;
-        if (this.isEditTool(this.currentTool)) {
-          this.currentTool = 'md-mark';
-          this._mdMode = 'visual';
-        }
-      }
-      this.currentToolName = this.getToolNameForId(this.currentTool, toolbar.toolName || '');
+      // Do NOT load active color and tool from page state (persisted globally instead)
       this._colorPickerViewMode = toolbar.colorPickerViewMode === 'list' ? 'list' : 'grid';
       this._toolPickerViewMode = toolbar.toolPickerViewMode === 'list' ? 'list' : 'grid';
       this._mdPureMode = toolbar.mdPureMode !== undefined ? !!toolbar.mdPureMode : false;
@@ -913,12 +973,6 @@
     resetPageState() {
       this.highlights.clear();
       this.editFragments = [];
-      this.currentColor = '#2196F3';
-      this.currentColorKey = 'blue';
-      this.currentColorName = this.lt('蓝色', 'Blue');
-      this.currentColorVariant = 'auto';
-      this.currentTool = 'md-mark';
-      this.currentToolName = this.getToolNameForId('md-mark');
       this.recentColors = [];
       this.recentTools = [];
       this.presentationPenStyle = 'dashed';
@@ -2363,6 +2417,7 @@
     }
 
     updatePermanentToolbarIndicator() {
+      this.saveGlobalColorAndTool();
       const indicators = [];
       const toolbarIndicator = this.toolbar && this.toolbar.querySelector('.permanent-toolbar-indicator');
       if (toolbarIndicator) indicators.push(toolbarIndicator);
