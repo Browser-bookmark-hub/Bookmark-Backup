@@ -245,6 +245,10 @@
       this._cursorEnsureTimer = null;
       this._cursorLifecycleListeners = [];
       this.externalColorListener = null;
+      this.lifecycleRestoreListener = null;
+      this._lifecycleRestoreTimer = null;
+      this._lifecycleRestoreRunning = false;
+      this._lastLifecycleRestoreAt = 0;
       this.overlayRefreshListener = null;
       this.visualViewportRefreshListener = null;
       this.selectedHighlightIds = new Set();
@@ -891,16 +895,17 @@
       } catch (_) { }
     }
 
-    async loadState(url = this.currentUrl) {
+    async loadState(url = this.currentUrl, options = {}) {
       const scoped = this.getScopedStorage();
       const tabId = this.getTabId();
+      const resetOnMissing = options && options.resetOnMissing !== false;
       if (!scoped || tabId == null) {
-        this.resetPageState();
+        if (resetOnMissing) this.resetPageState();
         return false;
       }
       const state = await scoped.getScoped(tabId, this.storageNamespace(url), url);
       if (!state || typeof state !== 'object') {
-        this.resetPageState();
+        if (resetOnMissing) this.resetPageState();
         return false;
       }
       this.highlights.clear();
@@ -1140,6 +1145,7 @@
         window.addEventListener('popstate', this.urlChangeListener);
         window.addEventListener('hashchange', this.urlChangeListener);
       }
+      this.bindLifecycleRestoreEvents();
       if (!this.overlayRefreshListener) {
         this.overlayRefreshListener = (event) => {
           if (event && event.type === 'scroll') {
@@ -1232,6 +1238,7 @@
         window.addEventListener('popstate', this.urlChangeListener);
         window.addEventListener('hashchange', this.urlChangeListener);
       }
+      this.bindLifecycleRestoreEvents();
       if (!this.overlayRefreshListener) {
         this.overlayRefreshListener = (event) => {
           if (event && event.type === 'scroll') {
@@ -1336,6 +1343,7 @@
         window.removeEventListener('hashchange', this.urlChangeListener);
         this.urlChangeListener = null;
       }
+      this.unbindLifecycleRestoreEvents();
       if (this.overlayRefreshListener) {
         window.removeEventListener('resize', this.overlayRefreshListener);
         window.removeEventListener('scroll', this.overlayRefreshListener);
@@ -1348,6 +1356,93 @@
           window.visualViewport.removeEventListener('scroll', this.visualViewportRefreshListener);
         } catch (_) { }
         this.visualViewportRefreshListener = null;
+      }
+    }
+
+    bindLifecycleRestoreEvents() {
+      if (this.lifecycleRestoreListener) return;
+      this.lifecycleRestoreListener = (event) => {
+        const type = safeString(event && event.type) || 'lifecycle';
+        if (type === 'visibilitychange' && document.visibilityState === 'hidden') return;
+        this.scheduleLifecycleRestore(type);
+      };
+      try { document.addEventListener('visibilitychange', this.lifecycleRestoreListener, { passive: true }); } catch (_) { }
+      try { window.addEventListener('pageshow', this.lifecycleRestoreListener, false); } catch (_) { }
+      try { window.addEventListener('focus', this.lifecycleRestoreListener, false); } catch (_) { }
+    }
+
+    unbindLifecycleRestoreEvents() {
+      if (this.lifecycleRestoreListener) {
+        try { document.removeEventListener('visibilitychange', this.lifecycleRestoreListener); } catch (_) { }
+        try { window.removeEventListener('pageshow', this.lifecycleRestoreListener); } catch (_) { }
+        try { window.removeEventListener('focus', this.lifecycleRestoreListener); } catch (_) { }
+        this.lifecycleRestoreListener = null;
+      }
+      if (this._lifecycleRestoreTimer) {
+        clearTimeout(this._lifecycleRestoreTimer);
+        this._lifecycleRestoreTimer = null;
+      }
+    }
+
+    scheduleLifecycleRestore(reason = 'lifecycle', delay = 140) {
+      if (!this.visible) return;
+      if (document.visibilityState === 'hidden') return;
+      const elapsed = now() - this._lastLifecycleRestoreAt;
+      if (elapsed >= 0 && elapsed < 650) return;
+      if (this._lifecycleRestoreTimer) clearTimeout(this._lifecycleRestoreTimer);
+      this._lifecycleRestoreTimer = setTimeout(() => {
+        this._lifecycleRestoreTimer = null;
+        this.restoreVisibleHighlightsAfterLifecycle(reason).catch(() => { });
+      }, delay);
+    }
+
+    async restoreVisibleHighlightsAfterLifecycle(reason = 'lifecycle') {
+      if (!this.visible) return false;
+      if (document.visibilityState === 'hidden') return false;
+      if (this._lifecycleRestoreRunning) {
+        this.scheduleLifecycleRestore(reason, 260);
+        return false;
+      }
+      this._lifecycleRestoreRunning = true;
+      this._lastLifecycleRestoreAt = now();
+      try {
+        if (window.location.href !== this.currentUrl) {
+          await this.handleUrlChange(window.location.href);
+          return true;
+        }
+
+        const loaded = await this.loadState(this.currentUrl, { resetOnMissing: false });
+        const hasMemoryState = this.highlights.size > 0 || (Array.isArray(this.editFragments) && this.editFragments.length > 0);
+        if (!loaded && !hasMemoryState) return false;
+
+        this.cancelRestoreJob();
+        const entries = Array.from(this.highlights.values()).filter(Boolean);
+        const allHighlightsPresent = entries.every(entry => this.isHighlightEntryRestored(entry));
+        if (!allHighlightsPresent) {
+          this.removeAllGroupFrameOverlays();
+          this.clearDomHighlights();
+          this.clearHighlightNoteStaticLabels();
+        }
+        this.restoreHighlightsWithRetry();
+
+        if (this.restoreDisplayOnly) {
+          this.removeToolbar();
+          this.removeCursorStyle();
+        } else {
+          if (!this.toolbar || !document.body || !document.body.contains(this.toolbar)) {
+            this.createPermanentToolbar();
+          }
+          await this._refreshActiveTheme();
+          this.applyToolbarPosition();
+          this.updatePermanentToolbarIndicator();
+          this.updateCursorStyle();
+          if (loaded) await this.persistAutoRestoreMarker(this.currentUrl);
+        }
+        try { this.groupFrameGeometries.clear(); } catch (_) { }
+        try { this.overlayUpdateSoon(); } catch (_) { }
+        return true;
+      } finally {
+        this._lifecycleRestoreRunning = false;
       }
     }
 
