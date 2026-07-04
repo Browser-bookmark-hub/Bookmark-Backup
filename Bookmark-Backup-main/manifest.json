@@ -26,37 +26,37 @@
    "commands": {
       "_execute_action": {
          "suggested_key": {
-            "default": "Alt+Shift+Z",
-            "mac": "Alt+Shift+Z",
-            "windows": "Alt+Shift+Z",
-            "linux": "Alt+Shift+Z"
+            "default": "Ctrl+Shift+U",
+            "mac": "Command+Shift+U",
+            "windows": "Ctrl+Shift+U",
+            "linux": "Ctrl+Shift+U"
          },
          "description": "Activate the extension"
       },
       "open_current_changes_view": {
          "suggested_key": {
-            "default": "Alt+Shift+C",
-            "mac": "Alt+Shift+C",
-            "windows": "Alt+Shift+C",
-            "linux": "Alt+Shift+C"
+            "default": "Ctrl+Shift+I",
+            "mac": "Command+Shift+I",
+            "windows": "Ctrl+Shift+I",
+            "linux": "Ctrl+Shift+I"
          },
          "description": "Open 'Current quantity/structure changes' view"
       },
       "open_backup_history_view": {
          "suggested_key": {
-            "default": "Alt+Shift+T",
-            "mac": "Alt+Shift+T",
-            "windows": "Alt+Shift+T",
-            "linux": "Alt+Shift+T"
+            "default": "Ctrl+Shift+O",
+            "mac": "Command+Shift+O",
+            "windows": "Ctrl+Shift+O",
+            "linux": "Ctrl+Shift+O"
          },
          "description": "Open 'Backup history' view"
       },
       "open_web_snapshot_view": {
          "suggested_key": {
-            "default": "Alt+Shift+X",
-            "mac": "Alt+Shift+X",
-            "windows": "Alt+Shift+X",
-            "linux": "Alt+Shift+X"
+            "default": "Ctrl+Shift+P",
+            "mac": "Command+Shift+P",
+            "windows": "Ctrl+Shift+P",
+            "linux": "Ctrl+Shift+P"
          },
          "description": "Open/close quick Web Snapshot helper on current page"
       }

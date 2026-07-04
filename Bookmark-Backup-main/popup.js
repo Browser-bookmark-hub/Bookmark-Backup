@@ -2719,12 +2719,18 @@ async function renderPopupShortcutsDisplay(lang = 'zh_CN') {
 
     const isEn = lang === 'en';
     const isMac = navigator.platform?.toUpperCase().includes('MAC') || navigator.userAgent?.toUpperCase().includes('MAC');
-    const defaultPrefix = isMac ? '⌥Shift+' : 'Alt+Shift+';
+    const defaultPrefix = isMac ? '⌘Shift+' : 'Ctrl+Shift+';
     const formatShortcut = (value, fallbackKey) => {
         if (value === "") return isEn ? 'None' : '未设置';
         const raw = String(value || fallbackKey || '').trim();
         if (!raw) return '';
-        return isMac ? raw.replace(/Alt\+/gi, '⌥') : raw;
+        return isMac
+            ? raw
+                .replace(/Command\+/gi, '⌘')
+                .replace(/MacCtrl\+/gi, '⌃')
+                .replace(/Ctrl\+/gi, '⌃')
+                .replace(/Alt\+/gi, '⌥')
+            : raw;
     };
     const shortcuts = {
         _execute_action: undefined,
@@ -2748,19 +2754,19 @@ async function renderPopupShortcutsDisplay(lang = 'zh_CN') {
 
     const rows = [
         {
-            key: formatShortcut(shortcuts._execute_action, `${defaultPrefix}Z`),
+            key: formatShortcut(shortcuts._execute_action, `${defaultPrefix}U`),
             label: isEn ? 'Activate the extension' : '激活扩展'
         },
         {
-            key: formatShortcut(shortcuts.open_current_changes_view, `${defaultPrefix}C`),
+            key: formatShortcut(shortcuts.open_current_changes_view, `${defaultPrefix}I`),
             label: isEn ? 'Open Current Changes' : '打开当前变化'
         },
         {
-            key: formatShortcut(shortcuts.open_backup_history_view, `${defaultPrefix}T`),
+            key: formatShortcut(shortcuts.open_backup_history_view, `${defaultPrefix}O`),
             label: isEn ? 'Open Backup History' : '打开备份历史'
         },
         {
-            key: formatShortcut(shortcuts.open_web_snapshot_view, `${defaultPrefix}X`),
+            key: formatShortcut(shortcuts.open_web_snapshot_view, `${defaultPrefix}P`),
             label: isEn ? 'Open/Close Quick Archive Tool' : '打开/关闭当前页存档工具'
         }
     ];
@@ -10053,14 +10059,29 @@ function initializeWebSnapshotShortcutPrompt() {
     chrome.storage.local.get(['preferredLang', 'webSnapshotShortcutPromptDismissed'], (result) => {
         const lang = result.preferredLang || 'zh_CN';
         const isEn = lang === 'en';
+        const isMac = navigator.platform?.toUpperCase().includes('MAC') || navigator.userAgent?.toUpperCase().includes('MAC');
+        const fallbackShortcut = isMac ? '⌘Shift+P' : 'Ctrl+Shift+P';
+        const formatPromptShortcut = (value) => {
+            const raw = String(value || '').trim();
+            if (!raw) return '';
+            return isMac
+                ? raw
+                    .replace(/Command\+/gi, '⌘')
+                    .replace(/MacCtrl\+/gi, '⌃')
+                    .replace(/Ctrl\+/gi, '⌃')
+                    .replace(/Alt\+/gi, '⌥')
+                : raw;
+        };
         
         try {
             if (typeof chrome !== 'undefined' && chrome.commands && typeof chrome.commands.getAll === 'function') {
                 chrome.commands.getAll((commands) => {
                     const cmd = commands.find(c => c.name === 'open_web_snapshot_view');
-                    let shortcut = (cmd && cmd.shortcut) ? cmd.shortcut : 'Alt+Shift+X';
+                    let shortcut = cmd ? String(cmd.shortcut || '').trim() : fallbackShortcut;
                     if (!shortcut) {
                         shortcut = isEn ? 'Not Set' : '未设置';
+                    } else {
+                        shortcut = formatPromptShortcut(shortcut);
                     }
                     keyEl.textContent = shortcut;
                     
@@ -10072,11 +10093,11 @@ function initializeWebSnapshotShortcutPrompt() {
                     }
                 });
             } else {
-                keyEl.textContent = 'Alt+Shift+X';
+                keyEl.textContent = fallbackShortcut;
             }
         } catch (e) {
             console.warn('获取快捷键出错:', e);
-            keyEl.textContent = 'Alt+Shift+X';
+            keyEl.textContent = fallbackShortcut;
         }
 
         const dismissed = result.webSnapshotShortcutPromptDismissed === true;
