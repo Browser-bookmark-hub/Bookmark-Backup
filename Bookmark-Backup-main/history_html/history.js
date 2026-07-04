@@ -13456,6 +13456,32 @@ function buildPreviewCommitStatsFromDiffSummary(diffSummary) {
     return changes;
 }
 
+function buildRestoreDiffSummaryPayload(summary) {
+    if (!summary || typeof summary !== 'object') return null;
+    const toCount = (value) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+        return Math.floor(numeric);
+    };
+
+    return {
+        bookmarkAdded: toCount(summary.bookmarkAdded),
+        bookmarkDeleted: toCount(summary.bookmarkDeleted),
+        folderAdded: toCount(summary.folderAdded),
+        folderDeleted: toCount(summary.folderDeleted),
+        movedCount: toCount(summary.movedCount),
+        modifiedCount: toCount(summary.modifiedCount),
+        movedBookmarkCount: toCount(summary.movedBookmarkCount),
+        movedFolderCount: toCount(summary.movedFolderCount),
+        modifiedBookmarkCount: toCount(summary.modifiedBookmarkCount),
+        modifiedFolderCount: toCount(summary.modifiedFolderCount),
+        bookmarkMoved: !!summary.bookmarkMoved,
+        folderMoved: !!summary.folderMoved,
+        bookmarkModified: !!summary.bookmarkModified,
+        folderModified: !!summary.folderModified
+    };
+}
+
 function hasBookmarkTreeContent(snapshotTree) {
     return countBookmarkTreeContentNodes(snapshotTree) > 0;
 }
@@ -13746,7 +13772,8 @@ async function updateRestoreDiffSummaryByStrategy(strategy) {
         changeRatio,
         changeScore,
         thresholdCount,
-        precomputedDiffSummary
+        precomputedDiffSummary,
+        precomputedDiffStrategy: precomputedDiffSummary ? resolvedStrategy : ''
     };
 
     updateRestoreWarning(requestedStrategy, restoreGeneralPreflight);
@@ -14881,7 +14908,9 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
                     requestedStrategy: preflightInfo.requestedStrategy || nextStrategy,
                     resolvedStrategy: normalizeRestoreStrategyValue(nextStrategy === 'overwrite' ? 'overwrite' : preflightResolvedStrategy),
                     changeScore: preflightInfo.changeScore,
-                    thresholdCount: preflightInfo.thresholdCount
+                    thresholdCount: preflightInfo.thresholdCount,
+                    precomputedDiffSummary: buildRestoreDiffSummaryPayload(preflightInfo.precomputedDiffSummary || null),
+                    precomputedDiffStrategy: preflightInfo.precomputedDiffStrategy || null
                 } : null
             });
             if (isRestoreRecoveryLockedResponse(response)) {
@@ -14936,7 +14965,9 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
                         requestedStrategy: preflightInfo.requestedStrategy || strategy,
                         resolvedStrategy: preflightResolvedStrategy,
                         changeScore: preflightInfo.changeScore,
-                        thresholdCount: preflightInfo.thresholdCount
+                        thresholdCount: preflightInfo.thresholdCount,
+                        precomputedDiffSummary: buildRestoreDiffSummaryPayload(preflightInfo.precomputedDiffSummary || null),
+                        precomputedDiffStrategy: preflightInfo.precomputedDiffStrategy || null
                     } : null
                 });
                 if (isRestoreRecoveryLockedResponse(patchRes)) {

@@ -3583,6 +3583,15 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
         const strategy = message.strategy || 'overwrite';
         const restoreSessionId = String(message.restoreSessionId || '').trim();
         const precomputedDiffSummary = normalizeRestoreRecordDiffSummaryPayload(message.precomputedDiffSummary);
+        const precomputedDiffStrategyRaw = String(
+            message.precomputedDiffStrategy
+            || message.diffSummaryStrategy
+            || message.precomputedDiffSummary?.strategy
+            || ''
+        ).trim().toLowerCase();
+        const precomputedDiffStrategy = ['patch', 'overwrite', 'merge'].includes(precomputedDiffStrategyRaw)
+            ? normalizeAppliedRestoreStrategy(precomputedDiffStrategyRaw)
+            : '';
         const sourceFingerprint = message.sourceFingerprint || '';
         const sourceSnapshotKeyRaw = String(message.sourceSnapshotKey || '').trim().toLowerCase();
         const sourceSnapshotKey = sourceSnapshotKeyRaw === '__overwrite__'
@@ -3596,6 +3605,19 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
         const restoreRecordOverwriteMode = normalizedStrategy === 'merge'
             ? 'versioned'
             : sourceOverwriteMode;
+        const precomputedDiffSummaryMatchesStrategy = !!(
+            precomputedDiffSummary
+            && precomputedDiffStrategy
+            && precomputedDiffStrategy === normalizedStrategy
+        );
+        const restoreRecordLocalOnly = (
+            message?.restoreRecordLocalOnly === true
+            || message?.skipRestoreRecordSync === true
+        );
+        const shouldDeferRestorePostWork = (
+            message?.deferPostRestoreArtifacts === true
+            || restoreRecordLocalOnly
+        );
 
         const {
             syncHistory: historyBeforeRestoreRecord = [],
@@ -3754,22 +3776,26 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             });
         } catch (_) { }
         const snapshotBackupSettings = await getSnapshotBackupSettings();
-        const snapshotBackupEnabled = snapshotBackupSettings.enabled !== false;
+        const snapshotBackupEnabled = !restoreRecordLocalOnly && snapshotBackupSettings.enabled !== false;
         const snapshotBackupFormat = normalizeSnapshotBackupFormat(snapshotBackupSettings.format);
         const sharedSnapshotHtml = snapshotBackupEnabled && snapshotBackupFormat === 'html'
             ? convertToEdgeHTML(bookmarks)
             : '';
 
-        const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+        const webDAVconfig = restoreRecordLocalOnly
+            ? {}
+            : await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
         const webDAVConfigured = !!(webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password);
         const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
 
-        const githubRepoConfig = await browserAPI.storage.local.get([
-            'githubRepoToken',
-            'githubRepoOwner',
-            'githubRepoName',
-            'githubRepoEnabled'
-        ]);
+        const githubRepoConfig = restoreRecordLocalOnly
+            ? {}
+            : await browserAPI.storage.local.get([
+                'githubRepoToken',
+                'githubRepoOwner',
+                'githubRepoName',
+                'githubRepoEnabled'
+            ]);
         const githubRepoConfigured = !!(
             githubRepoConfig &&
             githubRepoConfig.githubRepoToken &&
@@ -3778,7 +3804,9 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
         );
         const githubRepoEnabled = githubRepoConfig.githubRepoEnabled !== false;
 
-        const localConfig = await browserAPI.storage.local.get(['defaultDownloadEnabled']);
+        const localConfig = restoreRecordLocalOnly
+            ? {}
+            : await browserAPI.storage.local.get(['defaultDownloadEnabled']);
         const localBackupConfigured = localConfig.defaultDownloadEnabled === true;
 
         let webDAVSuccess = false;
@@ -3786,7 +3814,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
         let localSuccess = false;
         const uploadErrors = [];
 
-        if (webDAVConfigured && webDAVEnabled) {
+        if (!restoreRecordLocalOnly && webDAVConfigured && webDAVEnabled) {
             try {
                 const uploadResult = await uploadBookmarks(bookmarks, {
                     ...snapshotNaming,
@@ -3805,7 +3833,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             }
         }
 
-        if (githubRepoConfigured && githubRepoEnabled) {
+        if (!restoreRecordLocalOnly && githubRepoConfigured && githubRepoEnabled) {
             try {
                 const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks, {
                     ...snapshotNaming,
@@ -3842,7 +3870,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             }
         };
 
-        if (localBackupConfigured) {
+        if (!restoreRecordLocalOnly && localBackupConfigured) {
             localSuccess = await tryLocalSnapshotUpload({ forceEnable: false });
             if (!localSuccess) {
                 try { await new Promise(resolve => setTimeout(resolve, 120)); } catch (_) { }
@@ -3850,12 +3878,14 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             }
         }
 
-        if (!localSuccess && !webDAVSuccess && !githubRepoSuccess) {
+        if (!restoreRecordLocalOnly && !localSuccess && !webDAVSuccess && !githubRepoSuccess) {
             localSuccess = await tryLocalSnapshotUpload({ forceEnable: true });
         }
 
         let restoreSyncDirection = 'none';
-        if (localSuccess && webDAVSuccess && githubRepoSuccess) {
+        if (restoreRecordLocalOnly) {
+            restoreSyncDirection = 'local';
+        } else if (localSuccess && webDAVSuccess && githubRepoSuccess) {
             restoreSyncDirection = 'webdav_github_local';
         } else if (localSuccess && webDAVSuccess) {
             restoreSyncDirection = 'webdav_local';
@@ -3875,11 +3905,13 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
 
         const restoreErrorMessage = uploadErrors.length > 0 ? uploadErrors.join('; ') : '';
         const successfulBackupTargets = [];
-        if (webDAVSuccess) successfulBackupTargets.push('webdav');
-        if (githubRepoSuccess) successfulBackupTargets.push('github_repo');
-        if (localSuccess) successfulBackupTargets.push('local');
+        if (!restoreRecordLocalOnly) {
+            if (webDAVSuccess) successfulBackupTargets.push('webdav');
+            if (githubRepoSuccess) successfulBackupTargets.push('github_repo');
+            if (localSuccess) successfulBackupTargets.push('local');
+        }
 
-        if (restoreSyncDirection === 'none') {
+        if (!restoreRecordLocalOnly && restoreSyncDirection === 'none') {
             throw new Error(`恢复记录快照导出失败: ${restoreErrorMessage || '未能写入任何快照目标'}`);
         }
         await updateSyncStatus(
@@ -3895,9 +3927,12 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 skipAutoArtifacts: true,
                 localBookmarks: bookmarks,
                 successfulBackupTargets,
-                snapshotBackupEnabled,
+                snapshotBackupEnabled: restoreRecordLocalOnly ? false : snapshotBackupEnabled,
                 snapshotFormat: snapshotBackupFormat,
-                comparisonGeneration: activeComparisonGeneration
+                comparisonGeneration: activeComparisonGeneration,
+                skipBookmarkDiffStats: restoreRecordLocalOnly || precomputedDiffSummaryMatchesStrategy,
+                skipHistoryChangeData: restoreRecordLocalOnly || precomputedDiffSummaryMatchesStrategy,
+                forceSaveSnapshotData: restoreRecordLocalOnly
             }
         );
 
@@ -3929,6 +3964,9 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 };
                 targetRecord.comparisonGeneration = activeComparisonGeneration;
 
+                let finalBookmarkStats = null;
+                let finalCurrentTree = null;
+
                 try {
                     let restoreCurrentTree = null;
                     const loadRestoreCurrentTree = async () => {
@@ -3951,10 +3989,24 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                     };
 
                     let statsApplied = false;
-                    let finalBookmarkStats = null;
-                    let finalCurrentTree = null;
+                    if (precomputedDiffSummaryMatchesStrategy) {
+                        const normalizedCurrentTree = await loadRestoreCurrentTree();
+                        if (normalizedCurrentTree) {
+                            const bookmarkStats = buildBookmarkStatsFromRestoreDiffSummary(
+                                precomputedDiffSummary,
+                                normalizedCurrentTree
+                            );
+                            if (bookmarkStats) {
+                                targetRecord.bookmarkStats = bookmarkStats;
+                                targetRecord.isFirstBackup = false;
+                                finalBookmarkStats = bookmarkStats;
+                                finalCurrentTree = normalizedCurrentTree;
+                                statsApplied = true;
+                            }
+                        }
+                    }
 
-                    if (baselineTree && baselineTree.length > 0) {
+                    if (!statsApplied && baselineTree && baselineTree.length > 0) {
                         const normalizedCurrentTree = await loadRestoreCurrentTree();
                         if (normalizedCurrentTree) {
                             const diffSummary = normalizedStrategy === 'overwrite'
@@ -3966,20 +4018,6 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                                 prevBookmarkCount: countAllBookmarks(baselineTree),
                                 prevFolderCount: countBookmarkTreeContentFolders(baselineTree)
                             });
-                            if (bookmarkStats) {
-                                targetRecord.bookmarkStats = bookmarkStats;
-                                targetRecord.isFirstBackup = false;
-                                finalBookmarkStats = bookmarkStats;
-                                finalCurrentTree = normalizedCurrentTree;
-                                statsApplied = true;
-                            }
-                        }
-                    }
-
-                    if (!statsApplied && precomputedDiffSummary) {
-                        const normalizedCurrentTree = await loadRestoreCurrentTree();
-                        if (normalizedCurrentTree) {
-                            const bookmarkStats = buildBookmarkStatsFromRestoreDiffSummary(precomputedDiffSummary, normalizedCurrentTree);
                             if (bookmarkStats) {
                                 targetRecord.bookmarkStats = bookmarkStats;
                                 targetRecord.isFirstBackup = false;
@@ -4059,7 +4097,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 syncHistory[targetIndex] = targetRecord;
                 await browserAPI.storage.local.set({ syncHistory });
 
-                try {
+                const runRestoreRecordPostArtifacts = async () => {
                     const activeLang = await getCurrentLang();
                     let restoreChangesArchiveResult = null;
 
@@ -4133,8 +4171,20 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                             uploadErrors.push(text);
                         }
                     });
-                } catch (postSyncError) {
-                    
+                };
+
+                if (restoreRecordLocalOnly) {
+                    // 恢复/导入合并的历史记录只写本地记录与基线；不触发远端变化归档或 info log。
+                } else if (shouldDeferRestorePostWork) {
+                    enqueueDeferredPostSyncArtifacts(async () => {
+                        try {
+                            await runRestoreRecordPostArtifacts();
+                        } catch (_) { }
+                    });
+                } else {
+                    try {
+                        await runRestoreRecordPostArtifacts();
+                    } catch (postSyncError) { }
                 }
             }
         }
@@ -4153,8 +4203,17 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
         }
 
         await updateBadgeAfterSync(true);
-        await updateAndCacheAnalysis();
-        await setBadge();
+        if (shouldDeferRestorePostWork) {
+            enqueueDeferredPostSyncArtifacts(async () => {
+                try {
+                    await updateAndCacheAnalysis();
+                    await setBadge();
+                } catch (_) { }
+            });
+        } else {
+            await updateAndCacheAnalysis();
+            await setBadge();
+        }
 
         try {
             await browserAPI.runtime.sendMessage({
@@ -9674,7 +9733,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             await executeBookmarkOperationWithAutoRollback(async () => {
                                 await restoreSnapshotTree(tree, {
                                     baselineTimestamp: lastBookmarkData.timestamp,
-                                    preferredLang
+                                    preferredLang,
+                                    deferPostApplyRefresh: true
                                 });
                             }, {
                                 preferredLang,
@@ -9685,7 +9745,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         await executeBookmarkOperationWithAutoRollback(async () => {
                             await restoreSnapshotTree(tree, {
                                 baselineTimestamp: lastBookmarkData.timestamp,
-                                preferredLang
+                                preferredLang,
+                                deferPostApplyRefresh: true
                             });
                         }, {
                             preferredLang,
@@ -9930,7 +9991,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     strategy: normalizedAppliedStrategy,
                                     restoreSessionId: normalizedRestoreSessionId,
                                     baselineTreeOverride: currentTree,
-                                    baselineTimeOverride: preRestoreCapturedAtIso
+                                    baselineTimeOverride: preRestoreCapturedAtIso,
+                                    deferPostRestoreArtifacts: true
                                 });
                                 const restoreRecordSuccess = restoreRecordResult?.success === true;
                                 restoreRecordFields = {
@@ -10184,7 +10246,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sourceFingerprint: record.fingerprint || '',
                         sourceSnapshotKey: record.snapshotKey || '',
                         sourceOverwriteMode: String(record.overwriteMode || '').trim().toLowerCase() === 'overwrite' ? 'overwrite' : 'versioned',
-                        precomputedDiffSummary: preflightPayload?.precomputedDiffSummary || null
+                        precomputedDiffSummary: preflightPayload?.precomputedDiffSummary || null,
+                        precomputedDiffStrategy: preflightPayload?.precomputedDiffStrategy || preflightPayload?.diffSummaryStrategy || null
                     };
 
                     await beginRestoreRecoveryTransaction({
@@ -10230,7 +10293,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                             await executeBookmarkOperationWithAutoRollback(async () => {
                                 await restoreSnapshotTree(tree, {
                                     baselineTimestamp: record.time,
-                                    preferredLang
+                                    preferredLang,
+                                    deferPostApplyRefresh: true
                                 });
                             }, {
                                 preferredLang,
@@ -10241,7 +10305,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         await executeBookmarkOperationWithAutoRollback(async () => {
                             await restoreSnapshotTree(tree, {
                                 baselineTimestamp: record.time,
-                                preferredLang
+                                preferredLang,
+                                deferPostApplyRefresh: true
                             });
                         }, {
                             preferredLang,
@@ -20133,6 +20198,49 @@ async function getRestoreRecoveryTransactionStatus(options = {}) {
     }
 }
 
+async function reconcileStaleBookmarkUiMuteFlagsAtBoot(reason = 'service_worker_boot') {
+    if (isBookmarkRestoring || isBookmarkImporting || isBookmarkBulkChanging) return false
+
+    try {
+        const store = await browserAPI.storage.local.get([
+            'bookmarkRestoringFlag',
+            'bookmarkImportingFlag',
+            'bookmarkBulkChangeFlag',
+            CANVAS_MARKER_BULK_MODE_KEY
+        ])
+        const markerState = normalizeCanvasMarkerBulkModeState(store?.[CANVAS_MARKER_BULK_MODE_KEY])
+        const patch = {}
+
+        if (store?.bookmarkRestoringFlag === true) {
+            patch.bookmarkRestoringFlag = false
+        }
+        if (store?.bookmarkBulkChangeFlag === true) {
+            patch.bookmarkBulkChangeFlag = false
+        }
+        if (store?.bookmarkImportingFlag === true) {
+            patch.bookmarkImportingFlag = false
+        }
+        if (store?.[CANVAS_MARKER_BULK_MODE_KEY]) {
+            patch[CANVAS_MARKER_BULK_MODE_KEY] = {
+                active: false,
+                source: String(markerState.source || reason || '').trim(),
+                reason: markerState.endedAt ? 'expired_on_boot' : 'cleared_on_boot',
+                sessionId: '',
+                startedAt: 0,
+                endedAt: Date.now()
+            }
+        }
+
+        if (Object.keys(patch).length === 0) return false
+        await browserAPI.storage.local.set(patch)
+        return true
+    } catch (_) {
+        return false
+    }
+}
+
+reconcileStaleBookmarkUiMuteFlagsAtBoot('service_worker_boot').catch(() => { })
+
 async function loadRestoreRecoveryTransactionSnapshots(transaction = null) {
     const activeTransaction = transaction && typeof transaction === 'object'
         ? transaction
@@ -20504,7 +20612,27 @@ function buildRestoreRecoveryWriteLockedResponse(preferredLang = 'zh_CN', transa
 }
 
 async function getRestoreRecoveryWriteLockedResponse(preferredLang = '') {
-    return null;
+    const preferredLangRaw = preferredLang || await getCurrentLang()
+    const lang = preferredLangRaw === 'en' ? 'en' : 'zh_CN'
+
+    if (isBookmarkRestoring && isBookmarkRestoringFromUiFlag) {
+        await clearUiRestoreGuardFlagIfNeeded()
+    }
+
+    const transaction = await getPendingRestoreRecoveryTransaction()
+    if (transaction && typeof transaction === 'object') {
+        const capabilities = await getRestoreRecoveryTransactionCapabilities(transaction)
+        return buildRestoreRecoveryWriteLockedResponse(lang, transaction, capabilities)
+    }
+
+    const intent = await getRawRestoreRecoveryIntent()
+    if (intent && typeof intent === 'object') {
+        const response = buildRestoreRecoveryWriteLockedResponse(lang)
+        response.transaction = decorateRestoreRecoveryIntentStatus(intent)
+        return response
+    }
+
+    return null
 }
 
 async function dismissRestoreRecoveryIntent(options = {}) {
@@ -20606,7 +20734,7 @@ async function cleanupRestoreRecoveryMergeFolderById(folderId) {
     }
 
     try {
-        await browserAPI.bookmarks.removeTree(normalizedFolderId)
+        await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.removeTree(normalizedFolderId))
         return { success: true, missing: false, removedFolderId: normalizedFolderId }
     } catch (error) {
         if (isRestoreRecoveryBookmarkMissingError(error)) {
@@ -20768,7 +20896,8 @@ async function executeStoredRecoverySnapshotByStrategy(snapshotTree, options = {
                 await restoreSnapshotTree(snapshotTree, {
                     baselineTimestamp,
                     preferredLang,
-                    allowEmpty: true
+                    allowEmpty: true,
+                    deferPostApplyRefresh: true
                 })
             }, { preferredLang })
         }
@@ -20777,7 +20906,8 @@ async function executeStoredRecoverySnapshotByStrategy(snapshotTree, options = {
             await restoreSnapshotTree(snapshotTree, {
                 baselineTimestamp,
                 preferredLang,
-                allowEmpty: true
+                allowEmpty: true,
+                deferPostApplyRefresh: true
             })
         }, { preferredLang })
     }
@@ -20926,7 +21056,8 @@ async function continueRestoreRecoveryTransaction() {
                     strategy: executionResult.strategy,
                     restoreSessionId: String(transaction.sessionId || '').trim(),
                     baselineTreeOverride: startSnapshot,
-                    baselineTimeOverride: String(transaction?.startedAtIso || '')
+                    baselineTimeOverride: String(transaction?.startedAtIso || ''),
+                    deferPostRestoreArtifacts: true
                 })
             } catch (restoreRecordError) {
                 restoreRecordResult = {
@@ -22377,44 +22508,12 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
     let moved = 0;
     let updated = 0;
 
-    const runStrictBatch = async (items, worker, concurrency = 6) => {
+    const runStrictSequential = async (items, worker) => {
         const queue = Array.isArray(items) ? items : [];
         if (!queue.length) return;
 
-        const limit = Math.max(1, Number(concurrency) || 1);
-        const running = new Set();
-        const errors = [];
-        let cursor = 0;
-
-        const launchTask = (taskIndex) => {
-            const task = Promise.resolve()
-                .then(() => worker(queue[taskIndex], taskIndex))
-                .catch((error) => {
-                    errors.push(error);
-                })
-                .finally(() => {
-                    running.delete(task);
-                });
-            running.add(task);
-        };
-
-        while ((cursor < queue.length || running.size > 0) && errors.length === 0) {
-            while (cursor < queue.length && running.size < limit && errors.length === 0) {
-                launchTask(cursor);
-                cursor += 1;
-            }
-
-            if (running.size > 0) {
-                await Promise.race(running);
-            }
-        }
-
-        if (running.size > 0) {
-            await Promise.allSettled([...running]);
-        }
-
-        if (errors.length > 0) {
-            throw errors[0];
+        for (let i = 0; i < queue.length; i += 1) {
+            await worker(queue[i], i);
         }
     };
 
@@ -22440,15 +22539,15 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         if (!knownCurrentIds.has(actualNodeId)) {
             try {
                 const createdNode = targetIsFolder
-                    ? await browserAPI.bookmarks.create({
+                    ? await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({
                         parentId: String(actualParentId),
                         title: String(targetNode.title || '')
-                    })
-                    : await browserAPI.bookmarks.create({
+                    }))
+                    : await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({
                         parentId: String(actualParentId),
                         title: String(targetNode.title || ''),
                         url: String(targetNode.url || '')
-                    });
+                    }));
                 actualNodeId = String(createdNode.id);
                 idRemap.set(targetNodeId, actualNodeId);
                 knownCurrentIds.add(actualNodeId);
@@ -22461,9 +22560,9 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         }
 
         if (targetIsFolder && targetChildren.length > 0) {
-            await runStrictBatch(targetChildren, async (child) => {
+            await runStrictSequential(targetChildren, async (child) => {
                 await ensureTargetNodeExists(child, actualNodeId);
-            }, 5);
+            });
         }
     };
 
@@ -22471,16 +22570,16 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         ? targetMeta.rootNode.children
         : [];
 
-    await runStrictBatch(targetRootChildren, async (targetRootChild) => {
+    await runStrictSequential(targetRootChildren, async (targetRootChild) => {
         if (!targetRootChild || targetRootChild.id == null) return;
         const actualRootId = resolveTargetId(targetRootChild.id);
         if (!actualRootId || !knownCurrentIds.has(actualRootId)) return;
 
         const rootChildItems = Array.isArray(targetRootChild.children) ? targetRootChild.children : [];
-        await runStrictBatch(rootChildItems, async (child) => {
+        await runStrictSequential(rootChildItems, async (child) => {
             await ensureTargetNodeExists(child, actualRootId);
-        }, 5);
-    }, 2);
+        });
+    });
 
     if (created > 0) {
         await refreshCurrentMeta();
@@ -22519,21 +22618,21 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         }
     });
 
-    await runStrictBatch(updateQueue, async (updateOp) => {
+    await runStrictSequential(updateQueue, async (updateOp) => {
         if (!currentMeta.nodeById.has(updateOp.id)) return;
         const updatePayload = { title: updateOp.title };
         if (updateOp.isBookmark) {
             updatePayload.url = String(updateOp.url || '');
         }
         try {
-            await browserAPI.bookmarks.update(updateOp.id, updatePayload);
+            await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.update(updateOp.id, updatePayload));
             updated += 1;
         } catch (e) {
             throw new Error(preferredLang === 'en'
                 ? `Patch revert update failed: ${e.message || e}`
                 : `补丁撤销修改失败: ${e.message || e}`);
         }
-    }, 10);
+    });
 
     if (updateQueue.length > 0) {
         await refreshCurrentMeta();
@@ -22566,20 +22665,20 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         return depthB - depthA;
     });
 
-    await runStrictBatch(moveQueue, async (moveOp) => {
+    await runStrictSequential(moveQueue, async (moveOp) => {
         if (!currentMeta.nodeById.has(moveOp.id)) return;
         if (!currentMeta.nodeById.has(String(moveOp.parentId))) return;
         try {
-            await browserAPI.bookmarks.move(moveOp.id, {
+            await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.move(moveOp.id, {
                 parentId: String(moveOp.parentId)
-            });
+            }));
             moved += 1;
         } catch (e) {
             throw new Error(preferredLang === 'en'
                 ? `Patch revert move failed: ${e.message || e}`
                 : `补丁撤销移动失败: ${e.message || e}`);
         }
-    }, 1);
+    });
 
     if (moveQueue.length > 0) {
         await refreshCurrentMeta();
@@ -22610,14 +22709,14 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
         return depthB - depthA;
     });
 
-    await runStrictBatch(deleteRoots, async (nodeId) => {
+    await runStrictSequential(deleteRoots, async (nodeId) => {
         const node = currentMeta.nodeById.get(nodeId);
         if (!node) return;
         try {
             if (node.isFolder) {
-                await browserAPI.bookmarks.removeTree(nodeId);
+                await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.removeTree(nodeId));
             } else {
-                await browserAPI.bookmarks.remove(nodeId);
+                await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.remove(nodeId));
             }
             removed += 1;
         } catch (e) {
@@ -22625,7 +22724,7 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
                 ? `Patch revert delete failed: ${e.message || e}`
                 : `补丁撤销删除失败: ${e.message || e}`);
         }
-    }, 8);
+    });
 
     if (deleteRoots.length > 0) {
         await refreshCurrentMeta();
@@ -22684,10 +22783,10 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
             }
 
             try {
-                await browserAPI.bookmarks.move(targetChromeId, {
+                await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.move(targetChromeId, {
                     parentId: String(actualParentId),
                     index: i
-                });
+                }));
                 moved += 1;
             } catch (e) {
                 throw new Error(preferredLang === 'en'
@@ -22753,7 +22852,8 @@ async function restoreSnapshotTree(snapshotTree, options = {}) {
         baselineTimestamp,
         preferredLang = 'zh_CN',
         allowEmpty = false,
-        strictDelete = false
+        strictDelete = false,
+        deferPostApplyRefresh = false
     } = options;
 
     if (!allowEmpty) {
@@ -22801,8 +22901,20 @@ async function restoreSnapshotTree(snapshotTree, options = {}) {
     // 清理状态并更新角标与缓存
     resetOperationStatus();
     try { await browserAPI.storage.local.remove('hasBookmarkActivitySinceLastCheck'); } catch (_) { }
-    await updateAndCacheAnalysis();
-    await setBadge();
+    await setBookmarkChangesDirty(false);
+    const refreshAfterRestore = async () => {
+        await updateAndCacheAnalysis();
+        await setBadge();
+    };
+    if (deferPostApplyRefresh) {
+        enqueueDeferredPostSyncArtifacts(async () => {
+            try {
+                await refreshAfterRestore();
+            } catch (_) { }
+        });
+    } else {
+        await refreshAfterRestore();
+    }
 }
 
 // 导入合并：将快照树导入到新文件夹，不覆盖当前书签
@@ -22828,19 +22940,19 @@ async function mergeSnapshotTree(snapshotTree, options = {}) {
     const containerTitle = preferredLang === 'en'
         ? `Import Merge - ${timestamp}`
         : `导入合并-${timestamp}`;
-    const containerFolder = await browserAPI.bookmarks.create({
+    const containerFolder = await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({
         parentId: targetRoot.id,
         title: containerTitle
-    });
+    }));
 
     const snapshotRootChildren = (snapshotTree[0] && snapshotTree[0].children) ? snapshotTree[0].children : [];
 
     const createNodeRecursive = async (parentId, snapshotNode) => {
         if (!snapshotNode) return;
         if (snapshotNode.url) {
-            await browserAPI.bookmarks.create({ parentId, title: snapshotNode.title || '', url: snapshotNode.url, index: snapshotNode.index });
+            await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({ parentId, title: snapshotNode.title || '', url: snapshotNode.url, index: snapshotNode.index }));
         } else {
-            const folder = await browserAPI.bookmarks.create({ parentId, title: snapshotNode.title || '', index: snapshotNode.index });
+            const folder = await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({ parentId, title: snapshotNode.title || '', index: snapshotNode.index }));
             if (snapshotNode.children && snapshotNode.children.length) {
                 for (const child of snapshotNode.children) {
                     await createNodeRecursive(folder.id, child);
@@ -22851,10 +22963,10 @@ async function mergeSnapshotTree(snapshotTree, options = {}) {
 
     for (const root of snapshotRootChildren) {
         const rootTitle = root.title || (preferredLang === 'en' ? 'Root' : '根目录');
-        const rootFolder = await browserAPI.bookmarks.create({
+        const rootFolder = await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({
             parentId: containerFolder.id,
             title: rootTitle
-        });
+        }));
         if (root.children && root.children.length) {
             for (const child of root.children) {
                 await createNodeRecursive(rootFolder.id, child);
@@ -23009,6 +23121,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         let bookmarkDiff = 0; // 初始化 diff 变量
         let folderDiff = 0;
         let localBookmarks = null; // 声明在外部作用域，以便在 newSyncRecord 中使用
+        const skipBookmarkDiffStats = options && options.skipBookmarkDiffStats === true;
 
         if (status === 'success' && (direction === 'upload' || direction === 'download' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_github_local' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
             localBookmarks = Array.isArray(options?.localBookmarks) && options.localBookmarks.length
@@ -23028,8 +23141,24 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             bookmarkDiff = currentBookmarkCount - prevBookmarkCount;
             folderDiff = currentFolderCount - prevFolderCount;
 
-            // 首次备份（或基准缺失）：diff 保持 0，但“新增”要写入日志，避免首条日志为空
-            if (!hasLastSnapshotTree) {
+            if (skipBookmarkDiffStats) {
+                bookmarkDiff = 0;
+                folderDiff = 0;
+                bookmarkAdded = 0;
+                folderAdded = 0;
+                bookmarkDeleted = 0;
+                folderDeleted = 0;
+                movedCount = 0;
+                modifiedCount = 0;
+                addedCount = 0;
+                deletedCount = 0;
+                movedBookmarkCount = 0;
+                movedFolderCount = 0;
+                modifiedBookmarkCount = 0;
+                modifiedFolderCount = 0;
+                explicitMovedIdListForRecord = [];
+            } else if (!hasLastSnapshotTree) {
+                // 首次备份（或基准缺失）：diff 保持 0，但“新增”要写入日志，避免首条日志为空
                 bookmarkDiff = 0;
                 folderDiff = 0;
                 bookmarkAdded = currentBookmarkCount;
@@ -23046,7 +23175,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             // - 支持“+/-同时存在但净差为0”的显示
             // - 支持“移动/修改后又改回去”自动归零
             try {
-                if (hasLastSnapshotTree) {
+                if (!skipBookmarkDiffStats && hasLastSnapshotTree) {
                     const explicitMovedIdSet = new Set(
                         (Array.isArray(recentMovedIds) ? recentMovedIds : [])
                             .map(r => r && r.id)
@@ -23217,8 +23346,12 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
 
         // 普通备份历史按瘦身策略保存；高危操作安全快照走独立 checkpoint，不受这里影响。
         // 例外：若变化载荷构建失败且策略关闭了快照保留，会临时保留一次快照，避免该条记录失去恢复能力。
-        const shouldRetainSnapshotDataByPolicy = status === 'success' && shouldRetainBackupHistorySnapshotData(backupHistorySlimming);
-        const shouldSaveChangeData = status === 'success' && shouldRetainBackupHistoryChangeData(backupHistorySlimming);
+        const forceSaveSnapshotData = options && options.forceSaveSnapshotData === true;
+        const skipHistoryChangeData = options && options.skipHistoryChangeData === true;
+        const shouldRetainSnapshotDataByPolicy = status === 'success' && (
+            forceSaveSnapshotData || shouldRetainBackupHistorySnapshotData(backupHistorySlimming)
+        );
+        const shouldSaveChangeData = status === 'success' && !skipHistoryChangeData && shouldRetainBackupHistoryChangeData(backupHistorySlimming);
         let shouldSaveTree = shouldRetainSnapshotDataByPolicy;
         let recordChangeDataPayload = null;
         let snapshotFallbackApplied = false;
@@ -30837,6 +30970,49 @@ async function runBatchedTasks(items, worker, concurrency = 6) {
     return results;
 }
 
+const BOOKMARK_WRITE_API_CONCURRENCY = 1;
+const BOOKMARK_WRITE_API_YIELD_EVERY = 48;
+let bookmarkWriteApiInFlight = 0;
+let bookmarkWriteApiCompletedSinceYield = 0;
+const bookmarkWriteApiQueue = [];
+
+async function acquireBookmarkWriteApiSlot() {
+    if (bookmarkWriteApiInFlight < BOOKMARK_WRITE_API_CONCURRENCY) {
+        bookmarkWriteApiInFlight += 1;
+        return;
+    }
+
+    await new Promise((resolve) => {
+        bookmarkWriteApiQueue.push(resolve);
+    });
+}
+
+function releaseBookmarkWriteApiSlot() {
+    const next = bookmarkWriteApiQueue.shift();
+    if (next) {
+        try { next(); } catch (_) { }
+        return;
+    }
+    bookmarkWriteApiInFlight = Math.max(0, bookmarkWriteApiInFlight - 1);
+}
+
+async function yieldAfterBookmarkWriteApiBurst() {
+    bookmarkWriteApiCompletedSinceYield += 1;
+    if (bookmarkWriteApiCompletedSinceYield < BOOKMARK_WRITE_API_YIELD_EVERY) return;
+    bookmarkWriteApiCompletedSinceYield = 0;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function runBookmarkWriteApiOperation(operation) {
+    await acquireBookmarkWriteApiSlot();
+    try {
+        return await operation();
+    } finally {
+        releaseBookmarkWriteApiSlot();
+        await yieldAfterBookmarkWriteApiBurst();
+    }
+}
+
 function sumCreatedCounts(values) {
     return (Array.isArray(values) ? values : []).reduce((total, value) => {
         return total + (Number.isFinite(value) ? value : 0);
@@ -30848,13 +31024,13 @@ async function removeAllChildren(parentId, options = {}) {
     const children = await browserAPI.bookmarks.getChildren(parentId);
     const deleteFailures = [];
 
-    await runBatchedTasks(children || [], async (child) => {
+    for (const child of (children || [])) {
         try {
             const isFolderNode = !child?.url;
             if (isFolderNode) {
-                await browserAPI.bookmarks.removeTree(child.id);
+                await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.removeTree(child.id));
             } else {
-                await browserAPI.bookmarks.remove(child.id);
+                await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.remove(child.id));
             }
         } catch (e) {
             const detail = {
@@ -30867,8 +31043,7 @@ async function removeAllChildren(parentId, options = {}) {
                 
             }
         }
-        return 0;
-    }, 8);
+    }
 
     if (strictDelete && deleteFailures.length > 0) {
         const first = deleteFailures[0];
@@ -30886,20 +31061,18 @@ async function createNodeRecursive(node, parentId) {
     const isFolder = Array.isArray(node.children) && !node.url;
 
     if (isFolder) {
-        const createdFolder = await browserAPI.bookmarks.create({ parentId, title, index });
+        const createdFolder = await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({ parentId, title, index }));
         let created = 1;
 
         const childNodes = Array.isArray(node.children) ? node.children : [];
-        const childCreatedCounts = await runBatchedTasks(childNodes, async (child) => {
-            return await createNodeRecursive(child, createdFolder.id);
-        }, 5);
-
-        created += sumCreatedCounts(childCreatedCounts);
+        for (const child of childNodes) {
+            created += await createNodeRecursive(child, createdFolder.id);
+        }
         return created;
     }
 
     if (node.url) {
-        await browserAPI.bookmarks.create({ parentId, title, url: node.url, index });
+        await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({ parentId, title, url: node.url, index }));
         return 1;
     }
 
@@ -31184,11 +31357,9 @@ async function executeOverwriteBookmarkRestore(bookmarkTree, options = {}) {
         }
 
         const childNodes = Array.isArray(topFolder?.children) ? topFolder.children : [];
-        const childCreatedCounts = await runBatchedTasks(childNodes, async (child) => {
-            return await createNodeRecursive(child, targetContainer.id);
-        }, 5);
-
-        createdCount += sumCreatedCounts(childCreatedCounts);
+        for (const child of childNodes) {
+            createdCount += await createNodeRecursive(child, targetContainer.id);
+        }
     }
 
     return { created: createdCount };
@@ -31372,10 +31543,10 @@ async function executeMergeBookmarkRestore(bookmarkTree, options = {}) {
 
     const importRootTitle = buildMergeImportRootTitle(lang, options)
 
-    const importRootFolder = await browserAPI.bookmarks.create({
+    const importRootFolder = await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({
         parentId: targetContainer.id,
         title: importRootTitle
-    });
+    }));
 
     let createdCount = 1; // importRootFolder
     const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
@@ -31393,18 +31564,16 @@ async function executeMergeBookmarkRestore(bookmarkTree, options = {}) {
             }
 
             const topTitle = String(topFolder?.title || '').trim() || (isEn ? 'Bookmarks' : '书签');
-            const topContainer = await browserAPI.bookmarks.create({
+            const topContainer = await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({
                 parentId: importRootFolder.id,
                 title: topTitle
-            });
+            }));
             createdCount += 1; // topContainer
 
             const childNodes = Array.isArray(topFolder?.children) ? topFolder.children : [];
-            const childCreatedCounts = await runBatchedTasks(childNodes, async (child) => {
-                return await createNodeRecursive(child, topContainer.id);
-            }, 5);
-
-            createdCount += sumCreatedCounts(childCreatedCounts);
+            for (const child of childNodes) {
+                createdCount += await createNodeRecursive(child, topContainer.id);
+            }
         }
     }
 
@@ -33354,7 +33523,8 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdCount, lo
                     strategy: appliedRestoreStrategy,
                     restoreSessionId: normalizedRestoreSessionId,
                     baselineTreeOverride: isBookmarkTreeShapeValid(preRestoreTree) ? preRestoreTree : null,
-                    baselineTimeOverride: String(preRestoreCapturedAtIso || '')
+                    baselineTimeOverride: String(preRestoreCapturedAtIso || ''),
+                    deferPostRestoreArtifacts: true
                 });
                 const restoreRecordSuccess = restoreRecordResult?.success === true;
                 const restoreRecordBoundaryApplied = (

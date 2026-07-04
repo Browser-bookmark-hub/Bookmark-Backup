@@ -1163,15 +1163,33 @@ function promptRestoreRecoveryTransactionFromPopup() {
     });
 }
 
-async function callBackgroundFunction(action, data = {}) {
+async function callBackgroundFunction(action, data = {}, options = {}) {
     return new Promise((resolve, reject) => {
+        const timeoutMs = Math.max(0, Number(options?.timeoutMs) || 0);
+        let settled = false;
+        let timeoutId = null;
+        const settle = (fn, value) => {
+            if (settled) return;
+            settled = true;
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            fn(value);
+        };
+        if (timeoutMs > 0) {
+            timeoutId = setTimeout(() => {
+                settle(reject, new Error(`Background request timed out: ${action}`));
+            }, timeoutMs);
+        }
         try {
             chrome.runtime.sendMessage({
                 action: action,
                 ...data
             }, response => {
+                if (settled) return;
                 if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
+                    settle(reject, new Error(chrome.runtime.lastError.message));
                 } else {
                     if (
                         isRestoreRecoveryLockedResponse(response)
@@ -1183,11 +1201,11 @@ async function callBackgroundFunction(action, data = {}) {
                     } else if (shouldPromptRestoreRecoveryOnResponse(action, response)) {
                         promptRestoreRecoveryTransactionFromPopup();
                     }
-                    resolve(response);
+                    settle(resolve, response);
                 }
             });
         } catch (error) {
-            reject(error);
+            settle(reject, error);
         }
     });
 }
@@ -1267,6 +1285,8 @@ async function maybePromptRestoreRecoveryTransaction() {
         const status = await callBackgroundFunction('getRestoreRecoveryTransactionStatus', {
             markPromptShown: true,
             uiSource: 'popup'
+        }, {
+            timeoutMs: 1800
         });
         if (!status || status.success !== true || !status.transaction) {
             return;
@@ -4535,7 +4555,9 @@ function updateBookmarkCountDisplay(passedLang) {
     const mainItemStyle = "word-break: break-all; color: var(--theme-text-primary); text-align: center;";
     const secondaryItemStyle = "margin-top: 5px; font-size: 12px; color: var(--theme-text-secondary); text-align: center;";
 
-    const getTransactionStatusPromise = callBackgroundFunction('getRestoreRecoveryTransactionStatus').catch(() => null);
+    const getTransactionStatusPromise = callBackgroundFunction('getRestoreRecoveryTransactionStatus', {}, {
+        timeoutMs: 1200
+    }).catch(() => null);
 
     Promise.all([getLangPromise, getAutoSyncStatePromise, getActiveBackupProgressPromise, getTransactionStatusPromise])
         .then(([currentLang, isAutoSyncEnabled, activeBackupProgress, txStatus]) => {
@@ -16562,7 +16584,8 @@ function showRestoreModal(versions, source) {
                 thresholdCount: normalizeRestorePatchThresholdCount(thresholdCount),
                 patchUnsupported: preview?.patchUnsupported === true,
                 stableIdComparable: preview?.stableIdComparable !== false,
-                precomputedDiffSummary: buildRestoreDiffSummaryPayload(preview?.diffSummary || null)
+                precomputedDiffSummary: buildRestoreDiffSummaryPayload(preview?.diffSummary || null),
+                precomputedDiffStrategy: resolvedStrategy
             };
         };
 
@@ -16737,7 +16760,8 @@ function showRestoreModal(versions, source) {
                 sourceFingerprint: selectedVersion?.fingerprint || '',
                 sourceSnapshotKey: selectedVersion?.restoreRef?.snapshotKey || '',
                 sourceOverwriteMode: selectedFolderType === 'overwrite' ? 'overwrite' : 'versioned',
-                precomputedDiffSummary: restoreExecutePreflight?.precomputedDiffSummary || null
+                precomputedDiffSummary: restoreExecutePreflight?.precomputedDiffSummary || null,
+                precomputedDiffStrategy: restoreExecutePreflight?.precomputedDiffStrategy || null
             };
 
             // 执行恢复：锁定按钮
