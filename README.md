@@ -6,31 +6,18 @@
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/dbdpgedioldmeooemjanbjlhgpocafbc?color=0F9D58&logo=googlechrome&logoColor=white&label=Chrome+Web+Store)](https://chromewebstore.google.com/detail/dbdpgedioldmeooemjanbjlhgpocafbc)
 
 > [!NOTE]
-> **最新版本 v3.5.0 更新内容**：
-> - **网页快照深度增强**：
->   - 新增对 **高亮标记工具** 与 **Markdown (MD) 格式** 导出的支持，快照保存算法参考了 Obsidian Clipper。
->   - 选择高亮工具时默认采用「MD 格式」的 `{==}` 格式，高亮标记可直接导出至 Markdown 文件中；而其他带有特殊样式效果的标记则可以直接在导出的 MHTML 快照中完整查看。
-> - **补丁算法重构与优化**：
->   - 重构了**补丁恢复**与**补丁撤销**事务，引入了精确的节点差异合并算法以提高稳定性。自动切换阈值设定为 500 条。
->   - 删除了原有的“中断恢复面板”及“后置校验机制”，将安全保护完全收拢至更稳定可靠的 **临时安全快照**。
-> - **UI 修正与快捷键重构**：
->   - 优化并精简了配置设置页面，支持在记录中直观添加和显示备注。
->   - 重构了全局快捷键（修改为 `Alt/Option + Shift` 组合键），避免与页面原有快捷操作发生冲突：
->     - `Alt / Option + Shift + Z`：激活扩展（代替原 `Alt+A`）
->     - `Alt / Option + Shift + C`：打开当前变化（代替原 `Alt+C`）
->     - `Alt / Option + Shift + T`：打开备份历史（代替原 `Alt+H`）
->     - `Alt / Option + Shift + X`：打开当前页快照工具（代替原 `Alt+W` / `Alt+1`）
->
-> <table>
->   <tr>
->     <td align="center" width="50%">
->       <img width="380" alt="网页存档 zh" src="Screenshots and icons/v3.5/网页存档zh.png" />
->     </td>
->     <td align="center" width="50%">
->       <img width="380" alt="高亮工具 zh" src="Screenshots and icons/v3.5/高亮工具zh.png" />
->     </td>
->   </tr>
-> </table>
+> **最新版本 v3.5.8 更新内容**：
+> - **恢复 / 撤销稳定性修复**：
+>   - 修复覆盖恢复、补丁恢复、补丁撤销、导入合并在连续操作或后台状态未收敛时可能触发的二次并发问题。
+>   - 区分真实恢复写入与恢复后记录生成，避免恢复记录再次触发不必要的本地/云端快照导出。
+>   - 复用与实际策略匹配的预计算 diff，并为主界面/历史页后台请求加入超时保护，减少状态错配和 UI 长等待。
+> - **恢复列表识别优化**：云端/本地恢复可同时识别 JSON 与 HTML 的快照和当前变化，覆盖、多版本、多格式共存时不再遗漏。
+> - **网页快照与高亮工具优化**：高亮颜色、工具选择和相关工具栏状态支持更稳定的持久记忆，并优化标签页休眠、页面刷新场景下的高亮恢复策略。
+> - **UI 与快捷键调整**：
+>   - 将扩展快捷键调整为 macOS 使用 `Command + Shift`、Windows/Linux 使用 `Ctrl + Shift`，降低与网页原生快捷键或其他扩展快捷键冲突的概率。
+>   - 实际快捷键：激活扩展 `Command/Ctrl + Shift + U`，打开当前变化 `Command/Ctrl + Shift + I`，打开备份历史 `Command/Ctrl + Shift + O`，打开/关闭网页快照工具 `Command/Ctrl + Shift + P`。
+>   - 整理部分设置、状态展示和文档结构。
+> - **打包方式调整**：新增 `tools/build-extension.js`，仅对 `Bookmark-Backup-main` 执行 `--minify-whitespace`，删除空白/注释但不混淆变量名。
 
 ### 简介
 `书签备份` 是一款面向 Chrome / Edge 的 Git 式书签版本管理、备份历史追踪与安全恢复扩展。
@@ -57,6 +44,8 @@
 | <img src="Screenshots%20and%20icons/v3.0/主UI%20zh.png" width="400"> | <img src="Screenshots%20and%20icons/v3.0/设置与初始化%20zh.png" width="400"> |
 | **当前变化** | **备份历史** |
 | <img src="Screenshots%20and%20icons/v3.0/当前变化html%20zh.png" width="400"> | <img src="Screenshots%20and%20icons/v3.0/备份历史html%20zh.png" width="400"> |
+| **网页存档** | **高亮工具** |
+| <img src="Screenshots%20and%20icons/v3.5/网页存档en.png" width="400"> | <img src="Screenshots%20and%20icons/v3.5/高亮工具en.png" width="400"> |
 
 #### 3.0 代码结构预览
 ```text
@@ -119,31 +108,18 @@ Bookmark-Backup-3.0/
 ## English
 
 > [!NOTE]
-> **Latest Version v3.5.0 Highlights**:
-> - **Enhanced Web Snapshot**:
->   - Added support for **Highlighter tools** and **Markdown (MD) format** export, adopting the open-source algorithm from Obsidian Clipper.
->   - Defaults to the MD-compatible `{==}` format for highlight selection, which can be exported directly into Markdown files; other styles with special effects can be fully preserved and viewed directly in exported MHTML snapshots.
-> - **Refactored Patch Algorithm & Optimization**:
->   - Re-implemented **Patch Restore** and **Patch Revert** transactions by introducing a precise node diff merging algorithm to enhance stability. Set the automatic patch/overwrite switching threshold to 500 entries.
->   - Removed the deprecated "Interrupted Restore Panel" and "Post-apply verification mechanism", centralizing risk mitigation into the more reliable **Temporary Safety Snapshot**.
-> - **UI Refinements & Shortcut Redesign**:
->   - Streamlined the settings interface and added direct notes entry/display for history records.
->   - Redesigned global extension shortcuts using `Alt/Option + Shift` combinations to prevent key conflicts with existing webpage functions:
->     - `Alt / Option + Shift + Z`: Activate the extension (previously `Alt+A`)
->     - `Alt / Option + Shift + C`: Open Current Changes (previously `Alt+C`)
->     - `Alt / Option + Shift + T`: Open Backup History (previously `Alt+H`)
->     - `Alt / Option + Shift + X`: Open Quick Snapshot Tool (previously `Alt+W` / `Alt+1`)
->
-> <table>
->   <tr>
->     <td align="center" width="50%">
->       <img width="380" alt="Web Snapshot en" src="Screenshots and icons/v3.5/网页存档en.png" />
->     </td>
->     <td align="center" width="50%">
->       <img width="380" alt="Highlighter en" src="Screenshots and icons/v3.5/高亮工具en.png" />
->     </td>
->   </tr>
-> </table>
+> **Latest Version v3.5.8 Highlights**:
+> - **Restore / Revert Stability Fixes**:
+>   - Fixed second-round concurrency issues that could occur when overwrite restore, patch restore, patch revert, or import merge ran before background state fully settled.
+>   - Separated actual restore writes from post-restore history record generation, preventing restore records from triggering unnecessary local/cloud snapshot exports.
+>   - Reuses precomputed diffs only when they match the actual strategy, and adds popup/history background request timeouts to reduce state mismatches and long UI waits.
+> - **Restore List Detection Improvements**: Cloud and local restore now detect JSON and HTML snapshots/current changes together, including overwrite, versioned, and mixed-format backups.
+> - **Web Snapshot & Highlighter Improvements**: Highlighter color, tool selection, and toolbar preferences are remembered more reliably, with better recovery behavior for suspended tabs and refreshed pages.
+> - **UI & Shortcut Updates**:
+>   - Moved extension shortcuts to `Command + Shift` on macOS and `Ctrl + Shift` on Windows/Linux to reduce conflicts with webpage-native shortcuts or other extensions.
+>   - Actual shortcuts: activate extension `Command/Ctrl + Shift + U`, open Current Changes `Command/Ctrl + Shift + I`, open Backup History `Command/Ctrl + Shift + O`, open/close Web Snapshot helper `Command/Ctrl + Shift + P`.
+>   - Cleaned up parts of the settings/status UI and documentation structure.
+> - **Packaging Update**: Added `tools/build-extension.js`; it builds only `Bookmark-Backup-main` with `--minify-whitespace`, removing whitespace/comments without identifier minification.
 
 ### Overview
 `Bookmark Backup` is a Git-style bookmark versioning, backup-history tracking, and safety-recovery extension for Chrome / Edge.
