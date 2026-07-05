@@ -473,12 +473,25 @@
         if (!host) {
           host = document.createElement('div');
           host.id = HOST_ID;
-          host.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483647;pointer-events:none;';
           document.documentElement.appendChild(host);
         }
         this.host = host;
         this.shadow = host.shadowRoot || host.attachShadow({ mode: 'open' });
+        this._resetHostDefaultPosition();
         return host;
+      }
+
+      _resetHostDefaultPosition() {
+        if (!this.host) return;
+        this.host.style.position = 'fixed';
+        this.host.style.left = 'auto';
+        this.host.style.top = 'auto';
+        this.host.style.right = '18px';
+        this.host.style.bottom = '18px';
+        this.host.style.transform = 'none';
+        this.host.style.zIndex = '2147483647';
+        this.host.style.pointerEvents = 'none';
+        try { delete this.host.__dev1ManuallyDragged; } catch (_) { this.host.__dev1ManuallyDragged = false; }
       }
 
       _bindDrag(host, handle, options = {}) {
@@ -529,8 +542,11 @@
           } else {
             const nextRight = Math.max(0, Math.min(window.innerWidth - 40, startRight - deltaX));
             const nextBottom = Math.max(0, Math.min(window.innerHeight - 40, startBottom - deltaY));
+            host.style.left = 'auto';
+            host.style.top = 'auto';
             host.style.right = `${nextRight}px`;
             host.style.bottom = `${nextBottom}px`;
+            host.__dev1ManuallyDragged = true;
             this._updateQuadrant();
             if (typeof this._repositionMdSettingsPanel === 'function') {
               this._repositionMdSettingsPanel();
@@ -1279,7 +1295,6 @@
         });
         this._bindDrag(host, launcher, { skipInteractive: false });
         this._bindDrag(host, panel.querySelector('.dev1-helper-header'), { skipInteractive: true });
-        this._prefetchHighlighterToolbarUi();
         requestAnimationFrame(() => this._updateQuadrant(true));
       }
 
@@ -1605,8 +1620,10 @@
         if (button && button.disabled) return;
         const labelEl = button ? button.querySelector('.dev1-helper-card-label') : null;
         const previousText = labelEl ? labelEl.textContent : '';
+        this._resetHostDefaultPosition();
+        this._updateQuadrant(true);
         const anchorRect = this._getHighlighterAnchorRect();
-        const toolbarUi = await (this._highlighterToolbarUiPrefetch || this._readStoredHighlighterToolbarUi());
+        const toolbarUi = null;
         
         const isLoaded = typeof window.__dev1SnapshotHighlighter !== 'undefined' && window.__dev1SnapshotHighlighter.loaded === true;
         let targetVisible = true;
@@ -1681,24 +1698,18 @@
       }
 
       _getHighlighterAnchorRect() {
-        const launcher = this.shadow && this.shadow.querySelector('.dev1-helper-launcher');
-        const anchor = launcher || this.host;
-        if (!anchor || typeof anchor.getBoundingClientRect !== 'function') return null;
-        try {
-          const rect = anchor.getBoundingClientRect();
-          return {
-            left: rect.left,
-            top: rect.top,
-            right: rect.right,
-            bottom: rect.bottom,
-            width: rect.width,
-            height: rect.height,
-            viewportWidth: window.innerWidth,
-            viewportHeight: window.innerHeight
-          };
-        } catch (_) {
-          return null;
-        }
+        const right = window.innerWidth - 18;
+        const bottom = window.innerHeight - 18;
+        return {
+          left: right - 54,
+          top: bottom - 54,
+          right,
+          bottom,
+          width: 54,
+          height: 54,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight
+        };
       }
 
       async _captureVisibleTab() {
@@ -1735,7 +1746,9 @@
       show(config) {
         this.config = normalizeConfig(config);
         this._renderPanel();
+        this._resetHostDefaultPosition();
         if (this.host) this.host.style.display = '';
+        this._updateQuadrant(true);
         this._persistAutoRestoreMarker();
         return { success: true };
       }

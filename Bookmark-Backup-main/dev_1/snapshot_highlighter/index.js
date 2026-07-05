@@ -400,6 +400,7 @@
           toolsSpecial: '特殊效果',
           toolsDynamic: '动态效果',
           dynamicMhtmlNotice: 'MHTML 导出不支持这些动态效果；如需保留动态效果，请使用录屏，或用 SingleFile 等方式导出。',
+          frameMhtmlNotice: 'MHTML 导出时边框定位可能不准确；建议只在临时截图或录屏时使用。',
           tool_presentation: '演示笔',
           tool_presentation_desc: '用于演示或指示，支持形状识别与自动消失',
           presentationNotice: '给演示用的，录制视频的时候可以指示。',
@@ -518,6 +519,7 @@
           toolsSpecial: 'Special Effects',
           toolsDynamic: 'Dynamic Effects',
           dynamicMhtmlNotice: 'MHTML exports do not preserve these dynamic effects. Use screen recording, or export with tools such as SingleFile when you need to keep them.',
+          frameMhtmlNotice: 'MHTML exports may not preserve frame positioning accurately. Use these for temporary screenshots or screen recording.',
           tool_presentation: 'Presentation Pen',
           tool_presentation_desc: 'Used for presentation or indicators, supports shape recognition and auto-disappearance',
           presentationNotice: 'For presentations. Can be used as an indicator when recording video.',
@@ -1016,7 +1018,7 @@
         },
         recentColors: this.recentColors.slice(0, 16),
         recentTools: this.recentTools.slice(0, 16),
-        toolbarUi: this.normalizeToolbarUi(this.toolbarUi),
+        toolbarUi: this.normalizeToolbarUi(),
         updatedAt: now()
       };
     }
@@ -1669,6 +1671,24 @@
       toolbar.style.setProperty('pointer-events', 'auto');
     }
 
+    setToolbarDefaultBottomRightPosition(toolbar = this.toolbar) {
+      if (!toolbar) return;
+      const helperButtonHeight = 54;
+      const helperBottom = 18;
+      const toolbarRect = toolbar.getBoundingClientRect();
+      const toolbarHeight = Math.max(40, toolbar.offsetHeight || toolbarRect.height || 64);
+      const centeredBottom = Math.max(8, helperBottom + (helperButtonHeight - toolbarHeight) / 2);
+      toolbar.style.setProperty('position', 'fixed', 'important');
+      toolbar.style.setProperty('left', 'auto', 'important');
+      toolbar.style.setProperty('top', 'auto', 'important');
+      toolbar.style.setProperty('right', '80px', 'important');
+      toolbar.style.setProperty('bottom', `${centeredBottom}px`, 'important');
+      toolbar.style.setProperty('transform', 'none', 'important');
+      toolbar.style.setProperty('display', 'flex', 'important');
+      toolbar.style.setProperty('opacity', '1');
+      toolbar.style.setProperty('pointer-events', 'auto');
+    }
+
     setToolbarDockPositionOnElement(toolbar, position) {
       if (!toolbar || !position || position === 'floating') return;
       const offset = 12;
@@ -1706,49 +1726,12 @@
 
     applyInitialToolbarPlacement(toolbar) {
       if (!toolbar) return;
-      this.toolbarUi = this.normalizeToolbarUi(this.toolbarUi);
+      this.toolbarUi = this.normalizeToolbarUi();
       toolbar.style.setProperty('transition', 'none', 'important');
-      
-      const state = this.getToolbarDockState();
-      if (state.position && state.position !== 'floating') {
-        this.applyToolbarOrientation(state.position);
-        this.setToolbarDockPositionOnElement(toolbar, state.position);
-        if (state.collapsed) {
-          toolbar.dataset.open = 'false';
-          toolbar.dataset.dockPosition = state.position;
-          const toggle = this.createDockToggle();
-          toggle.dataset.open = 'true';
-          toggle.dataset.dockPosition = state.position;
-          this.positionDockToggle(state.position);
-        } else {
-          toolbar.dataset.open = 'true';
-          toolbar.dataset.dockPosition = state.position;
-          this.hideDockToggle();
-        }
-        return;
-      }
-      
       this.applyFloatingToolbarLayout();
       toolbar.dataset.open = 'true';
       toolbar.dataset.dockPosition = 'floating';
-      const estimatedSize = this.getEstimatedToolbarSize('floating');
-      const anchorRect = this.getConfiguredAnchorRect();
-      if (anchorRect && !this.toolbarUi.userMoved) {
-        const position = this.calculateToolbarPositionNearAnchorWithSize(anchorRect, estimatedSize);
-        this.setToolbarFixedPositionOnElement(toolbar, position.left, position.top);
-        return;
-      }
-      const left = Number(this.toolbarUi.left);
-      const top = Number(this.toolbarUi.top);
-      if (Number.isFinite(left) && Number.isFinite(top)) {
-        const position = this.clampToolbarPointForSize(left, top, estimatedSize, 8);
-        this.setToolbarFixedPositionOnElement(toolbar, position.left, position.top);
-        return;
-      }
-      if (anchorRect) {
-        const position = this.calculateToolbarPositionNearAnchorWithSize(anchorRect, estimatedSize);
-        this.setToolbarFixedPositionOnElement(toolbar, position.left, position.top);
-      }
+      this.setToolbarDefaultBottomRightPosition(toolbar);
     }
 
     restoreToolbarInitialTransition(toolbar) {
@@ -1764,7 +1747,10 @@
     }
 
     createPermanentToolbar() {
-      if (this.toolbar && document.body.contains(this.toolbar)) return this.toolbar;
+      if (this.toolbar && document.body.contains(this.toolbar)) {
+        this.applyToolbarPosition();
+        return this.toolbar;
+      }
       
       let skipEnteringAnimation = false;
       try {
@@ -1810,6 +1796,7 @@
       this.applyInitialToolbarPlacement(toolbar);
       document.body.appendChild(toolbar);
       this.applyToolbarPosition();
+      requestAnimationFrame(() => this.applyToolbarPosition());
       
       // Force initial coordinate positioning instantly before enabling transition
       toolbar.offsetHeight;
@@ -1852,51 +1839,13 @@
 
     applyToolbarPosition() {
       if (!this.toolbar) return;
-      this.toolbarUi = this.normalizeToolbarUi(this.toolbarUi);
-
-      const state = this.getToolbarDockState();
-      if (state.position && state.position !== 'floating') {
-        if (state.collapsed) {
-          this.collapseToolbarToDock(state.position, { skipSave: true });
-        } else {
-          this.expandToolbarFromDock({ position: state.position, skipSave: true });
-        }
-        return;
-      }
-
+      this.toolbarUi = this.normalizeToolbarUi();
       this.hideDockToggle();
       this.disableToolbarDockOutsideClickCollapse();
       this.applyFloatingToolbarLayout();
       this.toolbar.dataset.open = 'true';
       this.toolbar.dataset.dockPosition = 'floating';
-      const anchorRect = this.getConfiguredAnchorRect();
-      if (anchorRect && !this.toolbarUi.userMoved) {
-        const position = this.calculateToolbarPositionNearAnchor(anchorRect, this.toolbar);
-        this.setToolbarFixedPosition(position.left, position.top);
-        this.toolbarUi.left = position.left;
-        this.toolbarUi.top = position.top;
-        this.toolbarUi.userMoved = false;
-        return;
-      }
-      const left = Number(this.toolbarUi.left);
-      const top = Number(this.toolbarUi.top);
-      if (Number.isFinite(left) && Number.isFinite(top)) {
-        const toolbarWidth = Math.max(160, this.toolbar.offsetWidth || this.toolbar.getBoundingClientRect().width || 320);
-        const toolbarHeight = Math.max(34, this.toolbar.offsetHeight || this.toolbar.getBoundingClientRect().height || 64);
-        this.setToolbarFixedPosition(
-          Math.max(8, Math.min(window.innerWidth - toolbarWidth - 8, left)),
-          Math.max(8, Math.min(window.innerHeight - toolbarHeight - 8, top))
-        );
-        return;
-      }
-      if (anchorRect) {
-        const position = this.calculateToolbarPositionNearAnchor(anchorRect, this.toolbar);
-        this.setToolbarFixedPosition(position.left, position.top);
-        this.toolbarUi.left = position.left;
-        this.toolbarUi.top = position.top;
-        this.toolbarUi.userMoved = false;
-        return;
-      }
+      this.setToolbarDefaultBottomRightPosition();
     }
 
     setToolbarFixedPosition(left, top) {
@@ -1927,7 +1876,6 @@
     }
 
     getConfiguredAnchorRect() {
-      const rect = this.config && this.config.highlighterAnchorRect;
       const fallback = {
         left: window.innerWidth - 18 - 54,
         top: window.innerHeight - 18 - 54,
@@ -1936,16 +1884,7 @@
         width: 54,
         height: 54
       };
-      if (!rect || typeof rect !== 'object') return fallback;
-      const left = Number(rect.left);
-      const top = Number(rect.top);
-      const right = Number(rect.right);
-      const bottom = Number(rect.bottom);
-      const width = Number(rect.width);
-      const height = Number(rect.height);
-      if (![left, top, right, bottom, width, height].every(Number.isFinite)) return fallback;
-      if (width <= 0 || height <= 0) return fallback;
-      return { left, top, right, bottom, width, height };
+      return fallback;
     }
 
     calculateToolbarPositionNearAnchor(anchorRect, toolbar) {
@@ -3545,7 +3484,7 @@
       btn.className = `dev1-clear-recent dev1-clear-${kind}`;
       btn.title = this.t('clearRecent');
       btn.setAttribute('aria-label', this.t('clearRecent'));
-      btn.textContent = '🗑️';
+      btn.innerHTML = this.getTrashIconSvg();
       btn.addEventListener('click', onClick);
       if (panel) {
         panel.querySelectorAll(`.dev1-clear-recent.dev1-clear-${kind}`).forEach(node => node.remove());
@@ -4466,6 +4405,10 @@
       }
 
       if (category.id === 'frames' && (category.tools || []).some(tool => tool.group)) {
+        const notice = document.createElement('div');
+        notice.className = 'dev1-dynamic-mhtml-notice';
+        notice.textContent = this.t('frameMhtmlNotice');
+        content.appendChild(notice);
         const groups = [
           { id: 'boxes', label: this.t('toolGroupBoxes') },
           { id: 'brackets', label: this.t('toolGroupBrackets') },
@@ -4731,11 +4674,15 @@
     }
 
     getGridIconSvg() {
-      return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+      return '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
     }
 
     getListIconSvg() {
-      return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+      return '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    }
+
+    getTrashIconSvg() {
+      return '<svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M8 6V4.5A1.5 1.5 0 0 1 9.5 3h5A1.5 1.5 0 0 1 16 4.5V6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6.5 6l.75 14A1.7 1.7 0 0 0 8.95 21h6.1a1.7 1.7 0 0 0 1.7-1.6L17.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 11v5M14 11v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
     }
 
     selectTool(tool) {
@@ -4875,23 +4822,6 @@
           tool('strikethrough', '删除线', 'Strikethrough', 'S̶', '文字中线', 'Line through text'),
           tool('thick-underline', '粗下划线', 'Thick Underline', 'U̲̲̲', '加粗下划线', 'Bold underline')
         ] },
-        { id: 'frames', title: this.t('toolsFrames'), icon: '📦', tools: [
-          tool('box', '矩形框', 'Simple Box', '▢', '矩形边框', 'Rectangular border', { group: 'boxes' }),
-          tool('filled-box', '填充框', 'Filled Box', '▣', '边框与浅填充', 'Border with matching fill', { group: 'boxes' }),
-          tool('rounded-box', '圆角框', 'Rounded Box', '▢', '圆角边框', 'Rounded border', { group: 'boxes' }),
-          tool('dashed-box', '虚线框', 'Dashed Box', '⬚', '虚线边框', 'Dashed border', { group: 'boxes' }),
-          tool('double-box', '双线框', 'Double Box', '▣', '双线边框', 'Double border', { group: 'boxes' }),
-          tool('callout', '气泡框', 'Callout', '💬', '气泡样式', 'Speech bubble', { group: 'boxes' }),
-          tool('sticker', '贴纸', 'Sticker', '🏷️', '标签样式', 'Label style', { group: 'boxes' }),
-          tool('brackets-corner', '直角括号', 'Corner Brackets', '「」', '直角括号', 'Corner brackets', { group: 'brackets' }),
-          tool('brackets-round', '圆括号', 'Round Brackets', '()', '圆括号', 'Round brackets', { group: 'brackets' }),
-          tool('brackets-angle', '尖括号', 'Angle Brackets', '<>', '尖括号', 'Angle brackets', { group: 'brackets' }),
-          tool('brackets-book', '书名号', 'Book Brackets', '《》', '书名号括起', 'Book brackets', { group: 'brackets' }),
-          tool('brackets-cjk', '方头括号', 'CJK Brackets', '【】', '中文方括号', 'CJK brackets', { group: 'brackets' }),
-          tool('brackets-curly', '花括号', 'Curly Brackets', '{}', '花括号', 'Curly brackets', { group: 'brackets' }),
-          tool('brackets-square', '方括号', 'Square Brackets', '[]', '方括号', 'Square brackets', { group: 'brackets' }),
-          tool('pill', '胶囊', 'Pill', '💊', '胶囊形状', 'Pill shaped', { group: 'pills' })
-        ] },
         { id: 'solid', title: this.t('toolsSolid'), icon: '🖍️', tools: [
           tool('highlight', '经典高亮', 'Classic Highlight', '🖍️', '纯色背景', 'Solid background'),
           tool('marker', '马克笔', 'Marker', '🖊️', '马克笔样式', 'Marker style'),
@@ -4919,6 +4849,23 @@
           tool('neon-flicker', '霓虹抖动', 'Neon Flicker', '⚡', '抖动发光', 'Flicker glow'),
           tool('ripple', '涟漪', 'Ripple', '◎', '涟漪脉冲', 'Ripple pulse'),
           tool('fluid', '流体', 'Fluid', '🌊', '流动色彩', 'Wave-like color drift')
+        ] },
+        { id: 'frames', title: this.t('toolsFrames'), icon: '📦', tools: [
+          tool('box', '矩形框', 'Simple Box', '▢', '矩形边框', 'Rectangular border', { group: 'boxes' }),
+          tool('filled-box', '填充框', 'Filled Box', '▣', '边框与浅填充', 'Border with matching fill', { group: 'boxes' }),
+          tool('rounded-box', '圆角框', 'Rounded Box', '▢', '圆角边框', 'Rounded border', { group: 'boxes' }),
+          tool('dashed-box', '虚线框', 'Dashed Box', '⬚', '虚线边框', 'Dashed border', { group: 'boxes' }),
+          tool('double-box', '双线框', 'Double Box', '▣', '双线边框', 'Double border', { group: 'boxes' }),
+          tool('callout', '气泡框', 'Callout', '💬', '气泡样式', 'Speech bubble', { group: 'boxes' }),
+          tool('sticker', '贴纸', 'Sticker', '🏷️', '标签样式', 'Label style', { group: 'boxes' }),
+          tool('brackets-corner', '直角括号', 'Corner Brackets', '「」', '直角括号', 'Corner brackets', { group: 'brackets' }),
+          tool('brackets-round', '圆括号', 'Round Brackets', '()', '圆括号', 'Round brackets', { group: 'brackets' }),
+          tool('brackets-angle', '尖括号', 'Angle Brackets', '<>', '尖括号', 'Angle brackets', { group: 'brackets' }),
+          tool('brackets-book', '书名号', 'Book Brackets', '《》', '书名号括起', 'Book brackets', { group: 'brackets' }),
+          tool('brackets-cjk', '方头括号', 'CJK Brackets', '【】', '中文方括号', 'CJK brackets', { group: 'brackets' }),
+          tool('brackets-curly', '花括号', 'Curly Brackets', '{}', '花括号', 'Curly brackets', { group: 'brackets' }),
+          tool('brackets-square', '方括号', 'Square Brackets', '[]', '方括号', 'Square brackets', { group: 'brackets' }),
+          tool('pill', '胶囊', 'Pill', '💊', '胶囊形状', 'Pill shaped', { group: 'pills' })
         ] }
       ];
     }

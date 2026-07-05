@@ -1849,19 +1849,36 @@
   bottom: 12px !important;
   width: 32px !important;
   height: 32px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   border-radius: 999px !important;
   border: 1px solid rgba(120,130,150,.25) !important;
-  background: rgba(255,255,255,.94) !important;
-  color: inherit !important;
+  background: rgba(255,255,255,.96) !important;
+  color: #334155 !important;
   box-shadow: 0 4px 12px rgba(15,23,42,.16) !important;
   cursor: pointer !important;
   z-index: 6 !important;
+  padding: 0 !important;
   transition: transform .16s ease, box-shadow .16s ease, background .16s ease !important;
 }
 
 .dev1-clear-recent:hover {
   transform: scale(1.08) !important;
   box-shadow: 0 8px 18px rgba(15,23,42,.2) !important;
+}
+
+.dev1-clear-recent svg {
+  width: 17px !important;
+  height: 17px !important;
+  display: block !important;
+  flex: 0 0 auto !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 2 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  pointer-events: none !important;
 }
 
 .dev1-rgb-picker {
@@ -2038,8 +2055,8 @@
   justify-content: center !important;
   border-radius: 999px !important;
   border: 1px solid rgba(120,130,150,.25) !important;
-  background: rgba(255,255,255,.94) !important;
-  color: inherit !important;
+  background: rgba(255,255,255,.96) !important;
+  color: #334155 !important;
   box-shadow: 0 4px 12px rgba(15,23,42,.16) !important;
   cursor: pointer !important;
   z-index: 6 !important;
@@ -2056,6 +2073,32 @@
 .dev1-color-view-toggle svg {
   width: 18px !important;
   height: 18px !important;
+  display: block !important;
+  flex: 0 0 auto !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 2 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+}
+
+.dev1-snapshot-highlighter-panel.dark-theme .dev1-clear-recent,
+.dev1-snapshot-highlighter-panel.dark-theme .dev1-tool-view-toggle,
+.dev1-snapshot-highlighter-panel.dark-theme .dev1-color-view-toggle {
+  background: rgba(30, 41, 59, .94) !important;
+  border-color: rgba(148, 163, 184, .38) !important;
+  color: #e2e8f0 !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .34) !important;
+}
+
+.dev1-snapshot-highlighter-panel.dark-theme .dev1-clear-recent:hover,
+.dev1-snapshot-highlighter-panel.dark-theme .dev1-tool-view-toggle:hover,
+.dev1-snapshot-highlighter-panel.dark-theme .dev1-color-view-toggle:hover {
+  background: rgba(51, 65, 85, .98) !important;
+  border-color: rgba(226, 232, 240, .48) !important;
+  color: #f8fafc !important;
 }
 
 .highlight-color-picker,
@@ -2827,6 +2870,23 @@
   .dev1-snapshot-highlighter-panel:not(.light-theme) .dev1-tool-view-toggle,
   .dev1-snapshot-highlighter-panel:not(.light-theme) .dev1-color-view-toggle {
     background: rgba(15, 23, 42, .52) !important;
+  }
+
+  .dev1-snapshot-highlighter-panel:not(.light-theme) .dev1-clear-recent,
+  .dev1-snapshot-highlighter-panel:not(.light-theme) .dev1-tool-view-toggle,
+  .dev1-snapshot-highlighter-panel:not(.light-theme) .dev1-color-view-toggle {
+    background: rgba(30, 41, 59, .94) !important;
+    border-color: rgba(148, 163, 184, .38) !important;
+    color: #e2e8f0 !important;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, .34) !important;
+  }
+
+  .dev1-snapshot-highlighter-panel:not(.light-theme) .dev1-clear-recent:hover,
+  .dev1-snapshot-highlighter-panel:not(.light-theme) .dev1-tool-view-toggle:hover,
+  .dev1-snapshot-highlighter-panel:not(.light-theme) .dev1-color-view-toggle:hover {
+    background: rgba(51, 65, 85, .98) !important;
+    border-color: rgba(226, 232, 240, .48) !important;
+    color: #f8fafc !important;
   }
 
   .dev1-snapshot-highlighter-panel:not(.light-theme) .dev1-md-mode-bar button {
