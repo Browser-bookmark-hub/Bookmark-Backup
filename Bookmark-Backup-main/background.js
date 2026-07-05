@@ -4355,6 +4355,11 @@ function deserializeRestoreLocalPayload(payload) {
         normalized.changesArtifactTextByMode = changesByMode;
     }
 
+    const changesByModeFormat = sanitizeRestoreLocalPayloadStringMap(payload.changesArtifactTextByModeFormat);
+    if (Object.keys(changesByModeFormat).length > 0) {
+        normalized.changesArtifactTextByModeFormat = changesByModeFormat;
+    }
+
     const changesByLocalKey = sanitizeRestoreLocalPayloadStringMap(payload.changesArtifactTextByLocalKey);
     if (Object.keys(changesByLocalKey).length > 0) {
         normalized.changesArtifactTextByLocalKey = changesByLocalKey;
@@ -12050,7 +12055,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const result = await buildMergeRestorePreview({
                         restoreRef: message.restoreRef,
                         localPayload,
-                        mergeViewMode: message.mergeViewMode
+                        mergeViewMode: message.mergeViewMode,
+                        mergeViewFormat: message.mergeViewFormat
                     });
                     sendResponse(result);
                 } catch (err) {
@@ -12073,6 +12079,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     restoreSessionId: message.restoreSessionId,
                     localPayload,
                     mergeViewMode: message.mergeViewMode,
+                    mergeViewFormat: message.mergeViewFormat,
                     manualMatches: message.manualMatches,
                     importParentId: message.importParentId,
                     forceChangesArtifact: message.forceChangesArtifact,
@@ -25226,11 +25233,13 @@ async function listRemoteFiles(source, options = {}) {
             const name = String(fileName || '').trim();
             if (!name) return false;
             const lower = name.toLowerCase();
+            const modeNameReg = /(?:^|[ _-])(?:bookmark[ _-]?changes|changes)[ _-]?(?:simple|detailed|collection|简略|详细|集合)(?:[ _.-]|$)|(?:^|[ _-])(?:simple|detailed|collection|简略|详细|集合)[ _-]?(?:bookmark[ _-]?changes|changes)(?:[ _.-]|$)/i;
             return lower.includes('current_changes')
                 || lower.includes('current-changes')
                 || lower.includes('bookmark-changes')
                 || lower.includes('bookmark_changes')
                 || lower.includes('bookmark changes')
+                || modeNameReg.test(name)
                 || name.includes('当前变化')
                 || name.includes('书签变化')
                 || name.includes('变化');
@@ -25281,7 +25290,7 @@ async function listRemoteFiles(source, options = {}) {
 
         const isOverwriteRestoreCandidate = (candidate) => {
             if (!candidate) return false;
-            if (candidate.type !== 'html_backup' && candidate.type !== 'changes_artifact') return false;
+            if (candidate.type !== 'html_backup' && candidate.type !== 'json_backup' && candidate.type !== 'changes_artifact') return false;
             if (isOverwriteFolderName(candidate.snapshotFolder || '')) return true;
             const folderSegments = splitPathSegments(candidate.folderPath || '');
             return folderSegments.some((part) => isOverwriteFolderName(part));
@@ -25444,6 +25453,11 @@ async function listRemoteFiles(source, options = {}) {
 
             if (isBackupHtmlName(name)) return true;
             return isInSnapshotOrOverwriteFolder(folderPath, snapshotFolder);
+        }
+
+        function getSnapshotBackupCandidateType(fileName) {
+            const name = String(fileName || '').trim();
+            return /\.json$/i.test(name) ? 'json_backup' : 'html_backup';
         }
 
         function pushIndexMarkdownCandidateIfMatched({ fileName, fileUrl, sourceType, folderPath = '', manifestMode = '' }) {
@@ -25703,7 +25717,7 @@ async function listRemoteFiles(source, options = {}) {
                                 name,
                                 url: fileUrl,
                                 source: 'webdav',
-                                type: 'html_backup',
+                                type: getSnapshotBackupCandidateType(name),
                                 snapshotFolder: '',
                                 folderPath,
                                 legacyVersion: LEGACY_V2_VERSION,
@@ -25776,7 +25790,7 @@ async function listRemoteFiles(source, options = {}) {
                                 name: fileName,
                                 url: fileUrl,
                                 source: 'webdav',
-                                type: 'html_backup',
+                                type: getSnapshotBackupCandidateType(fileName),
                                 snapshotFolder: snapshotFolder || '',
                                 folderPath,
                                 manifestMode: 'tree'
@@ -25805,7 +25819,7 @@ async function listRemoteFiles(source, options = {}) {
 
                     const treeSnapshotCandidateCount = files.filter((item) => item
                         && item.source === 'webdav'
-                        && (item.type === 'html_backup' || item.type === 'changes_artifact')
+                        && (item.type === 'html_backup' || item.type === 'json_backup' || item.type === 'changes_artifact')
                         && String(item.manifestMode || '').trim().toLowerCase() === 'tree').length;
                     const treeIndexCandidateCount = files.filter((item) => item
                         && item.source === 'webdav'
@@ -25851,7 +25865,7 @@ async function listRemoteFiles(source, options = {}) {
                                     folderPath: `${exportRootFolder}/${backupFolder}`,
                                     snapshotFolder: ''
                                 })) {
-                                    files.push({ name, url: htmlFolderUrl + name, source: 'webdav', type: 'html_backup', folderPath: `${exportRootFolder}/${backupFolder}` });
+                                    files.push({ name, url: htmlFolderUrl + name, source: 'webdav', type: getSnapshotBackupCandidateType(name), folderPath: `${exportRootFolder}/${backupFolder}` });
                                 }
                             }
                         } catch (e) {
@@ -25877,7 +25891,7 @@ async function listRemoteFiles(source, options = {}) {
                                 folderPath: `${exportRootFolder}`,
                                 snapshotFolder: ''
                             })) {
-                                files.push({ name, url: htmlFolderUrl + name, source: 'webdav', type: 'html_backup', folderPath: `${exportRootFolder}` });
+                                files.push({ name, url: htmlFolderUrl + name, source: 'webdav', type: getSnapshotBackupCandidateType(name), folderPath: `${exportRootFolder}` });
                             }
                         }
                     } catch (e) {
@@ -25906,7 +25920,7 @@ async function listRemoteFiles(source, options = {}) {
                                                 name: childName,
                                                 url: childUrl + childName,
                                                 source: 'webdav',
-                                                type: 'html_backup',
+                                                type: getSnapshotBackupCandidateType(childName),
                                                 snapshotFolder: folderName,
                                                 folderPath: `${exportRootFolder}/${backupFolder}/${folderName}`
                                             });
@@ -25957,7 +25971,7 @@ async function listRemoteFiles(source, options = {}) {
                                         name,
                                         url: folderUrl + name,
                                         source: 'webdav',
-                                        type: 'html_backup',
+                                        type: getSnapshotBackupCandidateType(name),
                                         snapshotFolder: overwriteFolder,
                                         folderPath: `${exportRootFolder}/${backupFolder}/${overwriteFolder}`
                                     });
@@ -26003,7 +26017,7 @@ async function listRemoteFiles(source, options = {}) {
                                     name,
                                     url: folderUrl + name,
                                     source: 'webdav',
-                                    type: 'html_backup',
+                                    type: getSnapshotBackupCandidateType(name),
                                     snapshotFolder: overwriteFolder,
                                     folderPath: `${exportRootFolder}/${overwriteFolder}`
                                 });
@@ -26047,7 +26061,7 @@ async function listRemoteFiles(source, options = {}) {
                                             name: childName,
                                             url: childUrl + childName,
                                             source: 'webdav',
-                                            type: 'html_backup',
+                                            type: getSnapshotBackupCandidateType(childName),
                                             snapshotFolder: folderName,
                                             folderPath: `${exportRootFolder}/${folderName}`
                                         });
@@ -26094,7 +26108,7 @@ async function listRemoteFiles(source, options = {}) {
                                                 name: childName,
                                                 url: childUrl + childName,
                                                 source: 'webdav',
-                                                type: 'html_backup',
+                                                type: getSnapshotBackupCandidateType(childName),
                                                 snapshotFolder: folderName,
                                                 folderPath: `${exportRootFolder}/${versionedFolder}/${folderName}`
                                             });
@@ -26148,7 +26162,7 @@ async function listRemoteFiles(source, options = {}) {
                                 name: inferredName,
                                 url: `${serverAddress}${folderPath}/${inferredName}`,
                                 source: 'webdav',
-                                type: 'html_backup',
+                                type: getSnapshotBackupCandidateType(inferredName),
                                 snapshotFolder: folderName,
                                 folderPath
                             });
@@ -26325,7 +26339,7 @@ async function listRemoteFiles(source, options = {}) {
                                 name: fileName,
                                 url: fileUrl,
                                 source: 'github',
-                                type: 'html_backup',
+                                type: getSnapshotBackupCandidateType(fileName),
                                 snapshotFolder: snapshotFolder || '',
                                 folderPath,
                                 manifestMode: 'tree'
@@ -26378,7 +26392,7 @@ async function listRemoteFiles(source, options = {}) {
                                     folderPath: `${exportRootFolder}/${backupFolder}`,
                                     snapshotFolder: ''
                                 })) {
-                                    files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: 'html_backup', folderPath: `${exportRootFolder}/${backupFolder}` });
+                                    files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: getSnapshotBackupCandidateType(item.name), folderPath: `${exportRootFolder}/${backupFolder}` });
                                 }
                             }
                         } catch (e) {
@@ -26406,7 +26420,7 @@ async function listRemoteFiles(source, options = {}) {
                                 folderPath: `${exportRootFolder}`,
                                 snapshotFolder: ''
                             })) {
-                                files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: 'html_backup', folderPath: `${exportRootFolder}` });
+                                files.push({ name: item.name, url: item.download_url || item.url, source: 'github', type: getSnapshotBackupCandidateType(item.name), folderPath: `${exportRootFolder}` });
                             }
                         }
                     } catch (e) {
@@ -26438,7 +26452,7 @@ async function listRemoteFiles(source, options = {}) {
                                                     name: leaf.name,
                                                     url: leaf.download_url || leaf.url,
                                                     source: 'github',
-                                                    type: 'html_backup',
+                                                    type: getSnapshotBackupCandidateType(leaf.name),
                                                     snapshotFolder: folder.name,
                                                     folderPath
                                                 });
@@ -26491,7 +26505,7 @@ async function listRemoteFiles(source, options = {}) {
                                         name: item.name,
                                         url: item.download_url || item.url,
                                         source: 'github',
-                                        type: 'html_backup',
+                                        type: getSnapshotBackupCandidateType(item.name),
                                         snapshotFolder: overwriteFolder,
                                         folderPath
                                     });
@@ -26538,7 +26552,7 @@ async function listRemoteFiles(source, options = {}) {
                                     name: item.name,
                                     url: item.download_url || item.url,
                                     source: 'github',
-                                    type: 'html_backup',
+                                    type: getSnapshotBackupCandidateType(item.name),
                                     snapshotFolder: overwriteFolder,
                                     folderPath
                                 });
@@ -26584,7 +26598,7 @@ async function listRemoteFiles(source, options = {}) {
                                             name: leaf.name,
                                             url: leaf.download_url || leaf.url,
                                             source: 'github',
-                                            type: 'html_backup',
+                                            type: getSnapshotBackupCandidateType(leaf.name),
                                             snapshotFolder: folder.name,
                                             folderPath
                                         });
@@ -26633,7 +26647,7 @@ async function listRemoteFiles(source, options = {}) {
                                                 name: leaf.name,
                                                 url: leaf.download_url || leaf.url,
                                                 source: 'github',
-                                                type: 'html_backup',
+                                                type: getSnapshotBackupCandidateType(leaf.name),
                                                 snapshotFolder: folder.name,
                                                 folderPath
                                             });
@@ -26688,7 +26702,7 @@ async function listRemoteFiles(source, options = {}) {
                                 name: inferredName,
                                 url: buildGitHubContentsApiUrlForRestore({ owner, repo, branch, path: inferredFilePath }),
                                 source: 'github',
-                                type: 'html_backup',
+                                type: getSnapshotBackupCandidateType(inferredName),
                                 snapshotFolder: snapshotKey,
                                 folderPath
                             });
@@ -27011,10 +27025,13 @@ function parseSnapshotTimeMsFromKey(snapshotKey) {
 function isCurrentChangesArtifactFileName(name) {
     const text = String(name || '');
     const lower = text.toLowerCase();
-    if (!/\.(json|html)$/i.test(lower)) return false;
+    if (!/\.(json|html?|xhtml)$/i.test(lower)) return false;
+    const modeNameReg = /(?:^|[ _-])(?:bookmark[ _-]?changes|changes)[ _-]?(?:simple|detailed|collection|简略|详细|集合)(?:[ _.-]|$)|(?:^|[ _-])(?:simple|detailed|collection|简略|详细|集合)[ _-]?(?:bookmark[ _-]?changes|changes)(?:[ _.-]|$)/i;
     if (lower.includes('current_changes') || lower.includes('current-changes')) return true;
     if (lower.includes('bookmark-changes') || lower.includes('bookmark_changes')) return true;
     if (lower.startsWith('bookmark-changes-')) return true;
+    if (lower.includes('bookmark changes')) return true;
+    if (modeNameReg.test(text)) return true;
     return text.includes('当前变化') || text.includes('书签变化');
 }
 
@@ -27202,22 +27219,52 @@ function normalizeCurrentChangesArtifactMode(mode) {
     return '';
 }
 
-function getCurrentChangesArtifactModeEntryForRestore(restoreRef, requestedMode = null) {
+function normalizeCurrentChangesArtifactFormat(format) {
+    const lower = String(format || '').trim().toLowerCase();
+    if (lower === 'html' || lower === 'htm' || lower === 'xhtml') return 'html';
+    if (lower === 'json') return 'json';
+    return '';
+}
+
+function getCurrentChangesArtifactModeEntryForRestore(restoreRef, requestedMode = null, requestedFormat = null) {
     const artifact = restoreRef?.changesArtifact;
     if (!artifact || typeof artifact !== 'object') return null;
 
     const requested = normalizeCurrentChangesArtifactMode(requestedMode);
     const preferred = normalizeCurrentChangesArtifactMode(artifact.preferredMode || artifact.mode);
+    const requestedFmt = normalizeCurrentChangesArtifactFormat(requestedFormat);
+    const preferredFmt = normalizeCurrentChangesArtifactFormat(artifact.preferredFormat || artifact.format);
+    const formatOrder = [requestedFmt, preferredFmt, 'json', 'html'].filter(Boolean);
+    const modeOrder = [requested, preferred, 'detailed', 'simple', 'collection'].filter(Boolean);
+    const rawModeFormats = (artifact.modeFormats && typeof artifact.modeFormats === 'object') ? artifact.modeFormats : null;
+
+    if (rawModeFormats) {
+        for (const mode of modeOrder) {
+            const byFormat = rawModeFormats[mode];
+            if (!byFormat || typeof byFormat !== 'object') continue;
+            for (const fmt of formatOrder) {
+                const entry = byFormat[fmt];
+                if (!entry || typeof entry !== 'object') continue;
+                return {
+                    mode,
+                    format: normalizeCurrentChangesArtifactFormat(entry.format || fmt || artifact.format),
+                    name: String(entry.name || artifact.name || '').trim(),
+                    fileUrl: entry.fileUrl || artifact.fileUrl || null,
+                    localFileKey: entry.localFileKey || artifact.localFileKey || null,
+                    zipEntryName: entry.zipEntryName || artifact.zipEntryName || null,
+                    source: entry.source || artifact.source || restoreRef?.source || ''
+                };
+            }
+        }
+    }
 
     const rawModes = (artifact.modes && typeof artifact.modes === 'object') ? artifact.modes : null;
     if (rawModes) {
-        const availableModes = ['detailed', 'simple', 'collection'];
-
         const resolveMode = (() => {
             if (requested && rawModes[requested]) return requested;
             if (preferred && rawModes[preferred]) return preferred;
 
-            for (const mode of availableModes) {
+            for (const mode of ['detailed', 'simple', 'collection']) {
                 if (rawModes[mode]) return mode;
             }
 
@@ -27229,7 +27276,7 @@ function getCurrentChangesArtifactModeEntryForRestore(restoreRef, requestedMode 
         const entry = rawModes[resolveMode] || {};
         return {
             mode: resolveMode,
-            format: String(entry.format || artifact.format || '').toLowerCase(),
+            format: normalizeCurrentChangesArtifactFormat(entry.format || artifact.format || ''),
             name: String(entry.name || artifact.name || '').trim(),
             fileUrl: entry.fileUrl || artifact.fileUrl || null,
             localFileKey: entry.localFileKey || artifact.localFileKey || null,
@@ -27765,11 +27812,7 @@ function isManualExportInfoLogStrategyText(value) {
     return normalized.includes('手动导出')
         || normalized.includes('manualexport')
         || normalized.includes('全局导出')
-        || normalized.includes('globalexport')
-        || normalized.includes('多版本')
-        || normalized.includes('versioned')
-        || normalized.includes('覆盖')
-        || normalized.includes('overwrite');
+        || normalized.includes('globalexport');
 }
 
 function parseManualExportInfoLogSourceKindCell(value) {
@@ -29878,19 +29921,36 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             candidateByRelativePath.set(relativePath, candidate);
         }
 
-        const manualExportIndexCandidates = (candidates || [])
-            .filter((candidate) => candidate
-                && (candidate.type === 'index_json' || candidate.type === 'index_markdown')
-                && isManualExportInfoLogFileNameLike(candidate.name || ''))
-            .slice()
-            .sort((a, b) => {
-                const aJson = a.type === 'index_json' ? 0 : 1;
-                const bJson = b.type === 'index_json' ? 0 : 1;
-                if (aJson !== bJson) return aJson - bJson;
-                const aModified = Number.isFinite(Number(a?.lastModified)) ? Number(a.lastModified) : 0;
-                const bModified = Number.isFinite(Number(b?.lastModified)) ? Number(b.lastModified) : 0;
-                return bModified - aModified;
-            });
+        const isManualExportCandidatePathLike = (candidate) => {
+            const relativePath = getCandidateRelativePathForRestoreScan(candidate);
+            const segments = normalizeManualExportIndexPath(relativePath)
+                .split('/')
+                .map((part) => String(part || '').trim().toLowerCase())
+                .filter(Boolean);
+            return segments.some((part) => (
+                part === '手动导出'
+                || part === 'manual export'
+                || part === 'manual_export'
+                || part === 'manual-export'
+            ));
+        };
+
+        const manualExportIndexCandidates = source === 'local'
+            ? (candidates || [])
+                .filter((candidate) => candidate
+                    && (candidate.type === 'index_json' || candidate.type === 'index_markdown')
+                    && isManualExportCandidatePathLike(candidate)
+                    && isManualExportInfoLogFileNameLike(candidate.name || ''))
+                .slice()
+                .sort((a, b) => {
+                    const aJson = a.type === 'index_json' ? 0 : 1;
+                    const bJson = b.type === 'index_json' ? 0 : 1;
+                    if (aJson !== bJson) return aJson - bJson;
+                    const aModified = Number.isFinite(Number(a?.lastModified)) ? Number(a.lastModified) : 0;
+                    const bModified = Number.isFinite(Number(b?.lastModified)) ? Number(b.lastModified) : 0;
+                    return bModified - aModified;
+                })
+            : [];
 
         const manualExportChangesCandidates = (candidates || [])
             .filter((candidate) => candidate && candidate.type === 'changes_artifact');
@@ -30211,8 +30271,6 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
         const detectFolderTypeByPathValues = (values) => {
             let hasManualExport = false;
             let hasVersioned = false;
-            let hasManualHistoryOrCurrentChanges = false;
-            let hasSafetySnapshot = false;
 
             for (const value of values || []) {
                 const segments = splitPathSegmentsLower(value);
@@ -30225,18 +30283,10 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 if (segments.some(seg => VERSIONED_FOLDER_SEGMENTS.has(seg))) {
                     hasVersioned = true;
                 }
-                if (segments.some(seg => MANUAL_HISTORY_FOLDER_SEGMENTS.has(seg) || CURRENT_CHANGES_FOLDER_SEGMENTS.has(seg))) {
-                    hasManualHistoryOrCurrentChanges = true;
-                }
-                if (segments.some(seg => SAFETY_SNAPSHOT_FOLDER_SEGMENTS.has(seg))) {
-                    hasSafetySnapshot = true;
-                }
             }
 
-            if (hasSafetySnapshot) return 'safety_snapshot';
             if (hasManualExport) return 'manual_export';
             if (hasVersioned) return 'versioned';
-            if (hasManualHistoryOrCurrentChanges) return 'manual_export';
             return '';
         };
 
@@ -30380,7 +30430,11 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
         });
         for (const f of jsonSnapshotCandidates) {
             try {
-                const jsonText = typeof f.text === 'string' ? String(f.text || '') : '';
+                let jsonText = typeof f.text === 'string' ? String(f.text || '') : '';
+                if (!jsonText && source !== 'local' && f.url) {
+                    const blob = await downloadRemoteFile({ url: f.url, source });
+                    jsonText = await blob.text();
+                }
                 if (!jsonText) continue;
 
                 const extractedTree = parseBookmarkTreeFromJsonTextForRestore(jsonText);
@@ -30475,11 +30529,20 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     artifactBundleBySnapshotKey.set(snapshotKey, {
                         snapshotKey,
                         modes: {},
+                        modeFormats: {},
                         best: null
                     });
                 }
 
                 const bundle = artifactBundleBySnapshotKey.get(snapshotKey);
+                if (!bundle.modeFormats[mode]) {
+                    bundle.modeFormats[mode] = {};
+                }
+                const existingFormatEntry = bundle.modeFormats[mode][format];
+                if (!existingFormatEntry || priority >= existingFormatEntry.priority) {
+                    bundle.modeFormats[mode][format] = entry;
+                }
+
                 const existingModeEntry = bundle.modes[mode];
                 if (!existingModeEntry || priority >= existingModeEntry.priority) {
                     bundle.modes[mode] = entry;
@@ -30499,21 +30562,37 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
 
             const modeEntries = {};
             const rawModes = bundle?.modes || {};
+            const toArtifactModeEntry = (modeEntry) => ({
+                mode: modeEntry.mode,
+                format: modeEntry.format,
+                name: modeEntry.name,
+                source: modeEntry.source,
+                fileUrl: modeEntry.fileUrl || null,
+                localFileKey: modeEntry.localFileKey || null,
+                lastModifiedMs: Number.isFinite(Number(modeEntry.lastModifiedMs)) ? Number(modeEntry.lastModifiedMs) : null,
+                snapshotFolder: modeEntry.snapshotFolder || '',
+                folderPath: modeEntry.folderPath || '',
+                folderType: modeEntry.folderType || ''
+            });
             Object.keys(rawModes).forEach((modeKey) => {
                 const modeEntry = rawModes[modeKey];
                 if (!modeEntry) return;
-                modeEntries[modeKey] = {
-                    mode: modeEntry.mode,
-                    format: modeEntry.format,
-                    name: modeEntry.name,
-                    source: modeEntry.source,
-                    fileUrl: modeEntry.fileUrl || null,
-                    localFileKey: modeEntry.localFileKey || null,
-                    lastModifiedMs: Number.isFinite(Number(modeEntry.lastModifiedMs)) ? Number(modeEntry.lastModifiedMs) : null,
-                    snapshotFolder: modeEntry.snapshotFolder || '',
-                    folderPath: modeEntry.folderPath || '',
-                    folderType: modeEntry.folderType || ''
-                };
+                modeEntries[modeKey] = toArtifactModeEntry(modeEntry);
+            });
+
+            const modeFormatEntries = {};
+            const availableModeFormats = [];
+            const rawModeFormats = bundle?.modeFormats || {};
+            Object.keys(rawModeFormats).forEach((modeKey) => {
+                const byFormat = rawModeFormats[modeKey];
+                if (!byFormat || typeof byFormat !== 'object') return;
+                Object.keys(byFormat).forEach((formatKey) => {
+                    const modeEntry = byFormat[formatKey];
+                    if (!modeEntry) return;
+                    if (!modeFormatEntries[modeKey]) modeFormatEntries[modeKey] = {};
+                    modeFormatEntries[modeKey][formatKey] = toArtifactModeEntry(modeEntry);
+                    availableModeFormats.push(`${modeKey}:${formatKey}`);
+                });
             });
 
             const availableModes = Object.keys(modeEntries);
@@ -30554,7 +30633,9 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                         folderPath: artifact.folderPath || '',
                         folderType: artifact.folderType || '',
                         availableModes,
-                        modes: modeEntries
+                        availableModeFormats,
+                        modes: modeEntries,
+                        modeFormats: modeFormatEntries
                     }
                 };
 
@@ -30613,7 +30694,9 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                         folderPath: artifact.folderPath || '',
                         folderType: artifact.folderType || '',
                         availableModes,
-                        modes: modeEntries
+                        availableModeFormats,
+                        modes: modeEntries,
+                        modeFormats: modeFormatEntries
                     }
                 },
                 canRestore
@@ -32817,8 +32900,8 @@ async function getHtmlTextCached(restoreRef, localPayload) {
     }
 }
 
-async function getCurrentChangesArtifactTextCached(restoreRef, localPayload, requestedMode = null) {
-    const entry = getCurrentChangesArtifactModeEntryForRestore(restoreRef, requestedMode);
+async function getCurrentChangesArtifactTextCached(restoreRef, localPayload, requestedMode = null, requestedFormat = null) {
+    const entry = getCurrentChangesArtifactModeEntryForRestore(restoreRef, requestedMode, requestedFormat);
     if (!entry) {
         throw new Error('No current changes artifact metadata found');
     }
@@ -32880,17 +32963,27 @@ async function getCurrentChangesArtifactTextCached(restoreRef, localPayload, req
             }
             text = matched.content;
         } else if (source === 'local') {
-            const byMode = localPayload?.changesArtifactTextByMode;
-            if (entry.mode && byMode && typeof byMode[entry.mode] === 'string') {
-                text = String(byMode[entry.mode] || '');
-            }
-
-            if (!text && entry.localFileKey && localPayload?.changesArtifactTextByLocalKey) {
+            if (entry.localFileKey && localPayload?.changesArtifactTextByLocalKey) {
                 const byKey = localPayload.changesArtifactTextByLocalKey;
                 const keyText = byKey && typeof byKey[entry.localFileKey] === 'string'
                     ? String(byKey[entry.localFileKey] || '')
                     : '';
                 if (keyText) text = keyText;
+            }
+
+            const modeFormatKey = entry.mode && entry.format ? `${entry.mode}:${entry.format}` : '';
+            if (!text && modeFormatKey && localPayload?.changesArtifactTextByModeFormat) {
+                const byModeFormat = localPayload.changesArtifactTextByModeFormat;
+                if (typeof byModeFormat[modeFormatKey] === 'string') {
+                    text = String(byModeFormat[modeFormatKey] || '');
+                }
+            }
+
+            if (!text && entry.mode && localPayload?.changesArtifactTextByMode) {
+                const byMode = localPayload.changesArtifactTextByMode;
+                if (typeof byMode[entry.mode] === 'string') {
+                    text = String(byMode[entry.mode] || '');
+                }
             }
 
             if (!text && typeof localPayload?.changesArtifactText === 'string') {
@@ -33178,8 +33271,9 @@ async function extractHistoryChangesViewTreeForRestore(restoreRef, localPayload,
     const requestedMode = (options?.viewMode === 'simple' || options?.viewMode === 'detailed' || options?.viewMode === 'collection')
         ? options.viewMode
         : null;
+    const requestedFormat = normalizeCurrentChangesArtifactFormat(options?.viewFormat || '');
 
-    const artifactData = await getCurrentChangesArtifactTextCached(restoreRef, localPayload, requestedMode);
+    const artifactData = await getCurrentChangesArtifactTextCached(restoreRef, localPayload, requestedMode, requestedFormat);
     const payload = parseCurrentChangesArtifactPayloadText(artifactData?.text || '', artifactData?.format || '');
     if (!payload || typeof payload !== 'object') {
         throw new Error('Current changes artifact payload parse failed');
@@ -33199,7 +33293,8 @@ async function extractHistoryChangesViewTreeForRestore(restoreRef, localPayload,
         recordTime: restoreRef?.recordTime ? String(restoreRef.recordTime) : null,
         seqNumber: null,
         note: String(restoreRef?.changesArtifact?.name || restoreRef?.originalFile || '').trim(),
-        fingerprint: restoreRef?.fingerprint || null
+        fingerprint: restoreRef?.fingerprint || null,
+        format: normalizeCurrentChangesArtifactFormat(artifactData?.format || requestedFormat || '')
     };
 
     return { tree, viewMode, meta };
@@ -33250,7 +33345,7 @@ function pruneMergeRestorePreflightCache(now = Date.now()) {
     }
 }
 
-function cacheMergeRestorePreflightEntry({ restoreRef, viewMode, tree, meta }) {
+function cacheMergeRestorePreflightEntry({ restoreRef, viewMode, viewFormat, tree, meta }) {
     const now = Date.now();
     pruneMergeRestorePreflightCache(now);
 
@@ -33260,6 +33355,7 @@ function cacheMergeRestorePreflightEntry({ restoreRef, viewMode, tree, meta }) {
         createdAt: now,
         expiresAt: now + MERGE_RESTORE_PREFLIGHT_CACHE_TTL_MS,
         viewMode: normalizeMergeRestorePreflightMode(viewMode),
+        viewFormat: normalizeCurrentChangesArtifactFormat(viewFormat || meta?.format || ''),
         tree,
         meta: meta && typeof meta === 'object' ? meta : null,
         identity: getMergeRestoreRefIdentity(restoreRef)
@@ -33283,7 +33379,7 @@ function getMergeRestorePreflightEntry(token) {
     return entry;
 }
 
-function isMergeRestorePreflightEntryCompatible(entry, restoreRef, mergeViewMode) {
+function isMergeRestorePreflightEntryCompatible(entry, restoreRef, mergeViewMode, mergeViewFormat = '') {
     if (!entry || !restoreRef) return false;
 
     const entryIdentity = entry.identity && typeof entry.identity === 'object'
@@ -33315,10 +33411,15 @@ function isMergeRestorePreflightEntryCompatible(entry, restoreRef, mergeViewMode
 
     const expectedMode = normalizeMergeRestorePreflightMode(mergeViewMode || entry.viewMode || 'simple');
     const entryMode = normalizeMergeRestorePreflightMode(entry.viewMode || 'simple');
-    return expectedMode === entryMode;
+    if (expectedMode !== entryMode) return false;
+
+    const expectedFormat = normalizeCurrentChangesArtifactFormat(mergeViewFormat || entry.viewFormat || '');
+    const entryFormat = normalizeCurrentChangesArtifactFormat(entry.viewFormat || '');
+    if (expectedFormat && entryFormat && expectedFormat !== entryFormat) return false;
+    return true;
 }
 
-async function restoreSelectedVersion({ restoreRef, strategy, thresholdCount, localPayload, mergeViewMode, manualMatches, importParentId, forceChangesArtifact, preflight, restoreSessionId, restoreRecordMeta }) {
+async function restoreSelectedVersion({ restoreRef, strategy, thresholdCount, localPayload, mergeViewMode, mergeViewFormat, manualMatches, importParentId, forceChangesArtifact, preflight, restoreSessionId, restoreRecordMeta }) {
     const normalizedRestoreSessionId = String(
         restoreSessionId
         || `restore_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
@@ -33436,13 +33537,14 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdCount, lo
             const viewMode = (mergeViewMode === 'simple' || mergeViewMode === 'detailed' || mergeViewMode === 'collection')
                 ? mergeViewMode
                 : null;
+            const viewFormat = normalizeCurrentChangesArtifactFormat(mergeViewFormat || preflightPayload?.mergeViewFormat || '');
             const mergePreflightToken = String(preflightPayload?.mergePreflightToken || '').trim();
             const mergePreflightEntry = mergePreflightToken
                 ? getMergeRestorePreflightEntry(mergePreflightToken)
                 : null;
             const canReuseMergePreflight = !!(
                 mergePreflightEntry &&
-                isMergeRestorePreflightEntryCompatible(mergePreflightEntry, restoreRef, viewMode)
+                isMergeRestorePreflightEntryCompatible(mergePreflightEntry, restoreRef, viewMode, viewFormat)
             );
 
             if (canReuseMergePreflight) {
@@ -33455,7 +33557,7 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdCount, lo
                 };
             } else {
             try {
-                const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, { viewMode });
+                const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, { viewMode, viewFormat });
                 tree = extracted.tree;
                 mergeOptions = {
                     importKind: 'changes',
@@ -34066,7 +34168,7 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
 
 // [New] Import-merge preview data builder (Previous Backup -> This Backup "changes view")
 // Returns { tree, viewMode, meta }
-async function buildMergeRestorePreview({ restoreRef, localPayload, mergeViewMode }) {
+async function buildMergeRestorePreview({ restoreRef, localPayload, mergeViewMode, mergeViewFormat }) {
     try {
         if (!restoreRef) {
             return { success: false, error: 'Missing restoreRef' };
@@ -34075,10 +34177,12 @@ async function buildMergeRestorePreview({ restoreRef, localPayload, mergeViewMod
         const viewMode = (mergeViewMode === 'simple' || mergeViewMode === 'detailed' || mergeViewMode === 'collection')
             ? mergeViewMode
             : null;
-        const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, { viewMode });
+        const viewFormat = normalizeCurrentChangesArtifactFormat(mergeViewFormat || '');
+        const extracted = await extractHistoryChangesViewTreeForRestore(restoreRef, localPayload, { viewMode, viewFormat });
         const preflightToken = cacheMergeRestorePreflightEntry({
             restoreRef,
             viewMode: extracted.viewMode,
+            viewFormat,
             tree: extracted.tree,
             meta: extracted.meta
         });
@@ -34086,6 +34190,7 @@ async function buildMergeRestorePreview({ restoreRef, localPayload, mergeViewMod
             success: true,
             tree: extracted.tree,
             viewMode: extracted.viewMode,
+            viewFormat: normalizeCurrentChangesArtifactFormat(extracted?.meta?.format || viewFormat || ''),
             meta: extracted.meta,
             preflightToken
         };

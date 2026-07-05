@@ -7270,9 +7270,11 @@ async function initializeLanguageSwitcher() {
             }
         }
 
+        window.currentLang = currentLang;
         document.documentElement.setAttribute('lang', currentLang === 'en' ? 'en' : 'zh');
         await applyLocalizedContent(currentLang);
     } catch (e) {
+        window.currentLang = 'zh_CN';
         document.documentElement.setAttribute('lang', 'zh'); // Fallback
         await applyLocalizedContent('zh_CN'); // Fallback
     }
@@ -7282,6 +7284,7 @@ async function initializeLanguageSwitcher() {
             currentLang = (currentLang === 'zh_CN') ? 'en' : 'zh_CN';
             try {
                 await chrome.storage.local.set({ preferredLang: currentLang });
+                window.currentLang = currentLang;
                 document.documentElement.setAttribute('lang', currentLang === 'en' ? 'en' : 'zh');
 
                 const result = await chrome.storage.local.get(['initialized']);
@@ -7311,6 +7314,8 @@ async function initializeLanguageSwitcher() {
  * @async
  */
 const applyLocalizedContent = async (lang) => { // Added lang parameter
+    applyRestoreSourceButtonLabels(lang);
+
     // 定义所有需要国际化的文本
     const pageTitleStrings = {
         'zh_CN': "书签备份",
@@ -10141,24 +10146,57 @@ function encodeRestoreBinaryToBase64(arrayBuffer) {
     return btoa(binary);
 }
 
+function normalizeRestoreSourceLang(lang = '') {
+    const explicitLang = String(lang || '').trim();
+    const runtimeLang = explicitLang
+        || (typeof getLangKey === 'function' ? getLangKey() : '')
+        || window.currentLang
+        || document.documentElement.getAttribute('lang')
+        || 'zh_CN';
+    return String(runtimeLang || '').trim().toLowerCase().startsWith('en') ? 'en' : 'zh_CN';
+}
+
+function getRestoreSourceLabelText(source, lang = '') {
+    const normalizedSource = String(source || '').trim().toLowerCase();
+    const isEn = normalizeRestoreSourceLang(lang) === 'en';
+    if (normalizedSource === 'local') return isEn ? 'Local' : '本地';
+    if (normalizedSource === 'webdav') return 'WebDAV';
+    if (normalizedSource === 'github') return 'GitHub';
+    return normalizedSource || '';
+}
+
+function applyRestoreSourceButtonLabels(lang = '') {
+    const normalizedLang = normalizeRestoreSourceLang(lang);
+    [
+        ['webdav', 'restoreFromWebDAVBtn'],
+        ['github', 'restoreFromGitHubBtn'],
+        ['local', 'restoreFromLocalBtn']
+    ].forEach(([source, btnId]) => {
+        const btn = document.getElementById(btnId);
+        if (!btn || btn.getAttribute('data-loading') === '1') return;
+        const label = btn.querySelector('.restore-label');
+        if (label) label.textContent = getRestoreSourceLabelText(source, normalizedLang);
+    });
+}
+
 function setRestoreSourceButtonLoading(source, loading) {
     const btnId = `restoreFrom${source === 'webdav' ? 'WebDAV' : (source === 'github' ? 'GitHub' : 'Local')}Btn`;
     const btn = document.getElementById(btnId);
     if (!btn) return;
 
     const label = btn.querySelector('.restore-label');
+    const lang = normalizeRestoreSourceLang();
+    const isEn = lang === 'en';
     if (loading) {
         btn.disabled = true;
         btn.setAttribute('data-loading', '1');
-        if (label) label.textContent = 'Scanning...';
+        if (label) label.textContent = isEn ? 'Scanning...' : '扫描中...';
     } else {
         btn.disabled = false;
         btn.removeAttribute('data-loading');
         // restore original label
         if (label) {
-            if (source === 'webdav') label.textContent = 'WebDAV';
-            else if (source === 'github') label.textContent = 'GitHub';
-            else label.textContent = 'Local';
+            label.textContent = getRestoreSourceLabelText(source, lang);
         }
     }
 }
@@ -10210,16 +10248,20 @@ async function handleRestoreFromCloud(source, options = {}) {
     setRestoreSourceButtonLoading(source, true);
 
     try {
+        const lang = typeof getLangKey === 'function' ? getLangKey() : (window.currentLang || 'zh_CN');
+        const isEn = lang === 'en';
         const response = await callBackgroundFunction('scanAndParseRestoreSource', { source });
         if (response?.success && Array.isArray(response.versions) && response.versions.length > 0) {
             showRestoreModal(response.versions, source);
         } else if (response?.success) {
-            alert('No restore versions found in cloud folders.');
+            alert(isEn ? 'No restore versions found in cloud folders.' : '云端文件夹中未找到可恢复版本。');
         } else {
-            alert(`Scan failed: ${response?.error || 'Unknown error'}`);
+            alert(`${isEn ? 'Scan failed: ' : '扫描失败：'}${response?.error || (isEn ? 'Unknown error' : '未知错误')}`);
         }
     } catch (e) {
-        alert(`Error: ${e.message}`);
+        const lang = typeof getLangKey === 'function' ? getLangKey() : (window.currentLang || 'zh_CN');
+        const isEn = lang === 'en';
+        alert(`${isEn ? 'Error: ' : '错误：'}${e.message}`);
     } finally {
         setRestoreSourceButtonLoading(source, false);
     }
@@ -10254,11 +10296,13 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         const lower = text.toLowerCase();
         if (!text) return false;
         if (!/\.(json|html?|xhtml)$/i.test(lower)) return false;
+        const modeNameReg = /(?:^|[ _-])(?:bookmark[ _-]?changes|changes)[ _-]?(?:simple|detailed|collection|简略|详细|集合)(?:[ _.-]|$)|(?:^|[ _-])(?:simple|detailed|collection|简略|详细|集合)[ _-]?(?:bookmark[ _-]?changes|changes)(?:[ _.-]|$)/i;
         return lower.includes('current_changes')
             || lower.includes('current-changes')
             || lower.includes('bookmark-changes')
             || lower.includes('bookmark_changes')
             || lower.includes('bookmark changes')
+            || modeNameReg.test(text)
             || text.includes('当前变化')
             || text.includes('书签变化');
     };
@@ -10463,10 +10507,13 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         const lower = text.toLowerCase();
         if (!text) return false;
         if (!/\.(json|html?|xhtml)$/i.test(lower)) return false;
+        const modeNameReg = /(?:^|[ _-])(?:bookmark[ _-]?changes|changes)[ _-]?(?:simple|detailed|collection|简略|详细|集合)(?:[ _.-]|$)|(?:^|[ _-])(?:simple|detailed|collection|简略|详细|集合)[ _-]?(?:bookmark[ _-]?changes|changes)(?:[ _.-]|$)/i;
         return lower.includes('current_changes')
             || lower.includes('current-changes')
             || lower.includes('bookmark-changes')
             || lower.includes('bookmark_changes')
+            || lower.includes('bookmark changes')
+            || modeNameReg.test(text)
             || text.includes('当前变化')
             || text.includes('书签变化');
     };
@@ -10513,8 +10560,6 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         if (isCurrentChangesLikeName(text)) return true;
         if (isCurrentChangesArtifactName(text)) return true;
         if (parseSnapshotKeyFromTextLocal(text) && (lower.includes('changes') || text.includes('变化'))) return true;
-        if (text.includes('详细') || text.includes('简略') || text.includes('集合')) return true;
-        if (lower.includes('detailed') || lower.includes('simple') || lower.includes('collection')) return true;
 
         return false;
     };
@@ -10666,6 +10711,43 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                 continue;
             }
 
+            if (!allowStandalone && isHtmlFileName(name)) {
+                const snapshotFolder = extractSnapshotFolderFromPath(pathText);
+                const folderPath = pathText.includes('/')
+                    ? pathText.slice(0, pathText.lastIndexOf('/'))
+                    : '';
+                const shouldUseChangesNameHint = shouldTreatAsChangesArtifact({ name, pathText, snapshotFolder });
+                let shouldUseChangesContentHint = false;
+                let artifactText = '';
+
+                if (!shouldUseChangesNameHint) {
+                    const headText = typeof file.slice === 'function'
+                        ? await file.slice(0, 64 * 1024).text()
+                        : await file.text();
+                    shouldUseChangesContentHint = isCurrentChangesArtifactHtmlText(headText);
+                    if (shouldUseChangesContentHint) {
+                        artifactText = typeof file.text === 'function'
+                            ? await file.text()
+                            : headText;
+                    }
+                }
+
+                if (shouldUseChangesNameHint || shouldUseChangesContentHint) {
+                    localCandidates.push({
+                        name,
+                        source: 'local',
+                        type: 'changes_artifact',
+                        localFileKey,
+                        text: artifactText,
+                        lastModified: file.lastModified,
+                        snapshotFolder,
+                        folderPath,
+                        ...(legacyVersion ? { legacyVersion } : {})
+                    });
+                    continue;
+                }
+            }
+
             if (isSnapshotHtmlName(name)) {
                 const snapshotFolder = extractSnapshotFolderFromPath(pathText);
                 const snapshotKey = resolveSnapshotKeyForLocalCandidate(pathText, snapshotFolder, name);
@@ -10735,12 +10817,13 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                     ? await file.text()
                     : '';
                 const isChangesArtifactByContent = isCurrentChangesArtifactJsonText(jsonText);
+                const isChangesArtifactByName = shouldTreatAsChangesArtifact({ name, pathText, snapshotFolder });
 
-                if (!isChangesArtifactByContent && isStandaloneBookmarkTreeJsonText(jsonText)) {
+                if (isChangesArtifactByName || isChangesArtifactByContent) {
                     localCandidates.push({
                         name,
                         source: 'local',
-                        type: 'json_backup',
+                        type: 'changes_artifact',
                         localFileKey,
                         text: jsonText,
                         lastModified: file.lastModified,
@@ -10750,11 +10833,11 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                     continue;
                 }
 
-                if (isChangesArtifactByContent || shouldTreatAsChangesArtifact({ name, pathText, snapshotFolder })) {
+                if (isStandaloneBookmarkTreeJsonText(jsonText)) {
                     localCandidates.push({
                         name,
                         source: 'local',
-                        type: 'changes_artifact',
+                        type: 'json_backup',
                         localFileKey,
                         text: jsonText,
                         lastModified: file.lastModified,
@@ -10829,12 +10912,13 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                     ? await file.text()
                     : '';
                 const isChangesArtifactByContent = isCurrentChangesArtifactJsonText(jsonText);
+                const isChangesArtifactByName = hasStandaloneChangesArtifactHints(name);
 
-                if (!isChangesArtifactByContent && isStandaloneBookmarkTreeJsonText(jsonText)) {
+                if (isChangesArtifactByName || isChangesArtifactByContent) {
                     localCandidates.push({
                         name,
                         source: 'local',
-                        type: 'json_backup',
+                        type: 'changes_artifact',
                         localFileKey,
                         text: jsonText,
                         lastModified: file.lastModified,
@@ -10845,11 +10929,11 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                     continue;
                 }
 
-                if (isChangesArtifactByContent || hasStandaloneChangesArtifactHints(name)) {
+                if (isStandaloneBookmarkTreeJsonText(jsonText)) {
                     localCandidates.push({
                         name,
                         source: 'local',
-                        type: 'changes_artifact',
+                        type: 'json_backup',
                         localFileKey,
                         text: jsonText,
                         lastModified: file.lastModified,
@@ -10889,6 +10973,8 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
 async function handleLocalRestoreSelection(fileList, options = {}) {
     const files = Array.isArray(fileList) ? fileList : [];
     if (!files || files.length === 0) return;
+    const lang = typeof getLangKey === 'function' ? getLangKey() : (window.currentLang || 'zh_CN');
+    const isEn = lang === 'en';
 
     const { localCandidates, hasMarkdownOnly } = await collectLocalRestoreCandidates(files, options);
     const selectedZipCount = files.filter((file) => /\.zip$/i.test(String(file?.name || '').trim())).length;
@@ -10971,17 +11057,19 @@ async function handleLocalRestoreSelection(fileList, options = {}) {
 
             const hasChangesArtifact = localCandidates.some((item) => item && item.type === 'changes_artifact');
             if (hasChangesArtifact) {
-                alert('Detected Current Changes files, but no restorable version was produced. Please reload extension and retry.');
+                alert(isEn
+                    ? 'Detected Current Changes files, but no restorable version was produced. Please reload extension and retry.'
+                    : '检测到当前变化文件，但未生成可恢复版本。请重新加载扩展后重试。');
             } else {
-                alert('No restore versions found in selected folder.');
+                alert(isEn ? 'No restore versions found in selected folder.' : '所选文件夹中未找到可恢复版本。');
             }
         } else {
             lastLocalRestoreSelectionMeta = null;
-            alert(`Scan failed: ${response?.error || 'Unknown error'}`);
+            alert(`${isEn ? 'Scan failed: ' : '扫描失败：'}${response?.error || (isEn ? 'Unknown error' : '未知错误')}`);
         }
     } catch (err) {
         lastLocalRestoreSelectionMeta = null;
-        alert(`Scan error: ${err.message}`);
+        alert(`${isEn ? 'Scan error: ' : '扫描错误：'}${err.message}`);
     }
 }
 
@@ -11233,8 +11321,6 @@ function showRestoreModal(versions, source) {
     const detectTypeFromPathValues = (values) => {
         let hasManualExportSegment = false;
         let hasVersionedSegment = false;
-        let hasManualHistoryOrCurrentChangesSegment = false;
-        let hasSafetySnapshotSegment = false;
 
         for (const value of values) {
             const segments = splitPathSegmentsLower(value);
@@ -11247,18 +11333,10 @@ function showRestoreModal(versions, source) {
             if (segments.some(seg => VERSIONED_FOLDER_SEGMENTS.has(seg))) {
                 hasVersionedSegment = true;
             }
-            if (segments.some(seg => MANUAL_HISTORY_FOLDER_SEGMENTS.has(seg) || CURRENT_CHANGES_FOLDER_SEGMENTS.has(seg))) {
-                hasManualHistoryOrCurrentChangesSegment = true;
-            }
-            if (segments.some(seg => SAFETY_SNAPSHOT_FOLDER_SEGMENTS.has(seg))) {
-                hasSafetySnapshotSegment = true;
-            }
         }
 
-        if (hasSafetySnapshotSegment) return 'safety_snapshot';
         if (hasManualExportSegment) return 'manual_export';
         if (hasVersionedSegment) return 'versioned';
-        if (hasManualHistoryOrCurrentChangesSegment) return 'manual_export';
         return '';
     };
     const detectRestoreFolderType = (version) => {
@@ -11273,13 +11351,11 @@ function showRestoreModal(versions, source) {
             || version?.folderType
             || ''
         ).trim().toLowerCase();
-        if (explicitFolderType === 'safety_snapshot') return 'manual_export';
         if (explicitFolderType === 'manual_export') return 'manual_export';
         if (explicitFolderType === 'overwrite') return 'overwrite';
         if (explicitFolderType === 'versioned') return 'versioned';
 
         const coreType = detectTypeFromPathValues(collectRestoreCorePathValues(version, restoreRef));
-        if (coreType === 'safety_snapshot') return 'manual_export';
         if (coreType === 'manual_export' || coreType === 'overwrite') return coreType;
 
         const overwriteMode = String(restoreRef.overwriteMode || '').trim().toLowerCase();
@@ -11293,7 +11369,6 @@ function showRestoreModal(versions, source) {
             if (coreType === 'overwrite') return 'overwrite';
 
             const artifactType = detectTypeFromPathValues(collectChangesArtifactPathValues(restoreRef));
-            if (artifactType === 'safety_snapshot') return 'manual_export';
             if (artifactType === 'manual_export') return 'manual_export';
             if (artifactType === 'overwrite') return 'overwrite';
             if (isSyntheticChangesArtifactKey) return 'changes_artifact';
@@ -11497,7 +11572,11 @@ function showRestoreModal(versions, source) {
         const modeEntries = artifact.modes && typeof artifact.modes === 'object'
             ? artifact.modes
             : {};
+        const modeFormats = artifact.modeFormats && typeof artifact.modeFormats === 'object'
+            ? artifact.modeFormats
+            : {};
         const fixedMode = getFixedMergeViewMode(version);
+        const fixedFormat = getFixedMergeViewFormat(version);
         const modeOrder = [
             fixedMode,
             artifact.preferredMode,
@@ -11506,6 +11585,24 @@ function showRestoreModal(versions, source) {
         ].filter(Boolean);
 
         for (const mode of modeOrder) {
+            const formatEntries = modeFormats[mode] && typeof modeFormats[mode] === 'object'
+                ? modeFormats[mode]
+                : null;
+            if (formatEntries) {
+                const formatOrder = [fixedFormat, artifact.preferredFormat, artifact.format, 'json', 'html']
+                    .map((format) => normalizeMergeViewFormat(format))
+                    .filter(Boolean);
+                for (const format of formatOrder) {
+                    const formatEntry = formatEntries[format];
+                    if (!formatEntry) continue;
+                    const candidates = [formatEntry.name, formatEntry.localFileKey, formatEntry.fileUrl];
+                    for (const candidate of candidates) {
+                        const leaf = extractLeafFileName(candidate);
+                        if (leaf) return leaf;
+                    }
+                }
+            }
+
             const entry = modeEntries[mode] || (mode === artifact.mode || mode === artifact.preferredMode ? artifact : null);
             if (!entry) continue;
             const candidates = [entry.name, entry.localFileKey, entry.fileUrl];
@@ -11905,9 +12002,9 @@ function showRestoreModal(versions, source) {
 
         if (type === 'manual_export') {
             return {
-                enabled: true,
-                snapshot: manualExportSnapshotVersions.length > 0,
-                changes: manualExportChangesVersions.length > 0
+                enabled: source === 'local',
+                snapshot: source === 'local' && manualExportSnapshotVersions.length > 0,
+                changes: source === 'local' && manualExportChangesVersions.length > 0
             };
         }
 
@@ -11918,19 +12015,19 @@ function showRestoreModal(versions, source) {
         if (type === 'versioned') {
             return {
                 snapshot: versionedSnapshotVersions.length,
-                changes: versionedChangesVersions.length
+                changes: buildChangesDisplayVersions(versionedChangesVersions, 'versioned_changes_mode').length
             };
         }
         if (type === 'overwrite') {
             return {
                 snapshot: overwriteSnapshotVersions.length,
-                changes: buildOverwriteChangesDisplayVersions(overwriteChangesVersions).length
+                changes: buildChangesDisplayVersions(overwriteChangesVersions, 'overwrite_changes_mode').length
             };
         }
         if (type === 'manual_export') {
             return {
                 snapshot: manualExportSnapshotVersions.length,
-                changes: manualExportChangesVersions.length
+                changes: buildChangesDisplayVersions(manualExportChangesVersions, 'manual_export_changes_mode').length
             };
         }
         return { snapshot: 0, changes: 0 };
@@ -11970,7 +12067,7 @@ function showRestoreModal(versions, source) {
         if (isLocalFileSelection) return 'versioned';
         if (versionedVersions.length > 0) return 'versioned';
         if (overwriteVersions.length > 0) return 'overwrite';
-        if (manualExportVersions.length > 0) return 'manual_export';
+        if (source === 'local' && manualExportVersions.length > 0) return 'manual_export';
         return 'versioned';
     };
 
@@ -11980,9 +12077,9 @@ function showRestoreModal(versions, source) {
             const subMode = getCurrentRestoreSubMode('versioned');
             const indexFilter = getCurrentIndexFilter('versioned');
             if (subMode === 'changes') {
-                if (indexFilter === 'indexed') return versionedChangesIndexedVersions;
-                if (indexFilter === 'non_indexed') return versionedChangesNonIndexedVersions;
-                return versionedChangesVersions;
+                if (indexFilter === 'indexed') return buildChangesDisplayVersions(versionedChangesIndexedVersions, 'versioned_changes_mode');
+                if (indexFilter === 'non_indexed') return buildChangesDisplayVersions(versionedChangesNonIndexedVersions, 'versioned_changes_mode');
+                return buildChangesDisplayVersions(versionedChangesVersions, 'versioned_changes_mode');
             }
             if (indexFilter === 'indexed') return versionedSnapshotIndexedVersions;
             if (indexFilter === 'non_indexed') return versionedSnapshotNonIndexedVersions;
@@ -11991,16 +12088,14 @@ function showRestoreModal(versions, source) {
         if (type === 'overwrite') {
             const subMode = getCurrentRestoreSubMode('overwrite');
             if (subMode === 'changes') {
-                return isFlattenedOverwriteChangesMode('overwrite')
-                    ? buildOverwriteChangesDisplayVersions(overwriteChangesVersions)
-                    : overwriteChangesVersions;
+                return buildChangesDisplayVersions(overwriteChangesVersions, 'overwrite_changes_mode');
             }
             return overwriteSnapshotVersions;
         }
         if (type === 'manual_export') {
             const subMode = getCurrentRestoreSubMode('manual_export');
             if (subMode === 'changes') {
-                return manualExportChangesVersions;
+                return buildChangesDisplayVersions(manualExportChangesVersions, 'manual_export_changes_mode');
             }
             return manualExportSnapshotVersions;
         }
@@ -12012,13 +12107,12 @@ function showRestoreModal(versions, source) {
     const shouldHideRestoreNoteColumn = (type = currentVersionType) => type === 'overwrite' && !isFlattenedOverwriteChangesMode(type);
     const shouldHideRestoreHashColumn = (type = currentVersionType) => type === 'overwrite';
     const shouldHideRestoreStatsColumn = (type = currentVersionType) => type === 'overwrite';
-    const shouldHideRestoreViewColumn = (type = currentVersionType) => isFlattenedOverwriteChangesMode(type);
+    const shouldHideRestoreViewColumn = () => true;
     const getVisibleColumnCount = (type = currentVersionType) => {
-        let count = 7;
+        let count = 6;
         if (shouldHideRestoreNoteColumn(type)) count -= 1;
         if (shouldHideRestoreHashColumn(type)) count -= 1;
         if (shouldHideRestoreStatsColumn(type)) count -= 1;
-        if (shouldHideRestoreViewColumn(type)) count -= 1;
         return count;
     };
 
@@ -12063,8 +12157,8 @@ function showRestoreModal(versions, source) {
         }
         if (restoreSearchInput) {
             restoreSearchInput.placeholder = isEn
-                ? 'Seq / Note/File / Hash / Time / View'
-                : '序号 / 备注或文件名 / 哈希 / 时间 / 视图';
+                ? 'Seq / Note/File / Hash / Time'
+                : '序号 / 备注或文件名 / 哈希 / 时间';
             if (restoreSearchInput.value !== query) {
                 restoreSearchInput.value = query;
             }
@@ -13465,8 +13559,19 @@ function showRestoreModal(versions, source) {
         return '';
     };
 
+    const normalizeMergeViewFormat = (format) => {
+        const lower = String(format || '').trim().toLowerCase();
+        if (lower === 'html' || lower === 'htm' || lower === 'xhtml') return 'html';
+        if (lower === 'json') return 'json';
+        return '';
+    };
+
     const getFixedMergeViewMode = (version) => {
         return normalizeMergeViewMode(version?.forcedMergeViewMode || '');
+    };
+
+    const getFixedMergeViewFormat = (version) => {
+        return normalizeMergeViewFormat(version?.forcedMergeViewFormat || '');
     };
 
     const getMergeViewModeAvailability = (version) => {
@@ -13503,6 +13608,10 @@ function showRestoreModal(versions, source) {
             Object.keys(artifact.modes).forEach((mode) => collectMode(mode));
         }
 
+        if (artifact.modeFormats && typeof artifact.modeFormats === 'object') {
+            Object.keys(artifact.modeFormats).forEach((mode) => collectMode(mode));
+        }
+
         if (modeSet.size === 0) {
             return { supported: true, simple: true, detailed: false, collection: false };
         }
@@ -13524,14 +13633,35 @@ function showRestoreModal(versions, source) {
         return ['simple', 'detailed', 'collection'].filter((mode) => availability[mode]);
     };
 
-    const buildOverwriteChangesDisplayVersions = (list) => {
+    const getAvailableMergeViewModeFormats = (version) => {
+        const artifact = version?.restoreRef?.changesArtifact;
+        const modeFormats = artifact?.modeFormats && typeof artifact.modeFormats === 'object'
+            ? artifact.modeFormats
+            : null;
+        if (!modeFormats) return [];
+
+        const pairs = [];
+        ['simple', 'detailed', 'collection'].forEach((mode) => {
+            const byFormat = modeFormats[mode];
+            if (!byFormat || typeof byFormat !== 'object') return;
+            ['json', 'html'].forEach((format) => {
+                if (byFormat[format]) pairs.push({ mode, format });
+            });
+        });
+        return pairs;
+    };
+
+    const buildChangesDisplayVersions = (list, rowKind = 'changes_mode') => {
         const items = Array.isArray(list) ? list : [];
         const displayVersions = [];
 
         items.forEach((version, versionIndex) => {
             const availableModes = getAvailableMergeViewModes(version);
+            const availableModeFormats = getAvailableMergeViewModeFormats(version);
             const fallbackMode = resolvePreferredMergeViewMode(version) || 'simple';
-            const modes = availableModes.length > 0 ? availableModes : [fallbackMode];
+            const entries = availableModeFormats.length > 0
+                ? availableModeFormats
+                : (availableModes.length > 0 ? availableModes : [fallbackMode]).map((mode) => ({ mode, format: '' }));
             const baseKey = String(
                 version?.id
                 ?? version?.restoreRef?.snapshotKey
@@ -13541,12 +13671,13 @@ function showRestoreModal(versions, source) {
                 ?? `overwrite-${versionIndex}`
             ).trim() || `overwrite-${versionIndex}`;
 
-            modes.forEach((mode, modeIndex) => {
+            entries.forEach(({ mode, format }, modeIndex) => {
                 displayVersions.push({
                     ...version,
-                    displaySelectionKey: `${baseKey}::${mode}::${modeIndex}`,
+                    displaySelectionKey: `${baseKey}::${mode}::${format || 'auto'}::${modeIndex}`,
                     forcedMergeViewMode: mode,
-                    displayRowKind: 'overwrite_changes_mode'
+                    forcedMergeViewFormat: format || '',
+                    displayRowKind: rowKind
                 });
             });
         });
@@ -13561,20 +13692,31 @@ function showRestoreModal(versions, source) {
         const refs = [];
         const seen = new Set();
 
-        const addRef = (mode, raw) => {
+        const addRef = (mode, raw, format = '') => {
             const entry = raw && typeof raw === 'object' ? raw : {};
             const modeTag = normalizeMergeViewMode(mode || entry.mode);
+            const formatTag = normalizeMergeViewFormat(format || entry.format);
             const localFileKey = entry.localFileKey || artifact.localFileKey || '';
             const fallbackKey = entry.fileUrl || artifact.fileUrl || entry.name || artifact.name || '';
-            const identity = `${modeTag || ''}|${localFileKey || fallbackKey}`;
+            const identity = `${modeTag || ''}|${formatTag || ''}|${localFileKey || fallbackKey}`;
             if (!identity || seen.has(identity)) return;
             seen.add(identity);
             refs.push({
                 mode: modeTag,
+                format: formatTag,
                 localFileKey: localFileKey || '',
                 fallbackKey: fallbackKey || ''
             });
         };
+
+        if (artifact.modeFormats && typeof artifact.modeFormats === 'object') {
+            Object.entries(artifact.modeFormats).forEach(([modeKey, byFormat]) => {
+                if (!byFormat || typeof byFormat !== 'object') return;
+                Object.entries(byFormat).forEach(([formatKey, modeEntry]) => {
+                    addRef(modeKey, modeEntry, formatKey);
+                });
+            });
+        }
 
         if (artifact.modes && typeof artifact.modes === 'object') {
             Object.entries(artifact.modes).forEach(([modeKey, modeEntry]) => {
@@ -13617,16 +13759,21 @@ function showRestoreModal(versions, source) {
 
         if (changeRefs.length > 0) {
             const changesArtifactTextByMode = {};
+            const changesArtifactTextByModeFormat = {};
             const changesArtifactTextByLocalKey = {};
 
             for (const entry of changeRefs) {
                 const mode = entry.mode || '';
+                const format = entry.format || '';
                 const changeLocalFileKey = entry.localFileKey || '';
                 if (!changeLocalFileKey) continue;
 
                 if (typeof changesArtifactTextByLocalKey[changeLocalFileKey] === 'string') {
                     if (mode && typeof changesArtifactTextByMode[mode] !== 'string') {
                         changesArtifactTextByMode[mode] = changesArtifactTextByLocalKey[changeLocalFileKey];
+                    }
+                    if (mode && format) {
+                        changesArtifactTextByModeFormat[`${mode}:${format}`] = changesArtifactTextByLocalKey[changeLocalFileKey];
                     }
                     continue;
                 }
@@ -13641,10 +13788,16 @@ function showRestoreModal(versions, source) {
                 if (mode && typeof changesArtifactTextByMode[mode] !== 'string') {
                     changesArtifactTextByMode[mode] = changeText;
                 }
+                if (mode && format) {
+                    changesArtifactTextByModeFormat[`${mode}:${format}`] = changeText;
+                }
             }
 
             if (Object.keys(changesArtifactTextByMode).length > 0) {
                 payload.changesArtifactTextByMode = changesArtifactTextByMode;
+            }
+            if (Object.keys(changesArtifactTextByModeFormat).length > 0) {
+                payload.changesArtifactTextByModeFormat = changesArtifactTextByModeFormat;
             }
             if (Object.keys(changesArtifactTextByLocalKey).length > 0) {
                 payload.changesArtifactTextByLocalKey = changesArtifactTextByLocalKey;
@@ -13667,23 +13820,55 @@ function showRestoreModal(versions, source) {
         return payload;
     };
 
-    const resolveLocalChangesArtifactSelectionForMode = (restoreRef, localPayload, requestedMode = '') => {
+    const resolveLocalChangesArtifactSelectionForMode = (restoreRef, localPayload, requestedMode = '', requestedFormat = '') => {
         const artifact = restoreRef?.changesArtifact;
         const byMode = localPayload?.changesArtifactTextByMode && typeof localPayload.changesArtifactTextByMode === 'object'
             ? localPayload.changesArtifactTextByMode
+            : {};
+        const byModeFormat = localPayload?.changesArtifactTextByModeFormat && typeof localPayload.changesArtifactTextByModeFormat === 'object'
+            ? localPayload.changesArtifactTextByModeFormat
             : {};
         const byLocalKey = localPayload?.changesArtifactTextByLocalKey && typeof localPayload.changesArtifactTextByLocalKey === 'object'
             ? localPayload.changesArtifactTextByLocalKey
             : {};
 
         const requested = normalizeMergeViewMode(requestedMode);
+        const requestedFmt = normalizeMergeViewFormat(requestedFormat);
         const preferred = normalizeMergeViewMode(artifact?.preferredMode || artifact?.mode);
+        const preferredFmt = normalizeMergeViewFormat(artifact?.preferredFormat || artifact?.format);
         const modes = artifact?.modes && typeof artifact.modes === 'object' ? artifact.modes : null;
+        const modeFormats = artifact?.modeFormats && typeof artifact.modeFormats === 'object' ? artifact.modeFormats : null;
 
         let resolvedMode = requested || preferred || 'simple';
+        let resolvedFormat = requestedFmt || preferredFmt || '';
         let resolvedLocalFileKey = String(artifact?.localFileKey || '').trim();
+        let resolvedModeFormatEntryFound = false;
 
-        if (modes) {
+        if (modeFormats) {
+            const modeCandidates = [requested, preferred, 'simple', 'detailed', 'collection'].filter(Boolean);
+            const formatCandidates = [requestedFmt, preferredFmt, 'json', 'html'].filter(Boolean);
+            let resolvedEntry = null;
+            for (const modeCandidate of modeCandidates) {
+                const byFormat = modeFormats[modeCandidate];
+                if (!byFormat || typeof byFormat !== 'object') continue;
+                for (const formatCandidate of formatCandidates) {
+                    const entry = byFormat[formatCandidate];
+                    if (entry && typeof entry === 'object') {
+                        resolvedMode = modeCandidate;
+                        resolvedFormat = formatCandidate;
+                        resolvedEntry = entry;
+                        break;
+                    }
+                }
+                if (resolvedEntry) break;
+            }
+            if (resolvedEntry) {
+                resolvedModeFormatEntryFound = true;
+                resolvedLocalFileKey = String(resolvedEntry.localFileKey || resolvedLocalFileKey || '').trim();
+            }
+        }
+
+        if (!resolvedModeFormatEntryFound && modes) {
             const modeCandidates = [];
             if (requested && modes[requested]) modeCandidates.push(requested);
             if (preferred && modes[preferred] && !modeCandidates.includes(preferred)) modeCandidates.push(preferred);
@@ -13702,12 +13887,17 @@ function showRestoreModal(versions, source) {
         }
 
         let selectedText = '';
-        if (resolvedMode && typeof byMode[resolvedMode] === 'string' && byMode[resolvedMode]) {
-            selectedText = String(byMode[resolvedMode]);
+        if (resolvedLocalFileKey && typeof byLocalKey[resolvedLocalFileKey] === 'string' && byLocalKey[resolvedLocalFileKey]) {
+            selectedText = String(byLocalKey[resolvedLocalFileKey]);
         }
 
-        if (!selectedText && resolvedLocalFileKey && typeof byLocalKey[resolvedLocalFileKey] === 'string' && byLocalKey[resolvedLocalFileKey]) {
-            selectedText = String(byLocalKey[resolvedLocalFileKey]);
+        const modeFormatKey = resolvedMode && resolvedFormat ? `${resolvedMode}:${resolvedFormat}` : '';
+        if (!selectedText && modeFormatKey && typeof byModeFormat[modeFormatKey] === 'string' && byModeFormat[modeFormatKey]) {
+            selectedText = String(byModeFormat[modeFormatKey]);
+        }
+
+        if (!selectedText && resolvedMode && typeof byMode[resolvedMode] === 'string' && byMode[resolvedMode]) {
+            selectedText = String(byMode[resolvedMode]);
         }
 
         if (!selectedText && typeof localPayload?.changesArtifactText === 'string' && localPayload.changesArtifactText) {
@@ -13730,12 +13920,13 @@ function showRestoreModal(versions, source) {
 
         return {
             mode: resolvedMode || requested || preferred || 'simple',
+            format: resolvedFormat || requestedFmt || preferredFmt || '',
             localFileKey: resolvedLocalFileKey,
             text: selectedText
         };
     };
 
-    const buildRuntimeSafeMergeLocalPayload = (restoreRef, localPayload, mergeViewMode = '') => {
+    const buildRuntimeSafeMergeLocalPayload = (restoreRef, localPayload, mergeViewMode = '', mergeViewFormat = '') => {
         if (!restoreRef || restoreRef.source !== 'local') return localPayload || null;
         if (!localPayload || typeof localPayload !== 'object') return null;
 
@@ -13743,23 +13934,37 @@ function showRestoreModal(versions, source) {
             return localPayload;
         }
 
-        const selected = resolveLocalChangesArtifactSelectionForMode(restoreRef, localPayload, mergeViewMode);
+        const selected = resolveLocalChangesArtifactSelectionForMode(restoreRef, localPayload, mergeViewMode, mergeViewFormat);
         if (!selected.text) {
             return {};
+        }
+
+        if (selected.localFileKey) {
+            const payload = {
+                changesArtifactTextByLocalKey: {
+                    [selected.localFileKey]: selected.text
+                }
+            };
+            if (selected.mode && selected.format) {
+                payload.changesArtifactTextByModeFormat = {
+                    [`${selected.mode}:${selected.format}`]: selected.text
+                };
+            }
+            return payload;
+        }
+
+        if (selected.mode && selected.format) {
+            return {
+                changesArtifactTextByModeFormat: {
+                    [`${selected.mode}:${selected.format}`]: selected.text
+                }
+            };
         }
 
         if (selected.mode) {
             return {
                 changesArtifactTextByMode: {
                     [selected.mode]: selected.text
-                }
-            };
-        }
-
-        if (selected.localFileKey) {
-            return {
-                changesArtifactTextByLocalKey: {
-                    [selected.localFileKey]: selected.text
                 }
             };
         }
@@ -13832,6 +14037,11 @@ function showRestoreModal(versions, source) {
         const changesByMode = sanitizeLocalPayloadStringMap(localPayload.changesArtifactTextByMode);
         if (Object.keys(changesByMode).length > 0) {
             serialized.changesArtifactTextByMode = changesByMode;
+        }
+
+        const changesByModeFormat = sanitizeLocalPayloadStringMap(localPayload.changesArtifactTextByModeFormat);
+        if (Object.keys(changesByModeFormat).length > 0) {
+            serialized.changesArtifactTextByModeFormat = changesByModeFormat;
         }
 
         const changesByLocalKey = sanitizeLocalPayloadStringMap(localPayload.changesArtifactTextByLocalKey);
@@ -13931,11 +14141,22 @@ function showRestoreModal(versions, source) {
         return 'simple';
     };
 
+    const getSelectedMergeViewFormat = () => {
+        return getFixedMergeViewFormat(selectedVersion);
+    };
+
     const getMergeViewModeText = (mode, isEn) => {
         const normalized = normalizeMergeViewMode(mode) || 'simple';
         if (normalized === 'detailed') return isEn ? 'Detailed' : '详细';
         if (normalized === 'collection') return isEn ? 'Collection' : '集合';
         return isEn ? 'Simple' : '简略';
+    };
+
+    const getMergeViewFormatText = (format) => {
+        const normalized = normalizeMergeViewFormat(format);
+        if (normalized === 'html') return 'HTML';
+        if (normalized === 'json') return 'JSON';
+        return '';
     };
 
     const resolvePreferredMergeViewMode = (version) => {
@@ -14133,7 +14354,7 @@ function showRestoreModal(versions, source) {
         return {
             versioned: versionedVersions.length,
             overwrite: overwriteVersions.length,
-            manual_export: manualExportVersions.length
+            manual_export: source === 'local' ? manualExportVersions.length : 0
         };
     };
 
@@ -14507,7 +14728,7 @@ function showRestoreModal(versions, source) {
                 && (currentVersionType === 'versioned' || currentVersionType === 'overwrite' || currentVersionType === 'manual_export')
                 && getCurrentRestoreSubMode(currentVersionType) === 'snapshot';
 
-            const createModeBadge = (mode, { active = false, clickable = false } = {}) => {
+            const createModeBadge = (mode, { active = false, clickable = false, format = '' } = {}) => {
                 const badge = document.createElement(clickable ? 'button' : 'span');
                 if (clickable) {
                     badge.type = 'button';
@@ -14517,7 +14738,10 @@ function showRestoreModal(versions, source) {
                     badge.style.justifyContent = 'center';
                     badge.style.alignSelf = 'center';
                 }
-                badge.textContent = getMergeViewModeText(mode, isEn);
+                const formatText = getMergeViewFormatText(format);
+                badge.textContent = formatText
+                    ? `${getMergeViewModeText(mode, isEn)} ${formatText}`
+                    : getMergeViewModeText(mode, isEn);
                 badge.style.fontSize = '10px';
                 badge.style.padding = '1px 4px';
                 badge.style.border = '1px solid var(--theme-border-primary)';
@@ -14565,7 +14789,11 @@ function showRestoreModal(versions, source) {
                     return td;
                 }
 
-                const badge = createModeBadge(fixedMode || preferredMode, { active: true, clickable: false });
+                const badge = createModeBadge(fixedMode || preferredMode, {
+                    active: true,
+                    clickable: false,
+                    format: getFixedMergeViewFormat(version)
+                });
                 staticWrap.appendChild(badge);
 
                 td.appendChild(staticWrap);
@@ -14788,7 +15016,9 @@ function showRestoreModal(versions, source) {
                 }
                 tdStats.appendChild(statsDiv);
 
-                tdViewMode = createViewModeCell(version, folderType);
+                if (!hideViewModeColumn) {
+                    tdViewMode = createViewModeCell(version, folderType);
+                }
             }
 
             row.appendChild(tdSelect);
@@ -15928,7 +16158,7 @@ function showRestoreModal(versions, source) {
         };
 
         let overwritePreviewCache = null; // { diffSummary, currentTree, targetTree, changeEntries }
-        let mergePreviewCache = null; // { tree, viewMode, meta, preflightToken }
+        let mergePreviewCache = null; // { tree, viewMode, viewFormat, meta, preflightToken }
         let importPathNodeSeed = 0;
 
         const formatMergeImportTimestamp = (dateValue = new Date()) => {
@@ -16082,16 +16312,23 @@ function showRestoreModal(versions, source) {
             if (isMergeChangesSource) {
                 try {
                     let res = mergePreviewCache;
+                    const selectedMergeFormat = getSelectedMergeViewFormat();
                     const cachedMode = normalizeMergeViewMode(res?.viewMode || '');
-                    if (!res || cachedMode !== normalizeMergeViewMode(selectedMergeMode || '')) {
-                        const mergePreviewLocalPayload = buildRuntimeSafeMergeLocalPayload(restoreRef, localPayload, selectedMergeMode);
+                    const cachedFormat = normalizeMergeViewFormat(res?.viewFormat || res?.meta?.format || '');
+                    if (
+                        !res
+                        || cachedMode !== normalizeMergeViewMode(selectedMergeMode || '')
+                        || cachedFormat !== normalizeMergeViewFormat(selectedMergeFormat || '')
+                    ) {
+                        const mergePreviewLocalPayload = buildRuntimeSafeMergeLocalPayload(restoreRef, localPayload, selectedMergeMode, selectedMergeFormat);
                         res = await callRestoreActionWithLocalPayload({
                             action: 'buildMergeRestorePreview',
                             restoreRef,
                             localPayload: mergePreviewLocalPayload,
                             payload: {
                                 restoreRef,
-                                mergeViewMode: selectedMergeMode
+                                mergeViewMode: selectedMergeMode,
+                                mergeViewFormat: selectedMergeFormat
                             }
                         });
                         if (res && res.success === true) {
@@ -16314,14 +16551,16 @@ function showRestoreModal(versions, source) {
                 patchBlockedByIdChurn = false;
                 try {
                     const selectedMergeMode = getSelectedMergeViewMode();
-                    const mergePreviewLocalPayload = buildRuntimeSafeMergeLocalPayload(restoreRef, localPayload, selectedMergeMode);
+                    const selectedMergeFormat = getSelectedMergeViewFormat();
+                    const mergePreviewLocalPayload = buildRuntimeSafeMergeLocalPayload(restoreRef, localPayload, selectedMergeMode, selectedMergeFormat);
                     const res = await callRestoreActionWithLocalPayload({
                         action: 'buildMergeRestorePreview',
                         restoreRef,
                         localPayload: mergePreviewLocalPayload,
                         payload: {
                             restoreRef,
-                            mergeViewMode: selectedMergeMode
+                            mergeViewMode: selectedMergeMode,
+                            mergeViewFormat: selectedMergeFormat
                         }
                     });
                     if (!res || res.success !== true) {
@@ -16547,7 +16786,8 @@ function showRestoreModal(versions, source) {
                 return {
                     type: 'merge',
                     mergePreflightToken: preflightToken,
-                    mergeViewMode: normalizeMergeViewMode(mergePreview?.viewMode || getSelectedMergeViewMode() || 'simple')
+                    mergeViewMode: normalizeMergeViewMode(mergePreview?.viewMode || getSelectedMergeViewMode() || 'simple'),
+                    mergeViewFormat: normalizeMergeViewFormat(mergePreview?.viewFormat || mergePreview?.meta?.format || getSelectedMergeViewFormat() || '')
                 };
             }
 
@@ -16808,7 +17048,7 @@ function showRestoreModal(versions, source) {
             restoringTextTimer = setInterval(refreshRestoringText, 1000);
 
             const runtimeSafeLocalPayload = (strategy === 'merge' && forceChangesArtifact)
-                ? buildRuntimeSafeMergeLocalPayload(restoreRef, localPayload, getSelectedMergeViewMode())
+                ? buildRuntimeSafeMergeLocalPayload(restoreRef, localPayload, getSelectedMergeViewMode(), getSelectedMergeViewFormat())
                 : localPayload;
             if (shouldUseRestoreLocalPayloadToken(restoreRef, runtimeSafeLocalPayload)) {
                 activeRestoreLocalPayloadToken = await uploadRestoreLocalPayloadToken(runtimeSafeLocalPayload);
@@ -16830,6 +17070,7 @@ function showRestoreModal(versions, source) {
             }
             if (strategy === 'merge') {
                 restorePayload.mergeViewMode = getSelectedMergeViewMode();
+                restorePayload.mergeViewFormat = getSelectedMergeViewFormat();
                 restorePayload.forceChangesArtifact = forceChangesArtifact;
                 const importTypeKey = isSnapshotLikeVersion(selectedVersion) ? 'snapshot' : 'history';
                 const sel = importTargetByType[importTypeKey];
@@ -19233,6 +19474,7 @@ function updateRestorePanelStatus(event) {
     const restoreWebDAVStatusDot = document.getElementById('restoreFromWebDAVStatusDot');
     const restoreGitHubStatusDot = document.getElementById('restoreFromGitHubStatusDot');
     const restoreLocalStatusDot = document.getElementById('restoreFromLocalStatusDot');
+    applyRestoreSourceButtonLabels();
 
     const setDotState = (dotEl, configured) => {
         if (!dotEl) return;
@@ -21082,6 +21324,9 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             const newLang = changes.preferredLang.newValue || 'zh_CN';
+            window.currentLang = newLang;
+            document.documentElement.setAttribute('lang', newLang === 'en' ? 'en' : 'zh');
+            applyRestoreSourceButtonLabels(newLang);
             updatePopupHistoryActionTooltips(newLang);
             applyPopupDeleteHistoryButtonWarningState(
                 Number(window.__popupHistoryTotalRecords) || 0,
