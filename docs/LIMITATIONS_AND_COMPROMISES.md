@@ -7,7 +7,7 @@
 Edge 已改为自己的下载栏，这一策略在 Edge 上已经不适用。
 
 - **Edge 下载 UI 已变化**：Edge 从底部的 **Download Shelf（下载栏）** 切换到了工具栏的 **Download Bubble / Flyout（下载浮窗）**。
-- **API 目标是旧下载栏**：`setShelfEnabled` 和 `setUiOptions` 是针对 **Download Shelf** 设计的。
+- **Chrome 新接口**：Chrome 105+ 支持 `chrome.downloads.setUiOptions({ enabled: false })` 和 `downloads.ui` 权限；旧的 `setShelfEnabled` / `downloads.shelf` 自 Chrome 117 起废弃，已不再作为主实现。
 - **Edge 自有下载系统不响应**：Edge 的 **msDownloadsHub**（自有下载管理系统）不再响应这些 API。
 - **Chrome 仍保持兼容**：Chrome 虽然也用了 Download Bubble，但仍保持了 API 兼容性；Edge 没有。
 

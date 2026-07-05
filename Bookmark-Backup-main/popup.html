@@ -761,6 +761,117 @@
             /* 调整滑块移动距离 */
         }
 
+        .hide-download-shelf-controls {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex: 0 0 auto;
+        }
+
+        .hide-download-shelf-controls .switch {
+            margin-right: 0 !important;
+        }
+
+        .hide-download-shelf-settings-btn {
+            width: 28px;
+            height: 28px;
+            flex: 0 0 28px;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 4px;
+            background: var(--theme-bg-secondary);
+            color: var(--theme-text-primary);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }
+
+        .hide-download-shelf-settings-btn:hover,
+        .hide-download-shelf-settings-btn[aria-expanded="true"] {
+            background: var(--theme-bg-hover);
+            color: var(--theme-accent-color);
+            border-color: var(--theme-accent-color);
+        }
+
+        .hide-download-shelf-settings-btn i {
+            font-size: 12px;
+            line-height: 1;
+        }
+
+        .hide-download-shelf-scope-panel {
+            display: flex;
+            justify-content: flex-end;
+            padding: 0 0 5px 8px;
+        }
+
+        .hide-download-shelf-scope-panel[hidden] {
+            display: none;
+        }
+
+        .hide-download-shelf-scope-group {
+            max-width: 100%;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .hide-download-shelf-scope-group.clean-segment-group {
+            background-color: transparent;
+            border-color: transparent;
+            padding: 0;
+            gap: 6px;
+        }
+
+        .hide-download-shelf-scope-group .clean-segment-label {
+            display: inline-flex;
+        }
+
+        .hide-download-shelf-scope-group .clean-segment-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            white-space: nowrap;
+            border: 1px solid var(--theme-border-secondary);
+            background-color: var(--theme-bg-elevated);
+            color: var(--theme-text-primary);
+        }
+
+        .hide-download-shelf-scope-group .clean-segment-item::before {
+            content: '';
+            width: 12px;
+            height: 12px;
+            flex: 0 0 12px;
+            box-sizing: border-box;
+            border: 1px solid var(--theme-border-primary);
+            border-radius: 3px;
+            background-color: var(--theme-bg-secondary);
+        }
+
+        .hide-download-shelf-scope-group .clean-segment-label input:checked + .clean-segment-item::before {
+            content: '✓';
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-color: var(--theme-accent-color);
+            background-color: var(--theme-accent-color);
+            color: white;
+            font-size: 9px;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .hide-download-shelf-scope-group .clean-segment-label input:checked + .clean-segment-item {
+            background-color: var(--theme-bg-elevated);
+            color: var(--theme-text-primary);
+            box-shadow: none;
+        }
+
+        .local-config-right-edge-item {
+            padding-right: 0 !important;
+        }
+
         /* 设置项容器 */
         .setting-item {
             display: flex;
@@ -6248,8 +6359,8 @@
                 </div>
             </div>
             <div class="config-content" id="localConfigContent">
-                <div class="form-group" style="margin-bottom: 6px; padding-left: 5px;">
-                    <div class="setting-item"
+                <div class="form-group" id="localBackupPathGroup" style="margin-bottom: 6px; padding-left: 5px;">
+                    <div class="setting-item local-config-right-edge-item" id="localBackupPathHeader"
                         style="display: flex; align-items: center; margin-bottom: 0.75px; margin-top: 0.1px;">
                         <span class="setting-label" style="font-weight: bold;" id="localBackupPathLabel"></span>
                     </div>
@@ -6257,9 +6368,9 @@
                         style="margin-top: 5px; padding: 8px 12px; border: 1px solid var(--theme-border-primary); border-radius: 4px; background-color: var(--theme-bg-secondary); font-size: 13px; color: var(--theme-text-primary); margin-bottom: 8px;">
                         加载中...
                     </div>
-                    <div style="text-align: left; margin-bottom: 0px;">
+                    <div id="calibratePathBtnRow" style="display: flex; justify-content: flex-end; margin-bottom: 0px; width: 100%;">
                         <button id="calibratePathBtn"
-                            style="background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 13px; display: flex; align-items: center;">
+                            style="background-color: #007AFF; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 13px; display: flex; align-items: center; flex: 0 0 auto; width: auto;">
                             <span style="margin-right: 4px;">🔄</span> <span id="calibrateButtonText"></span>
                         </button>
                     </div>
@@ -6267,17 +6378,38 @@
 
                 <!-- 防干扰选项 -->
                 <div class="form-group" style="margin-bottom: 6px; padding-left: 5px;">
-                    <div class="setting-item"
+                    <div class="setting-item local-config-right-edge-item"
                         style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75px; margin-top: 0.75px;">
                         <span class="setting-label" style="font-weight: bold;" id="hideDownloadBarLabel"></span>
-                        <label class="switch" style="margin-right: 20px;">
-                            <input type="checkbox" id="hideDownloadShelfToggle" checked>
-                            <span class="slider"></span>
-                        </label>
+                        <div class="hide-download-shelf-controls">
+                            <label class="switch" style="margin-right: 0;">
+                                <input type="checkbox" id="hideDownloadShelfToggle" checked>
+                                <span class="slider"></span>
+                            </label>
+                            <button type="button" id="hideDownloadShelfSettingsBtn" class="hide-download-shelf-settings-btn" aria-expanded="false" aria-controls="hideDownloadShelfScopePanel" title="防干扰设置">
+                                <i class="fas fa-cog" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="hideDownloadShelfScopePanel" class="hide-download-shelf-scope-panel" hidden>
+                        <div class="clean-segment-group hide-download-shelf-scope-group" role="group" aria-label="防干扰静默范围">
+                            <label class="clean-segment-label">
+                                <input type="checkbox" id="hideDownloadShelfScopeAuto" checked>
+                                <div class="clean-segment-item" id="hideDownloadShelfScopeAutoLabel">自动备份静默</div>
+                            </label>
+                            <label class="clean-segment-label">
+                                <input type="checkbox" id="hideDownloadShelfScopeManual" checked>
+                                <div class="clean-segment-item" id="hideDownloadShelfScopeManualLabel">手动备份静默</div>
+                            </label>
+                            <label class="clean-segment-label">
+                                <input type="checkbox" id="hideDownloadShelfScopeOther" checked>
+                                <div class="clean-segment-item" id="hideDownloadShelfScopeOtherLabel">其他(切换备份、初始化备份)</div>
+                            </label>
+                        </div>
                     </div>
                     <div
-                        style="font-size: 12px; color: var(--theme-text-secondary); margin-top: 3px; padding-left: 8px;">
-                        <span></span>
+                        style="font-size: 12px; color: var(--theme-text-secondary); margin-top: 3px; padding-left: 0;">
+                        <span id="hideDownloadBarDesc"></span>
                     </div>
                 </div>
 
@@ -6286,33 +6418,6 @@
                 <!-- 隐藏的文件输入框 (用于本地恢复：单独文件) -->
                 <input type="file" id="localRestoreFileInput" style="display: none;" multiple accept=".html,.htm,.xhtml,.json,.md,.markdown,.zip,text/html,application/xhtml+xml,application/json,text/markdown,text/plain,application/zip">
 
-                <!-- 分隔线 -->
-                <div style="border-top: 1px solid var(--theme-border-primary); margin: 6px 0;"></div>
-
-                <!-- 区块三：安全规则说明 -->
-                <div class="form-group" style="margin-bottom: 6px; padding-left: 5px;">
-                    <div class="setting-item"
-                        style="display: flex; align-items: center; margin-bottom: 0.75px; margin-top: 0.75px;">
-                        <span class="setting-label" style="font-weight: bold;" id="instructionsLabel"></span>
-                    </div>
-                    <div
-                        style="font-size: 13px; color: var(--theme-text-secondary); margin-top: 8px; padding-left: 5px;">
-                        <p style="margin-top: 0; margin-bottom: 5px; font-weight: bold; padding-left: 2px;"
-                            id="defaultPathExamples"></p>
-                        <ul style="margin-top: 5px; margin-bottom: 15px; padding-left: 20px;">
-                            <li><strong>macOS:</strong> <span id="defaultPathMac"></span></li>
-                            <li><strong>Windows:</strong> <span id="defaultPathWindows"></span></li>
-                            <li><strong>Linux:</strong> <span id="defaultPathLinux"></span></li>
-                        </ul>
-
-                        <ul style="margin-top: 0; margin-bottom: 0; padding-left: 20px;">
-                            <li id="rulesNoCalibration"></li>
-                            <li id="rulesNonInterference"></li>
-                            <li id="rulesChromeRestriction"></li>
-                            <li id="rulesDownloadAPI"></li>
-                        </ul>
-                    </div>
-                </div>
             </div>
         </div>
 

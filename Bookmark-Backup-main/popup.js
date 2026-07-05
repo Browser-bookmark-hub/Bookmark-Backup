@@ -16,6 +16,22 @@ let localConfigPanelOpen = false;
 let isBackgroundConnected = false;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3;
+const HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY = 'hideDownloadShelfScopes';
+const HIDE_DOWNLOAD_SHELF_SCOPE_DEFAULTS = Object.freeze({
+    auto: true,
+    manual: true,
+    other: true
+});
+
+function normalizeHideDownloadShelfScopes(scopes) {
+    const source = scopes && typeof scopes === 'object' ? scopes : {};
+    return {
+        ...HIDE_DOWNLOAD_SHELF_SCOPE_DEFAULTS,
+        auto: source.auto !== false,
+        manual: source.manual !== false,
+        other: source.other !== false
+    };
+}
 
 // 国际化文本对象（全局定义，在 applyLocalizedContent 中初始化）
 let webdavConfigMissingStrings, webdavConfigSavedStrings, webdavBackupEnabledStrings, webdavBackupDisabledStrings;
@@ -1376,7 +1392,6 @@ function scrollToPositionA(behavior = 'auto') {
 function adjustLocalConfigLabels() {
     const localBackupPathLabel = document.getElementById('localBackupPathLabel');
     const hideDownloadBarLabel = document.getElementById('hideDownloadBarLabel');
-    const instructionsLabel = document.getElementById('instructionsLabel');
 
     // 这是一个估算值，目标是让这些标签的左侧与 "手动校准路径 / ..." 按钮的左侧对齐。
     // 你可能需要根据实际效果微调这个值。
@@ -1390,10 +1405,47 @@ function adjustLocalConfigLabels() {
         hideDownloadBarLabel.style.marginLeft = targetMarginLeft;
         hideDownloadBarLabel.style.textAlign = 'left'; // 确保文本本身左对齐
     }
-    if (instructionsLabel) {
-        instructionsLabel.style.marginLeft = targetMarginLeft;
-        instructionsLabel.style.textAlign = 'left'; // 确保文本本身左对齐
+}
+
+function positionLocalCalibrateButton(lang = currentLang) {
+    const header = document.getElementById('localBackupPathHeader');
+    const pathDisplay = document.getElementById('downloadPathDisplay');
+    const buttonRow = document.getElementById('calibratePathBtnRow');
+    const button = document.getElementById('calibratePathBtn');
+    if (!header || !pathDisplay || !buttonRow || !button) return;
+
+    button.style.flex = '0 0 auto';
+    button.style.width = 'auto';
+    button.style.alignSelf = 'auto';
+
+    if (lang === 'en') {
+        if (buttonRow.parentElement !== pathDisplay.parentElement || buttonRow.previousElementSibling !== pathDisplay) {
+            pathDisplay.insertAdjacentElement('afterend', buttonRow);
+        }
+        header.style.justifyContent = 'flex-start';
+        header.style.gap = '0';
+        buttonRow.style.display = 'flex';
+        buttonRow.style.justifyContent = 'flex-start';
+        buttonRow.style.width = '100%';
+        buttonRow.style.marginTop = '0';
+        buttonRow.style.marginLeft = '0';
+        buttonRow.style.marginBottom = '0';
+        buttonRow.style.flex = '0 0 auto';
+        return;
     }
+
+    if (buttonRow.parentElement !== header) {
+        header.appendChild(buttonRow);
+    }
+    header.style.justifyContent = 'space-between';
+    header.style.gap = '12px';
+    buttonRow.style.display = 'flex';
+    buttonRow.style.justifyContent = 'flex-end';
+    buttonRow.style.width = 'auto';
+    buttonRow.style.marginTop = '0';
+    buttonRow.style.marginLeft = '12px';
+    buttonRow.style.marginBottom = '0';
+    buttonRow.style.flex = '0 0 auto';
 }
 
 // =============================================================================
@@ -2428,10 +2480,38 @@ function initializeLocalConfigSection() {
     const localConfigContent = document.getElementById('localConfigContent');
     const defaultDownloadToggle = document.getElementById('defaultDownloadToggle');
     const hideDownloadShelfToggle = document.getElementById('hideDownloadShelfToggle');
+    const hideDownloadShelfSettingsBtn = document.getElementById('hideDownloadShelfSettingsBtn');
+    const hideDownloadShelfScopePanel = document.getElementById('hideDownloadShelfScopePanel');
+    const hideDownloadShelfScopeAuto = document.getElementById('hideDownloadShelfScopeAuto');
+    const hideDownloadShelfScopeManual = document.getElementById('hideDownloadShelfScopeManual');
+    const hideDownloadShelfScopeOther = document.getElementById('hideDownloadShelfScopeOther');
     const downloadPathDisplay = document.getElementById('downloadPathDisplay');
     const calibratePathBtn = document.getElementById('calibratePathBtn');
     const localConfigStatusDot = document.getElementById('localConfigStatus');
     const openDownloadSettings = document.getElementById('openDownloadSettings');
+    const hideDownloadShelfScopeInputs = [
+        hideDownloadShelfScopeAuto,
+        hideDownloadShelfScopeManual,
+        hideDownloadShelfScopeOther
+    ].filter(Boolean);
+
+    const updateHideDownloadShelfScopeControls = (scopes) => {
+        const normalized = normalizeHideDownloadShelfScopes(scopes);
+        if (hideDownloadShelfScopeAuto) hideDownloadShelfScopeAuto.checked = normalized.auto;
+        if (hideDownloadShelfScopeManual) hideDownloadShelfScopeManual.checked = normalized.manual;
+        if (hideDownloadShelfScopeOther) hideDownloadShelfScopeOther.checked = normalized.other;
+    };
+
+    const collectHideDownloadShelfScopes = () => normalizeHideDownloadShelfScopes({
+        auto: hideDownloadShelfScopeAuto ? hideDownloadShelfScopeAuto.checked : true,
+        manual: hideDownloadShelfScopeManual ? hideDownloadShelfScopeManual.checked : true,
+        other: hideDownloadShelfScopeOther ? hideDownloadShelfScopeOther.checked : true
+    });
+
+    const closeHideDownloadShelfScopePanel = () => {
+        if (hideDownloadShelfScopePanel) hideDownloadShelfScopePanel.hidden = true;
+        if (hideDownloadShelfSettingsBtn) hideDownloadShelfSettingsBtn.setAttribute('aria-expanded', 'false');
+    };
 
     // 设置点击事件，展开/折叠配置面板
     if (localConfigHeader) {
@@ -2458,14 +2538,22 @@ function initializeLocalConfigSection() {
     }
 
     // 初始化，加载默认下载路径状态
-    chrome.storage.local.get(['defaultDownloadEnabled', 'hideDownloadShelf', 'customDownloadPath'], function (result) {
+    chrome.storage.local.get(['defaultDownloadEnabled', 'hideDownloadShelf', HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY, 'customDownloadPath'], function (result) {
         // 默认值设置
         let defaultDownloadEnabled = result.defaultDownloadEnabled === true;
         let hideDownloadShelf = result.hideDownloadShelf !== false; // 默认启用
+        const hideDownloadShelfScopes = normalizeHideDownloadShelfScopes(result[HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY]);
 
         // 更新UI状态
         if (defaultDownloadToggle) defaultDownloadToggle.checked = defaultDownloadEnabled;
         if (hideDownloadShelfToggle) hideDownloadShelfToggle.checked = hideDownloadShelf;
+        updateHideDownloadShelfScopeControls(hideDownloadShelfScopes);
+
+        if (!result[HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY]) {
+            chrome.storage.local.set({
+                [HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY]: hideDownloadShelfScopes
+            }, function () { });
+        }
 
         // 如果存在自定义路径，直接使用它
         if (result.customDownloadPath) {
@@ -2518,6 +2606,43 @@ function initializeLocalConfigSection() {
             });
         });
     }
+
+    if (hideDownloadShelfSettingsBtn && hideDownloadShelfScopePanel) {
+        hideDownloadShelfSettingsBtn.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            const willOpen = hideDownloadShelfScopePanel.hidden === true;
+            hideDownloadShelfScopePanel.hidden = !willOpen;
+            hideDownloadShelfSettingsBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        });
+
+        hideDownloadShelfScopePanel.addEventListener('click', function (event) {
+            event.stopPropagation();
+        });
+
+        document.addEventListener('click', function (event) {
+            if (hideDownloadShelfScopePanel.hidden) return;
+            if (hideDownloadShelfSettingsBtn.contains(event.target) || hideDownloadShelfScopePanel.contains(event.target)) return;
+            closeHideDownloadShelfScopePanel();
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                closeHideDownloadShelfScopePanel();
+            }
+        });
+    }
+
+    hideDownloadShelfScopeInputs.forEach((input) => {
+        input.addEventListener('change', function () {
+            const scopes = collectHideDownloadShelfScopes();
+            chrome.storage.local.set({
+                [HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY]: scopes
+            }, function () {
+                showStatus('防干扰静默范围已保存', 'info');
+            });
+        });
+    });
 
     // 处理校准按钮点击事件
     if (calibratePathBtn) {
@@ -5540,23 +5665,16 @@ function calibrateDownloadPath() {
             'en': "Change browser default download path to cloud storage (for frequent backups)"
         };
         const cloudBackupGuide2Strings = {
-            'zh_CN': "修改路径至云盘处",
-            'en': "In the default download path, manually associate the Bookmarks folder to other cloud drives"
-        };
-        // 国际化文本
-        const cloudBackupGuide3Strings = {
-            'zh_CN': "macOS设置：将\"桌面\"和\"文稿\"文件添加到 iCloud 云盘",
-            'en': "macOS setup: Add 'Desktop' and 'Documents' folders to iCloud Drive"
+            'zh_CN': '将浏览器默认下载位置改到 PC 上的同步云盘文件夹（例如 OneDrive / iCloud Drive）。<span style="color: var(--theme-warning-color, #ff9800); font-weight: 700;">曲线云端备份的核心就是改浏览器默认下载位置到云盘。</span><br><span style="color: var(--theme-danger-color, #ff6b6b); font-weight: 700;">缺点：其他下载也会进入这个云盘目录。</span>',
+            'en': 'Change the browser default download location to a synced cloud-drive folder on this PC, such as OneDrive or iCloud Drive. <span style="color: var(--theme-warning-color, #ff9800); font-weight: 700;">The key idea is moving the browser default download location into the cloud drive.</span><br><span style="color: var(--theme-danger-color, #ff6b6b); font-weight: 700;">Tradeoff: other downloads will also go there.</span>'
         };
 
         const guide1Text = cloudBackupGuide1Strings[currentLang] || cloudBackupGuide1Strings['zh_CN'];
         const guide2Text = cloudBackupGuide2Strings[currentLang] || cloudBackupGuide2Strings['zh_CN'];
-        const guide3Text = cloudBackupGuide3Strings[currentLang] || cloudBackupGuide3Strings['zh_CN'];
 
         cloudBackupGuide.innerHTML = `
                 <li>${guide1Text}</li>
                 <li>${guide2Text}</li>
-                <li>${guide3Text}</li>
         `;
 
         cloudBackupCell.appendChild(cloudBackupTitle);
@@ -7686,43 +7804,38 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const calibratePathFullTextStrings = {
-        'zh_CN': "手动校准路径 / 曲线云端备份（onedrive/icould等） / 全局隐藏下载栏",
-        'en': "Manual Path Calibration / Cloud Backup Via Alternative Path (OneDrive/iCloud, etc.) / <br>Global Download Bar Hiding"
+        'zh_CN': "手动校准路径 / 曲线云端备份 / 全局隐藏下载栏",
+        'en': "Manual Path Calibration / Cloud Backup Via Alternative Path / Global Download Bar Hiding"
     };
 
     const hideDownloadBarLabelStrings = {
-        'zh_CN': "防干扰：只在本地备份时隐藏下载栏（Edge 90+ 暂不适用）",
-        'en': "Non-interference: Hide Download Bar Only During Backup (Edge 90+ not supported)"
+        'zh_CN': "防干扰：只在本地备份时隐藏下载栏",
+        'en': "Non-interference: Hide Download Bar Only During Local Backup"
     };
 
-    const instructionsLabelStrings = {
-        'zh_CN': "说明与规则",
-        'en': "Instructions & Rules"
+    const hideDownloadBarDescStrings = {
+        'zh_CN': "适用范围：Chrome 105+（Edge 90+ 暂不适用）。",
+        'en': "Applies to Chrome 105+ (Edge 90+ not supported)."
     };
 
-    const defaultPathExamplesStrings = {
-        'zh_CN': "默认路径示例：",
-        'en': "Default Path Examples:"
+    const hideDownloadShelfSettingsTitleStrings = {
+        'zh_CN': "防干扰设置",
+        'en': "Non-interference Settings"
     };
 
-    const rulesNoCalibrationStrings = {
-        'zh_CN': "不进行校准也可正常使用，主要是方便曲线云端或特定位置备份查看",
-        'en': "Calibration optional, useful for cloud backup viewing"
+    const hideDownloadShelfScopeAutoStrings = {
+        'zh_CN': "自动备份静默",
+        'en': "Auto backup silent"
     };
 
-    const rulesNonInterferenceStrings = {
-        'zh_CN': "防干扰功能不会应用全局，只在本地备份的时候临时启动，Chrome下载设置优先级更高",
-        'en': "Non-interference works only during backup, Chrome settings take priority"
+    const hideDownloadShelfScopeManualStrings = {
+        'zh_CN': "手动备份静默",
+        'en': "Manual backup silent"
     };
 
-    const rulesChromeRestrictionStrings = {
-        'zh_CN': "由于Chrome扩展的安全限制，扩展无法直接写入系统中的绝对路径",
-        'en': "Due to Chrome security, extensions cannot write to absolute paths"
-    };
-
-    const rulesDownloadAPIStrings = {
-        'zh_CN': "下载API只能在浏览器的默认下载路径内保存书签与文件夹",
-        'en': "Download API can only save to browser's default path"
+    const hideDownloadShelfScopeOtherStrings = {
+        'zh_CN': "其他(切换备份、初始化备份)",
+        'en': "Other (switch, initialize)"
     };
 
     const initButtonsTitleStrings = {
@@ -7910,13 +8023,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const cloudBackupGuide2Strings = {
-        'zh_CN': "修改路径至云盘处",
-        'en': "In the default download path, manually associate the Bookmarks folder to other cloud drives"
-    };
-
-    const cloudBackupGuide3Strings = {
-        'zh_CN': "macOS设置：将\"桌面\"和\"文稿\"文件添加到 iCloud 云盘",
-        'en': "macOS setup: Add 'Desktop' and 'Documents' folders to iCloud Drive"
+        'zh_CN': '将浏览器默认下载位置改到 PC 上的同步云盘文件夹（例如 OneDrive / iCloud Drive）。<span style="color: var(--theme-warning-color, #ff9800); font-weight: 700;">曲线云端备份的核心就是改浏览器默认下载位置到云盘。</span><br><span style="color: var(--theme-danger-color, #ff6b6b); font-weight: 700;">缺点：其他下载也会进入这个云盘目录。</span>',
+        'en': 'Change the browser default download location to a synced cloud-drive folder on this PC, such as OneDrive or iCloud Drive. <span style="color: var(--theme-warning-color, #ff9800); font-weight: 700;">The key idea is moving the browser default download location into the cloud drive.</span><br><span style="color: var(--theme-danger-color, #ff6b6b); font-weight: 700;">Tradeoff: other downloads will also go there.</span>'
     };
 
     const hideDownloadBarTitleStrings = {
@@ -8298,12 +8406,11 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const calibrateButtonText = calibrateButtonStrings[lang] || calibrateButtonStrings['zh_CN'];
     const calibratePathFullText = calibratePathFullTextStrings[lang] || calibratePathFullTextStrings['zh_CN'];
     const hideDownloadBarLabelText = hideDownloadBarLabelStrings[lang] || hideDownloadBarLabelStrings['zh_CN'];
-    const instructionsLabelText = instructionsLabelStrings[lang] || instructionsLabelStrings['zh_CN'];
-    const defaultPathExamplesText = defaultPathExamplesStrings[lang] || defaultPathExamplesStrings['zh_CN'];
-    const rulesNoCalibrationText = rulesNoCalibrationStrings[lang] || rulesNoCalibrationStrings['zh_CN'];
-    const rulesNonInterferenceText = rulesNonInterferenceStrings[lang] || rulesNonInterferenceStrings['zh_CN'];
-    const rulesChromeRestrictionText = rulesChromeRestrictionStrings[lang] || rulesChromeRestrictionStrings['zh_CN'];
-    const rulesDownloadAPIText = rulesDownloadAPIStrings[lang] || rulesDownloadAPIStrings['zh_CN'];
+    const hideDownloadBarDescText = hideDownloadBarDescStrings[lang] || hideDownloadBarDescStrings['zh_CN'];
+    const hideDownloadShelfSettingsTitleText = hideDownloadShelfSettingsTitleStrings[lang] || hideDownloadShelfSettingsTitleStrings['zh_CN'];
+    const hideDownloadShelfScopeAutoText = hideDownloadShelfScopeAutoStrings[lang] || hideDownloadShelfScopeAutoStrings['zh_CN'];
+    const hideDownloadShelfScopeManualText = hideDownloadShelfScopeManualStrings[lang] || hideDownloadShelfScopeManualStrings['zh_CN'];
+    const hideDownloadShelfScopeOtherText = hideDownloadShelfScopeOtherStrings[lang] || hideDownloadShelfScopeOtherStrings['zh_CN'];
     const initButtonsTitleText = initButtonsTitleStrings[lang] || initButtonsTitleStrings['zh_CN'];
     const resetButtonText = resetButtonStrings[lang] || resetButtonStrings['zh_CN'];
     const initUploadButtonText = initUploadButtonStrings[lang] || initUploadButtonStrings['zh_CN'];
@@ -8355,7 +8462,6 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const cloudBackupGuideTitleText = cloudBackupGuideTitleStrings[lang] || cloudBackupGuideTitleStrings['zh_CN'];
     const cloudBackupGuide1Text = cloudBackupGuide1Strings[lang] || cloudBackupGuide1Strings['zh_CN'];
     const cloudBackupGuide2Text = cloudBackupGuide2Strings[lang] || cloudBackupGuide2Strings['zh_CN'];
-    const cloudBackupGuide3Text = cloudBackupGuide3Strings[lang] || cloudBackupGuide3Strings['zh_CN'];
     const hideDownloadBarTitleText = hideDownloadBarTitleStrings[lang] || hideDownloadBarTitleStrings['zh_CN'];
     const hideDownloadBarGuide1Text = hideDownloadBarGuide1Strings[lang] || hideDownloadBarGuide1Strings['zh_CN'];
     const hideDownloadBarGuide2Text = hideDownloadBarGuide2Strings[lang] || hideDownloadBarGuide2Strings['zh_CN'];
@@ -8552,58 +8658,42 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     if (calibratePathBtn) {
         calibratePathBtn.innerHTML = calibratePathFullText; // 使用 innerHTML 来解析 <br>
     }
+    positionLocalCalibrateButton(lang);
 
     const hideDownloadBarLabelElement = document.getElementById('hideDownloadBarLabel');
     if (hideDownloadBarLabelElement) {
         hideDownloadBarLabelElement.textContent = hideDownloadBarLabelText;
     }
 
-    // 更新说明与规则部分
-    const instructionsLabelElement = document.getElementById('instructionsLabel');
-    if (instructionsLabelElement) {
-        instructionsLabelElement.textContent = instructionsLabelText;
+    const hideDownloadBarDescElement = document.getElementById('hideDownloadBarDesc');
+    if (hideDownloadBarDescElement) {
+        hideDownloadBarDescElement.textContent = hideDownloadBarDescText;
     }
 
-    const defaultPathExamplesElement = document.getElementById('defaultPathExamples');
-    if (defaultPathExamplesElement) {
-        defaultPathExamplesElement.textContent = defaultPathExamplesText;
+    const hideDownloadShelfSettingsBtn = document.getElementById('hideDownloadShelfSettingsBtn');
+    if (hideDownloadShelfSettingsBtn) {
+        hideDownloadShelfSettingsBtn.setAttribute('title', hideDownloadShelfSettingsTitleText);
+        hideDownloadShelfSettingsBtn.setAttribute('aria-label', hideDownloadShelfSettingsTitleText);
     }
 
-    const exportRootFolder = lang === 'zh_CN' ? '书签备份' : 'Bookmark Backup';
-
-    const defaultPathMacElement = document.getElementById('defaultPathMac');
-    if (defaultPathMacElement) {
-        defaultPathMacElement.textContent = `/Users/<username>/Downloads/${exportRootFolder}/`;
+    const hideDownloadShelfScopePanel = document.getElementById('hideDownloadShelfScopePanel');
+    if (hideDownloadShelfScopePanel) {
+        hideDownloadShelfScopePanel.setAttribute('aria-label', hideDownloadShelfSettingsTitleText);
     }
 
-    const defaultPathWindowsElement = document.getElementById('defaultPathWindows');
-    if (defaultPathWindowsElement) {
-        defaultPathWindowsElement.textContent = `C:\\Users\\<username>\\Downloads\\${exportRootFolder}\\`;
+    const hideDownloadShelfScopeAutoLabel = document.getElementById('hideDownloadShelfScopeAutoLabel');
+    if (hideDownloadShelfScopeAutoLabel) {
+        hideDownloadShelfScopeAutoLabel.textContent = hideDownloadShelfScopeAutoText;
     }
 
-    const defaultPathLinuxElement = document.getElementById('defaultPathLinux');
-    if (defaultPathLinuxElement) {
-        defaultPathLinuxElement.textContent = `/home/<username>/Downloads/${exportRootFolder}/`;
+    const hideDownloadShelfScopeManualLabel = document.getElementById('hideDownloadShelfScopeManualLabel');
+    if (hideDownloadShelfScopeManualLabel) {
+        hideDownloadShelfScopeManualLabel.textContent = hideDownloadShelfScopeManualText;
     }
 
-    const rulesNoCalibrationElement = document.getElementById('rulesNoCalibration');
-    if (rulesNoCalibrationElement) {
-        rulesNoCalibrationElement.textContent = rulesNoCalibrationText;
-    }
-
-    const rulesNonInterferenceElement = document.getElementById('rulesNonInterference');
-    if (rulesNonInterferenceElement) {
-        rulesNonInterferenceElement.textContent = rulesNonInterferenceText;
-    }
-
-    const rulesChromeRestrictionElement = document.getElementById('rulesChromeRestriction');
-    if (rulesChromeRestrictionElement) {
-        rulesChromeRestrictionElement.textContent = rulesChromeRestrictionText;
-    }
-
-    const rulesDownloadAPIElement = document.getElementById('rulesDownloadAPI');
-    if (rulesDownloadAPIElement) {
-        rulesDownloadAPIElement.textContent = rulesDownloadAPIText;
+    const hideDownloadShelfScopeOtherLabel = document.getElementById('hideDownloadShelfScopeOtherLabel');
+    if (hideDownloadShelfScopeOtherLabel) {
+        hideDownloadShelfScopeOtherLabel.textContent = hideDownloadShelfScopeOtherText;
     }
 
     // 更新初始化按钮部分
@@ -9431,10 +9521,9 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         }
 
         // 更新云备份指南内容
-        if (cloudBackupGuide && cloudBackupGuide.children.length >= 3) {
+        if (cloudBackupGuide && cloudBackupGuide.children.length >= 2) {
             cloudBackupGuide.children[0].textContent = cloudBackupGuide1Strings[lang] || cloudBackupGuide1Strings['zh_CN'];
-            cloudBackupGuide.children[1].textContent = cloudBackupGuide2Strings[lang] || cloudBackupGuide2Strings['zh_CN'];
-            cloudBackupGuide.children[2].textContent = cloudBackupGuide3Strings[lang] || cloudBackupGuide3Strings['zh_CN'];
+            cloudBackupGuide.children[1].innerHTML = cloudBackupGuide2Strings[lang] || cloudBackupGuide2Strings['zh_CN'];
         }
 
         // 更新下载栏标题

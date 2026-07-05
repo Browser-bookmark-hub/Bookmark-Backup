@@ -1056,13 +1056,12 @@ function resolveExportSubFolderByKey(folderKey, lang) {
 // 添加文件锁定状态追踪
 let lastLockTime = null;
 let consecutiveLockCount = 0;
-// 添加变量保存原始下载栏状态
-let originalDownloadShelfState = true; // 默认为显示
 let isBookmarkBackupInProgress = false; // 标记是否正在进行书签备份
 let lastVisibleBookmarkDownloadAt = 0;
 const ensuredWebDAVCollectionCache = new Map();
 let bookmarkDownloadIds = new Set(); // 存储书签备份相关的下载ID
 let nonBookmarkDownloadCount = 0; // 追踪非书签备份下载的数量
+let activeLocalBackupSilenceScope = 'auto';
 // 跟踪书签和文件夹的操作状态
 let bookmarkMoved = false;
 let folderMoved = false;
@@ -1070,6 +1069,206 @@ let bookmarkModified = false;
 let folderModified = false;
 // 添加一个变量标记备份提醒系统是否已初始化
 let hasInitializedBackupReminder = false;
+const HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY = 'hideDownloadShelfScopes';
+const HIDE_DOWNLOAD_SHELF_SCOPE_DEFAULTS = Object.freeze({
+    auto: true,
+    manual: true,
+    other: true
+});
+const DOWNLOAD_UI_TEMP_HIDE_STORAGE_KEY = '__downloadUiTemporaryHide';
+const DOWNLOAD_UI_TEMP_HIDE_ALARM_NAME = '__restoreDownloadUiAfterTemporaryHide';
+const DOWNLOAD_UI_TEMP_HIDE_RESTORE_DELAY_MS = 90 * 1000;
+const DOWNLOAD_UI_TEMP_HIDE_STALE_MS = 45 * 1000;
+
+async function hasDownloadUiPermission() {
+    try {
+        if (!browserAPI?.permissions?.contains) return false;
+        return await new Promise((resolve) => {
+            browserAPI.permissions.contains({
+                permissions: ['downloads.ui']
+            }, (result) => {
+                resolve(result === true);
+            });
+        });
+    } catch (_) {
+        return false;
+    }
+}
+
+async function setDownloadUiEnabled(enabled) {
+    try {
+        if (browserAPI?.downloads && typeof browserAPI.downloads.setUiOptions === 'function') {
+            await browserAPI.downloads.setUiOptions({ enabled: enabled === true });
+            return true;
+        }
+    } catch (_) { }
+    return false;
+}
+
+function normalizeDownloadUiSilenceScope(scope) {
+    const key = String(scope || '').trim().toLowerCase();
+    if (key === 'manual') return 'manual';
+    if (key === 'other' || key === 'switch' || key === 'init' || key === 'initialize') return 'other';
+    return 'auto';
+}
+
+function normalizeDownloadUiTemporaryHideScope(scope) {
+    const key = String(scope || '').trim().toLowerCase();
+    if (key === 'auto' || key === 'manual' || key === 'other') return key;
+    if (key === 'switch' || key === 'init' || key === 'initialize') return 'other';
+    return '';
+}
+
+function getDownloadUiTemporaryHideMarkerScope(marker) {
+    if (!marker || typeof marker !== 'object') return '';
+    const explicitScope = normalizeDownloadUiTemporaryHideScope(marker.scope);
+    if (explicitScope) return explicitScope;
+
+    const context = String(marker.context || '').trim().toLowerCase();
+    if (context.includes('manual')) return 'manual';
+    if (context.includes('other') || context.includes('switch') || context.includes('init')) return 'other';
+    if (context.includes('auto')) return 'auto';
+    return '';
+}
+
+function normalizeHideDownloadShelfScopes(scopes) {
+    const source = scopes && typeof scopes === 'object' ? scopes : {};
+    return {
+        ...HIDE_DOWNLOAD_SHELF_SCOPE_DEFAULTS,
+        auto: source.auto !== false,
+        manual: source.manual !== false,
+        other: source.other !== false
+    };
+}
+
+function shouldSilenceDownloadUiForScope(config = {}, scope = 'auto') {
+    if (config.hideDownloadShelf === false) return false;
+    const normalizedScope = normalizeDownloadUiSilenceScope(scope);
+    const scopes = normalizeHideDownloadShelfScopes(config[HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY]);
+    return scopes[normalizedScope] !== false;
+}
+
+async function scheduleDownloadUiTemporaryHideRestore(context = 'backup', scope = '') {
+    const normalizedScope = normalizeDownloadUiTemporaryHideScope(scope);
+    try {
+        await browserAPI.storage.local.set({
+            [DOWNLOAD_UI_TEMP_HIDE_STORAGE_KEY]: {
+                active: true,
+                context: String(context || 'backup'),
+                scope: normalizedScope,
+                hiddenAt: Date.now()
+            }
+        });
+    } catch (_) { }
+
+    try {
+        if (browserAPI?.alarms?.create) {
+            browserAPI.alarms.create(DOWNLOAD_UI_TEMP_HIDE_ALARM_NAME, {
+                when: Date.now() + DOWNLOAD_UI_TEMP_HIDE_RESTORE_DELAY_MS
+            });
+        }
+    } catch (_) { }
+}
+
+async function clearDownloadUiTemporaryHideRestore() {
+    try {
+        await browserAPI.storage.local.remove(DOWNLOAD_UI_TEMP_HIDE_STORAGE_KEY);
+    } catch (_) { }
+
+    try {
+        if (browserAPI?.alarms?.clear) {
+            await browserAPI.alarms.clear(DOWNLOAD_UI_TEMP_HIDE_ALARM_NAME);
+        }
+    } catch (_) { }
+}
+
+async function hideDownloadUiTemporarily(context = 'backup', scope = '') {
+    const hidden = await setDownloadUiEnabled(false);
+    if (hidden) {
+        await scheduleDownloadUiTemporaryHideRestore(context, scope);
+    }
+    return hidden;
+}
+
+async function showDownloadUiWithoutClearingTemporaryHide(reason = 'visible') {
+    void reason;
+    return await setDownloadUiEnabled(true);
+}
+
+async function restoreDownloadUiAfterTemporaryHide(reason = 'restore') {
+    void reason;
+    const restored = await showDownloadUiWithoutClearingTemporaryHide(reason);
+    await clearDownloadUiTemporaryHideRestore();
+    return restored;
+}
+
+async function restoreDownloadUiAfterDownloadSettles(downloadId, reason = 'download-complete', timeoutMs = 1800) {
+    const downloadTerminalState = await waitForDownloadTerminalState(downloadId, timeoutMs);
+    await restoreDownloadUiAfterTemporaryHide(reason);
+    return downloadTerminalState;
+}
+
+function scheduleDownloadUiRestoreAfterDownloadSettles(downloadId, reason = 'download-complete', timeoutMs = 1800, afterRestore = null) {
+    restoreDownloadUiAfterDownloadSettles(downloadId, reason, timeoutMs)
+        .catch(() => {
+            return restoreDownloadUiAfterTemporaryHide(`${reason}-fallback`).catch(() => { });
+        })
+        .finally(() => {
+            if (typeof afterRestore === 'function') {
+                try {
+                    afterRestore();
+                } catch (_) { }
+            }
+        });
+}
+
+async function restoreDownloadUiIfTemporaryHideStale(reason = 'service-worker-start', minAgeMs = DOWNLOAD_UI_TEMP_HIDE_STALE_MS) {
+    try {
+        const data = await browserAPI.storage.local.get([DOWNLOAD_UI_TEMP_HIDE_STORAGE_KEY]);
+        const marker = data?.[DOWNLOAD_UI_TEMP_HIDE_STORAGE_KEY];
+        if (!marker || marker.active !== true) return false;
+        const hiddenAt = Number(marker.hiddenAt || 0);
+        if (Number.isFinite(hiddenAt) && hiddenAt > 0 && (Date.now() - hiddenAt) < minAgeMs) {
+            return false;
+        }
+        return await restoreDownloadUiAfterTemporaryHide(reason);
+    } catch (_) {
+        return false;
+    }
+}
+
+async function restoreDownloadUiIfSilenceSettingDisabled(reason = 'settings-changed') {
+    try {
+        const data = await browserAPI.storage.local.get([
+            'hideDownloadShelf',
+            HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY,
+            DOWNLOAD_UI_TEMP_HIDE_STORAGE_KEY
+        ]);
+        const marker = data?.[DOWNLOAD_UI_TEMP_HIDE_STORAGE_KEY];
+        if (!marker || marker.active !== true) return false;
+        const markerScope = getDownloadUiTemporaryHideMarkerScope(marker);
+
+        if (data.hideDownloadShelf === false) {
+            return await restoreDownloadUiAfterTemporaryHide(reason);
+        }
+
+        if (markerScope && !shouldSilenceDownloadUiForScope(data, markerScope)) {
+            return await restoreDownloadUiAfterTemporaryHide(reason);
+        }
+    } catch (_) { }
+    return false;
+}
+
+restoreDownloadUiIfTemporaryHideStale('service-worker-start').catch(() => { });
+
+try {
+    browserAPI.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName !== 'local') return;
+        if (!changes.hideDownloadShelf && !changes[HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY]) return;
+        restoreDownloadUiIfSilenceSettingDisabled('silence-setting-disabled').catch(() => { });
+    });
+} catch (_) { }
+
 // 添加一个变量来标记是否正在进行备份
 let isSyncing = false;
 // Session lock: 防止 SW 重启后 isSyncing 丢失导致并发备份
@@ -2643,26 +2842,18 @@ browserAPI.downloads.onCreated.addListener(async (downloadItem) => {
             // 如果有正在进行的书签备份，且有其他非书签备份下载，需要特殊处理
             nonBookmarkDownloadCount++; // 增加计数
             // 获取当前防干扰设置
-            const { hideDownloadShelf } = await browserAPI.storage.local.get(['hideDownloadShelf']);
-            const shouldHideDownloadShelf = hideDownloadShelf !== false; // 默认为true
+            const shelfConfig = await browserAPI.storage.local.get([
+                'hideDownloadShelf',
+                HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY
+            ]);
+            const shouldHideDownloadShelf = shouldSilenceDownloadUiForScope(shelfConfig, activeLocalBackupSilenceScope);
 
-            // 检查是否有下载栏权限
-            const hasDownloadShelfPermission = await new Promise(resolve => {
-                try {
-                    browserAPI.permissions.contains({
-                        permissions: ['downloads.shelf']
-                    }, result => {
-                        resolve(result);
-                    });
-                } catch (error) {
-                    resolve(false);
-                }
-            });
+            const hasDownloadUiControl = await hasDownloadUiPermission();
 
-            // 如果开启了防干扰功能，且当前有其他下载，临时显示下载栏
-            if (shouldHideDownloadShelf && hasDownloadShelfPermission && nonBookmarkDownloadCount === 1) {
-                // 只在第一个非书签下载时恢复下载栏显示
-                await browserAPI.downloads.setShelfEnabled(true);
+            // 如果开启了防干扰功能，且当前有其他下载，临时显示下载 UI
+            if (shouldHideDownloadShelf && hasDownloadUiControl && nonBookmarkDownloadCount === 1) {
+                // 只在第一个非书签下载时恢复下载 UI 显示
+                await showDownloadUiWithoutClearingTemporaryHide('non-bookmark-download-visible');
             }
 
             // 监听这个下载的完成事件
@@ -2673,10 +2864,10 @@ browserAPI.downloads.onCreated.addListener(async (downloadItem) => {
 
                     // 减少非书签下载计数
                     nonBookmarkDownloadCount = Math.max(0, nonBookmarkDownloadCount - 1);
-                    // 如果书签备份仍在进行，且需要隐藏下载栏，且没有其他非书签下载了，则恢复隐藏状态
+                    // 如果书签备份仍在进行，且需要隐藏下载 UI，且没有其他非书签下载了，则恢复隐藏状态
                     if (isBookmarkBackupInProgress && shouldHideDownloadShelf &&
-                        hasDownloadShelfPermission && nonBookmarkDownloadCount === 0) {
-                        await browserAPI.downloads.setShelfEnabled(false);
+                        hasDownloadUiControl && nonBookmarkDownloadCount === 0) {
+                        await hideDownloadUiTemporarily(`resume-${activeLocalBackupSilenceScope}-backup`, activeLocalBackupSilenceScope);
                     }
                 }
             };
@@ -9268,13 +9459,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // 制作数据URL
                     const dataUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(content);
 
-                    // 尝试显示下载栏
-                    if (browserAPI.downloads.setShelfEnabled) {
-                        try {
-                            await browserAPI.downloads.setShelfEnabled(true);
-                        } catch (shelfError) {
-                        }
-                    }
+                    await restoreDownloadUiAfterTemporaryHide('local-export-visible');
 
                     // 执行下载 - 使用统一文件夹结构（根据语言动态选择）
                     const localHistoryFolder = resolveExportSubFolderByKey('history', lang);
@@ -10513,7 +10698,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                         const localResult = await uploadBookmarksToLocal(bookmarks, {
                                             ...snapshotNaming,
                                             snapshotFormat: snapshotBackupFormat,
-                                            forceShowDownloadNotification: true,
+                                            downloadUiSilenceScope: 'other',
                                             waitForDownloadCompletion: false,
                                             ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                                         });
@@ -11917,10 +12102,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     if (browserAPI.runtime.lastError) {
                         sendResponse({ success: false, error: browserAPI.runtime.lastError.message });
                     } else {
-                        // 确保下载架(shelf)可见
-                        if (browserAPI.downloads.setShelfEnabled) {
-                            browserAPI.downloads.setShelfEnabled(true);
-                        }
+                        // 确保下载 UI 可见
+                        restoreDownloadUiAfterTemporaryHide('download-with-notification-visible');
 
                         // 记录这不是书签备份下载，不需要隐藏下载栏
                         sendResponse({ success: true, downloadId: downloadId });
@@ -12197,6 +12380,11 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // 监听计时器警报
 browserAPI.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === DOWNLOAD_UI_TEMP_HIDE_ALARM_NAME) {
+        await restoreDownloadUiAfterTemporaryHide('temporary-hide-alarm');
+        return;
+    }
+
     if (alarm.name === "syncBookmarks") {
         try {
             // 自动备份时传入完整参数
@@ -15883,7 +16071,8 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
     // 获取本地备份配置
     const config = await browserAPI.storage.local.get([
         'defaultDownloadEnabled',
-        'hideDownloadShelf'    // 控制是否隐藏下载栏
+        'hideDownloadShelf',    // 控制是否隐藏下载栏
+        HIDE_DOWNLOAD_SHELF_SCOPE_STORAGE_KEY
     ]);
 
     // 仅支持默认下载方式（浏览器下载目录）
@@ -15891,6 +16080,7 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
     const forceEnable = options.forceEnable === true;
     const forceShowDownloadNotification = options.forceShowDownloadNotification === true;
     const waitForDownloadCompletion = options.waitForDownloadCompletion !== false;
+    const downloadUiSilenceScope = normalizeDownloadUiSilenceScope(options.downloadUiSilenceScope || options.localBackupSilenceScope);
 
     if (!defaultDownloadEnabled && !forceEnable) {
         throw new Error("本地备份未启用或路径未配置");
@@ -15929,41 +16119,30 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
             : `${exportRootFolder}/${versionedSubFolder}/${snapshotFolderName}/${fileName}`;
 
         // 默认下载方式
-        // 根据设置决定是否临时禁用下载通知栏
-        const shouldHideDownloadShelf = !forceShowDownloadNotification && config.hideDownloadShelf !== false; // 默认为true
+        // 根据设置决定是否临时禁用下载 UI
+        const shouldHideDownloadShelf = !forceShowDownloadNotification && shouldSilenceDownloadUiForScope(config, downloadUiSilenceScope);
 
-        // 检查是否有下载栏权限
-        const hasDownloadShelfPermission = await new Promise(resolve => {
-            try {
-                browserAPI.permissions.contains({
-                    permissions: ['downloads.shelf']
-                }, result => {
-                    resolve(result);
-                });
-            } catch (error) {
-                resolve(false);
-            }
-        });
+        const hasDownloadUiControl = await hasDownloadUiPermission();
 
         // 标记开始书签备份
         isBookmarkBackupInProgress = true;
+        activeLocalBackupSilenceScope = downloadUiSilenceScope;
 
-        if (forceShowDownloadNotification && hasDownloadShelfPermission) {
+        if (!shouldHideDownloadShelf && hasDownloadUiControl) {
             try {
-                await browserAPI.downloads.setShelfEnabled(true);
+                await restoreDownloadUiAfterTemporaryHide(`visible-${downloadUiSilenceScope}-backup`);
                 lastVisibleBookmarkDownloadAt = Date.now();
             } catch (_) { }
         }
 
-        // 临时禁用下载通知栏（如果设置了且有权限）
-        if (shouldHideDownloadShelf && hasDownloadShelfPermission) {
+        // 临时禁用下载 UI（如果设置了且有权限）
+        if (shouldHideDownloadShelf && hasDownloadUiControl) {
             try {
-                // 直接设置下载栏为隐藏状态，不再尝试先获取当前状态
-                // 因为Chrome没有提供getShelfEnabled API
-                await browserAPI.downloads.setShelfEnabled(false);
+                // Chrome 没有提供 getUiOptions API，因此只在下载期间临时设置，并由下载完成/后台闹钟恢复。
+                await hideDownloadUiTemporarily(`${downloadUiSilenceScope}-backup`, downloadUiSilenceScope);
             } catch (error) {
             }
-        } else if (shouldHideDownloadShelf && !hasDownloadShelfPermission) {
+        } else if (shouldHideDownloadShelf && !hasDownloadUiControl) {
         }
 
         try {
@@ -15986,37 +16165,47 @@ async function uploadBookmarksToLocal(bookmarks, options = {}) {
                 });
             });
 
-            if (waitForDownloadCompletion) {
-                const downloadTerminalState = await waitForDownloadTerminalState(downloadId, 1800);
-                if (downloadTerminalState === 'interrupted') {
-                    throw new Error('本地下载被中断');
+            let downloadTerminalState = '';
+            let resetBackupInProgressOnReturn = true;
+            if (shouldHideDownloadShelf && hasDownloadUiControl) {
+                const restoreReason = `${downloadUiSilenceScope}-backup-complete`;
+                if (waitForDownloadCompletion) {
+                    downloadTerminalState = await restoreDownloadUiAfterDownloadSettles(downloadId, restoreReason, 1800);
+                } else {
+                    resetBackupInProgressOnReturn = false;
+                    scheduleDownloadUiRestoreAfterDownloadSettles(downloadId, restoreReason, 1800, () => {
+                        isBookmarkBackupInProgress = false;
+                        activeLocalBackupSilenceScope = 'auto';
+                    });
                 }
+            } else if (waitForDownloadCompletion) {
+                downloadTerminalState = await waitForDownloadTerminalState(downloadId, 1800);
             }
 
-            // 恢复下载通知栏显示
-            if (shouldHideDownloadShelf && hasDownloadShelfPermission) {
-                try {
-                    await browserAPI.downloads.setShelfEnabled(true);
-                } catch (error) {
-                }
+            if (waitForDownloadCompletion && downloadTerminalState === 'interrupted') {
+                throw new Error('本地下载被中断');
             }
 
             // 标记书签备份结束
-            isBookmarkBackupInProgress = false;
+            if (resetBackupInProgressOnReturn) {
+                isBookmarkBackupInProgress = false;
+                activeLocalBackupSilenceScope = 'auto';
+            }
 
             // 更新结果
             result.success = true;
         } catch (error) {
-            // 出错时也要确保恢复下载栏
-            if (shouldHideDownloadShelf && hasDownloadShelfPermission) {
+            // 出错时也要确保恢复下载 UI
+            if (shouldHideDownloadShelf && hasDownloadUiControl) {
                 try {
-                    await browserAPI.downloads.setShelfEnabled(true);
+                    await restoreDownloadUiAfterTemporaryHide(`${downloadUiSilenceScope}-backup-error`);
                 } catch (restoreError) {
                 }
             }
 
             // 标记书签备份结束
             isBookmarkBackupInProgress = false;
+            activeLocalBackupSilenceScope = 'auto';
             throw error;
         }
 
@@ -16113,23 +16302,14 @@ async function downloadDataUrlWithShelfControl({
             && (Date.now() - lastVisibleBookmarkDownloadAt) < 4000
         );
 
-    const hasDownloadShelfPermission = shouldSuppress
-        ? await new Promise((resolve) => {
-            try {
-                browserAPI.permissions.contains({
-                    permissions: ['downloads.shelf']
-                }, (result) => {
-                    resolve(result === true);
-                });
-            } catch (_) {
-                resolve(false);
-            }
-        })
+    const hasDownloadUiControl = shouldSuppress
+        ? await hasDownloadUiPermission()
         : false;
+    let restoreScheduled = false;
 
-    if (shouldSuppress && hasDownloadShelfPermission) {
+    if (shouldSuppress && hasDownloadUiControl) {
         try {
-            await browserAPI.downloads.setShelfEnabled(false);
+            await hideDownloadUiTemporarily('artifact-download', 'artifact');
         } catch (_) { }
     }
 
@@ -16149,17 +16329,18 @@ async function downloadDataUrlWithShelfControl({
             });
         });
 
-        if (shouldSuppress && hasDownloadShelfPermission) {
-            await waitForDownloadTerminalState(downloadId, waitTimeoutMs);
+        if (shouldSuppress && hasDownloadUiControl) {
+            restoreScheduled = true;
+            scheduleDownloadUiRestoreAfterDownloadSettles(downloadId, 'artifact-download-complete', waitTimeoutMs);
         }
 
         return { success: true, downloadId };
     } catch (error) {
         return { success: false, error: error?.message || '下载失败' };
     } finally {
-        if (shouldSuppress && hasDownloadShelfPermission) {
+        if (shouldSuppress && hasDownloadUiControl && !restoreScheduled) {
             try {
-                await browserAPI.downloads.setShelfEnabled(true);
+                await restoreDownloadUiAfterTemporaryHide('artifact-download-complete');
             } catch (_) { }
         }
     }
@@ -16622,13 +16803,7 @@ async function exportHistoryToTxt(records, lang) {
             // 制作数据URL
             const dataUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(txtContent);
 
-            // 尝试显示下载栏
-            if (browserAPI.downloads.setShelfEnabled) {
-                try {
-                    await browserAPI.downloads.setShelfEnabled(true);
-                } catch (shelfError) {
-                }
-            }
+            await restoreDownloadUiAfterTemporaryHide('history-export-visible');
 
             // 确保文件夹存在（根据语言动态选择文件夹名）
             const localArchiveHistoryFolder = await getHistoryFolder();
@@ -18123,7 +18298,7 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
                     const localResult = await uploadBookmarksToLocal(localBookmarks, {
                         ...snapshotNaming,
                         snapshotFormat: snapshotBackupFormat,
-                        forceShowDownloadNotification: isManual === true,
+                        downloadUiSilenceScope: isSwitchToAutoBackup ? 'other' : (isManual === true ? 'manual' : 'auto'),
                         waitForDownloadCompletion: isManual === true ? false : true,
                         ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                     });

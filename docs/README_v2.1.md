@@ -102,7 +102,7 @@
     *   `chrome.runtime`: 用于处理扩展程序的生命周期事件（如安装、更新）、消息传递以及获取运行时环境信息。
     *   `chrome.alarms`: 用于创建和管理定时任务，例如定期自动备份和提醒调度。
     *   `chrome.notifications` 及 `chrome.windows.create`: 用于向用户显示通知（如备份状态），以及创建提醒相关的窗口界面。
-    *   `chrome.downloads` & `chrome.downloads.shelf`: 用于管理本地备份文件下载并可选择隐藏下载栏。
+    *   `chrome.downloads` & `chrome.downloads.ui`: 用于管理本地备份文件下载并可选择隐藏下载 UI。
     *   `Fetch API`: 用于执行与 WebDAV 服务器的网络请求，实现云端备份和历史记录导出（通过 `host_permissions` 声明了对任意 HTTPS 域的访问权限，以支持用户配置的 WebDAV 服务器）。
     *   `chrome.windows.onFocusChanged`: 用于检测浏览器窗口的焦点变化。当所有窗口都失去焦点时，扩展程序会暂停提醒计时器，并在任何窗口重新获得焦点时恢复，从而更精确地判断用户是否正在与浏览器交互。
     *   `chrome.tabs`: 辅助获取标签页信息，支持窗口间的定位与通信，例如在创建或管理通知窗口时确定其上下文。
@@ -258,7 +258,7 @@ Contributions, issues, and feature requests are welcome! Please feel free to che
     *   `chrome.runtime`: Used for handling extension lifecycle events (e.g., installation, updates), message passing, and obtaining runtime environment information.
     *   `chrome.alarms`: Used for creating and managing scheduled tasks, primarily for the backup reminder system's reminder scheduling (automatic backups are currently triggered mainly by real-time bookmark changes).
     *   `chrome.notifications` & `chrome.windows.create`: Used to display notifications to the user (e.g., backup status) and create reminder-related window interfaces.
-    *   `chrome.downloads` & `chrome.downloads.shelf`: Used for managing local backup file downloads and optionally hiding the download shelf.
+    *   `chrome.downloads` & `chrome.downloads.ui`: Used for managing local backup file downloads and optionally hiding the download UI.
     *   `Fetch API`: Used for executing network requests with WebDAV servers, enabling cloud backup and history export (declares access to any HTTPS domain via `host_permissions` to support user-configured WebDAV servers).
     *   `chrome.windows.onFocusChanged`: Used to detect focus changes in browser windows. The extension pauses the reminder timer when all windows lose focus and resumes it when any window regains focus, providing a more accurate way to determine user interaction.
     *   `chrome.tabs`: Assists in obtaining tab information, supporting inter-window positioning and communication, such as determining context when creating or managing notification windows.
