@@ -1,9 +1,22 @@
 ## Switch to [English](#english)
 
 [![Linux.do](https://img.shields.io/badge/Linux.do-Portfolio-FFD700?logo=discourse&logoColor=white)](https://linux.do/u/kk1/activity/portfolio)
-[![GitHub Releases](https://img.shields.io/github/v/release/kwenxu/Bookmark-Backup?logo=github&logoColor=white&label=GitHub+Releases)](https://github.com/kwenxu/Bookmark-Backup/releases)
+[![GitHub Releases](https://img.shields.io/github/v/release/Browser-bookmark-hub/Bookmark-Backup?logo=github&logoColor=white&label=GitHub+Releases)](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases)
 [![Microsoft Edge Add-ons](https://img.shields.io/badge/Edge_Add--ons-Available-0078D7?logo=microsoftedge&logoColor=white)](https://microsoftedge.microsoft.com/addons/detail/%E4%B9%A6%E7%AD%BE%E5%A4%87%E4%BB%BDbookmark-backup/klopopehpngheikchkjgkmplgmbfodek)
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/dbdpgedioldmeooemjanbjlhgpocafbc?color=0F9D58&logo=googlechrome&logoColor=white&label=Chrome+Web+Store)](https://chromewebstore.google.com/detail/dbdpgedioldmeooemjanbjlhgpocafbc)
+
+> [!NOTE]
+> **最新版本 v3.5.8 更新内容**：
+> - **恢复 / 撤销稳定性修复**：
+>   - 修复覆盖恢复、补丁恢复、补丁撤销、导入合并在连续操作或后台状态未收敛时可能触发的二次并发问题。
+>   - 区分真实恢复写入与恢复后记录生成，避免恢复记录再次触发不必要的本地/云端快照导出。
+>   - 复用与实际策略匹配的预计算 diff，并为主界面/历史页后台请求加入超时保护，减少状态错配和 UI 长等待。
+> - **恢复列表识别优化**：云端/本地恢复可同时识别 JSON 与 HTML 的快照和当前变化，覆盖、多版本、多格式共存时不再遗漏。
+> - **网页快照与高亮工具优化**：高亮颜色、工具选择和相关工具栏状态支持更稳定的持久记忆，并优化标签页休眠、页面刷新场景下的高亮恢复策略。
+> - **UI 与快捷键调整**：
+>   - 将扩展快捷键调整为 macOS 使用 `Command + Shift`、Windows/Linux 使用 `Ctrl + Shift`，降低与网页原生快捷键或其他扩展快捷键冲突的概率。
+>   - 实际快捷键：激活扩展 `Command/Ctrl + Shift + U`，打开当前变化 `Command/Ctrl + Shift + I`，打开备份历史 `Command/Ctrl + Shift + O`，打开/关闭网页快照工具 `Command/Ctrl + Shift + P`。
+>   - 整理部分设置、状态展示和文档结构。
 
 ### 简介
 `书签备份` 是一款面向 Chrome / Edge 的 Git 式书签版本管理、备份历史追踪与安全恢复扩展。
@@ -48,12 +61,12 @@ Bookmark-Backup-main/
 - **网页快照**：将网页深度存档为 MHTML / Markdown (MD) 格式，支持划线高亮标记，并提供截图/录屏等辅助留存能力。
 
 ### 安装入口
-- **GitHub Releases**：[下载发布包](https://github.com/kwenxu/Bookmark-Backup/releases)，适合手动安装或保留指定版本。
+- **GitHub Releases**：[下载发布包](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases)，适合手动安装或保留指定版本。
 - **Microsoft Edge Add-ons**：[从 Edge 加载项安装](https://microsoftedge.microsoft.com/addons/detail/%E4%B9%A6%E7%AD%BE%E5%A4%87%E4%BB%BDbookmark-backup/klopopehpngheikchkjgkmplgmbfodek)。
 - **Chrome Web Store**：[从 Chrome 应用商店安装](https://chromewebstore.google.com/detail/dbdpgedioldmeooemjanbjlhgpocafbc)。
 
 ### 手动安装
-- **下载发布包**：从 [GitHub Releases](https://github.com/kwenxu/Bookmark-Backup/releases) 下载发布版本。
+- **下载发布包**：从 [GitHub Releases](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases) 下载发布版本。
 - **打开扩展管理页**：进入 `chrome://extensions` 或 `edge://extensions`。
 - **启用开发者模式**：打开右上角“开发者模式”。
 - **加载扩展**：点击“加载已解压的扩展程序”，选择扩展程序根目录。
@@ -87,6 +100,19 @@ Bookmark-Backup-main/
 <a id="english"></a>
 
 ## English
+
+> [!NOTE]
+> **Latest Version v3.5.8 Highlights**:
+> - **Restore / Revert Stability Fixes**:
+>   - Fixed second-round concurrency issues that could occur when overwrite restore, patch restore, patch revert, or import merge ran before background state fully settled.
+>   - Separated actual restore writes from post-restore history record generation, preventing restore records from triggering unnecessary local/cloud snapshot exports.
+>   - Reuses precomputed diffs only when they match the actual strategy, and adds popup/history background request timeouts to reduce state mismatches and long UI waits.
+> - **Restore List Detection Improvements**: Cloud and local restore now detect JSON and HTML snapshots/current changes together, including overwrite, versioned, and mixed-format backups.
+> - **Web Snapshot & Highlighter Improvements**: Highlighter color, tool selection, and toolbar preferences are remembered more reliably, with better recovery behavior for suspended tabs and refreshed pages.
+> - **UI & Shortcut Updates**:
+>   - Moved extension shortcuts to `Command + Shift` on macOS and `Ctrl + Shift` on Windows/Linux to reduce conflicts with webpage-native shortcuts or other extensions.
+>   - Actual shortcuts: activate extension `Command/Ctrl + Shift + U`, open Current Changes `Command/Ctrl + Shift + I`, open Backup History `Command/Ctrl + Shift + O`, open/close Web Snapshot helper `Command/Ctrl + Shift + P`.
+>   - Cleaned up parts of the settings/status UI and documentation structure.
 
 ### Overview
 `Bookmark Backup` is a Git-style bookmark versioning, backup-history tracking, and safety-recovery extension for Chrome / Edge.
@@ -138,12 +164,12 @@ Bookmark-Backup-main/
 - **Web snapshot**: Archive webpages as MHTML / Markdown (MD) format with highlighter tools and screenshot/recording helpers when needed.
 
 ### Install Links
-- **GitHub Releases**: [download release packages](https://github.com/kwenxu/Bookmark-Backup/releases) for manual installation or version pinning.
+- **GitHub Releases**: [download release packages](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases) for manual installation or version pinning.
 - **Microsoft Edge Add-ons**: [install from Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/%E4%B9%A6%E7%AD%BE%E5%A4%87%E4%BB%BDbookmark-backup/klopopehpngheikchkjgkmplgmbfodek).
 - **Chrome Web Store**: [install from Chrome Web Store](https://chromewebstore.google.com/detail/dbdpgedioldmeooemjanbjlhgpocafbc).
 
 ### Manual Installation
-- **Download a release package**: get a release from [GitHub Releases](https://github.com/kwenxu/Bookmark-Backup/releases).
+- **Download a release package**: get a release from [GitHub Releases](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases).
 - **Open the extension page**: go to `chrome://extensions` or `edge://extensions`.
 - **Enable developer mode**: turn on “Developer mode”.
 - **Load the extension**: click “Load unpacked” and select the extension root directory.
