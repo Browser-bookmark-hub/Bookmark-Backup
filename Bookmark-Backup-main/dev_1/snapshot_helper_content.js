@@ -845,6 +845,24 @@
             #md-settings-panel textarea::-webkit-scrollbar-thumb:hover {
               background: var(--text-muted) !important;
             }
+            #md-toc-panel .toc-list-container {
+              scrollbar-width: thin !important;
+              scrollbar-color: var(--panel-border) transparent !important;
+            }
+            #md-toc-panel .toc-list-container::-webkit-scrollbar {
+              width: 8px !important;
+              height: 8px !important;
+            }
+            #md-toc-panel .toc-list-container::-webkit-scrollbar-track {
+              background: transparent !important;
+            }
+            #md-toc-panel .toc-list-container::-webkit-scrollbar-thumb {
+              background: var(--panel-border) !important;
+              border-radius: 4px !important;
+            }
+            #md-toc-panel .toc-list-container::-webkit-scrollbar-thumb:hover {
+              background: var(--text-muted) !important;
+            }
             #md-settings-panel .md-btn {
               flex: 1 !important;
               padding: 8px 0 !important;
@@ -2105,6 +2123,25 @@
       return String(this.config?.url || location.href || '').trim();
     }
 
+    _buildMarkdownDefaultTemplate(metadata = {}, urlOverride = '') {
+      const defaultTemplate = `---\ntitle: "{{title}}"\nsource: "{{url}}"\nauthor: "{{author}}"\npublished: "{{published}}"\ncreated: "{{created}}"\ndescription: "{{description}}"\ntags:\n  - clippings\n---\n\n{{content}}`;
+      const sourceMetadata = metadata && typeof metadata === 'object' ? metadata : {};
+      const titleVal = sourceMetadata.title || this.config?.title || document.title || '';
+      const urlVal = urlOverride || this.config?.url || this._getCurrentUrl();
+      const authorVal = sourceMetadata.author || '';
+      const publishedVal = sourceMetadata.published || '';
+      const createdVal = new Date().toISOString().split('T')[0];
+      const descVal = sourceMetadata.description || '';
+
+      return defaultTemplate
+        .replace(/\{\{title\}\}/g, titleVal)
+        .replace(/\{\{url\}\}/g, urlVal)
+        .replace(/\{\{author\}\}/g, authorVal)
+        .replace(/\{\{published\}\}/g, publishedVal)
+        .replace(/\{\{created\}\}/g, createdVal)
+        .replace(/\{\{description\}\}/g, descVal);
+    }
+
     _getMdSettingsPanel() {
       return (this.shadow && this.shadow.querySelector('#md-settings-panel')) || document.getElementById('md-settings-panel');
     }
@@ -2202,21 +2239,7 @@
             }
 
             if (newContent == null) {
-              const defaultTemplate = `---\ntitle: "{{title}}"\nsource: "{{url}}"\nauthor: "{{author}}"\npublished: "{{published}}"\ncreated: "{{created}}"\ndescription: "{{description}}"\ntags:\n  - clippings\n---\n\n{{content}}`;
-              const titleVal = (metadata && metadata.title) || this.config.title || document.title || '';
-              const urlVal = newUrl;
-              const authorVal = (metadata && metadata.author) || '';
-              const publishedVal = (metadata && metadata.published) || '';
-              const createdVal = new Date().toISOString().split('T')[0];
-              const descVal = (metadata && metadata.description) || '';
-
-              newContent = defaultTemplate
-                .replace(/\{\{title\}\}/g, titleVal)
-                .replace(/\{\{url\}\}/g, urlVal)
-                .replace(/\{\{author\}\}/g, authorVal)
-                .replace(/\{\{published\}\}/g, publishedVal)
-                .replace(/\{\{created\}\}/g, createdVal)
-                .replace(/\{\{description\}\}/g, descVal);
+              newContent = this._buildMarkdownDefaultTemplate(metadata, newUrl);
             }
 
             // 更新文本区域的内容
@@ -2779,6 +2802,37 @@
 
       if (best && bestScore > 7600) return best;
       return null;
+    }
+
+    _getMarkdownVisibleTextMatchCandidates(lookupInput = '', options = {}) {
+      const lookupConfig = lookupInput && typeof lookupInput === 'object'
+        ? lookupInput
+        : { lookupText: lookupInput };
+      const lookup = this._normalizeMarkdownLookupText(
+        lookupConfig.lookupText || lookupConfig.rawLookupText || lookupConfig.selectedText || ''
+      );
+      if (lookup.length < 4) return [];
+      const fragments = this._getMarkdownLookupFragments(lookup);
+      const blocks = this._getMarkdownVisibleTextBlocks();
+      const minScore = Number.isFinite(Number(options.minScore)) ? Number(options.minScore) : 3200;
+      const limit = Number.isFinite(Number(options.limit)) ? Math.max(1, Number(options.limit)) : 5;
+      let hitOrder = -1;
+      const scored = [];
+      const seen = new Set();
+      for (let index = 0; index < blocks.length; index += 1) {
+        const block = blocks[index];
+        const hasDirectHit = block.text.includes(lookup)
+          || fragments.some((fragment) => fragment.length >= 12 && block.text.includes(fragment));
+        if (hasDirectHit) hitOrder += 1;
+        const score = this._scoreMarkdownBlockForLookup(block, lookup, fragments, lookupConfig, blocks, index, hasDirectHit ? hitOrder : -1);
+        if (score < minScore || !block.element || seen.has(block.element)) continue;
+        seen.add(block.element);
+        scored.push({ element: block.element, score });
+      }
+      return scored
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map((item) => item.element);
     }
 
     _getMarkdownDefuddle() {
@@ -3649,6 +3703,13 @@
       }
       const overlay = document.getElementById('dev1-md-source-highlight');
       if (overlay) overlay.remove();
+      document.querySelectorAll('.dev1-md-source-candidate-highlight').forEach((node) => node.remove());
+      try {
+        const highlights = window.CSS && window.CSS.highlights;
+        if (highlights && typeof highlights.delete === 'function') {
+          highlights.delete('dev1-md-source-candidate');
+        }
+      } catch (_) { }
     }
 
     _showMarkdownSourceNotice(message) {
@@ -3670,6 +3731,113 @@
       `;
       document.documentElement.appendChild(notice);
       setTimeout(() => notice.remove(), 1500);
+    }
+
+    _ensureMarkdownSourceHighlightStyles() {
+      if (document.getElementById('dev1-md-source-highlight-style')) return;
+      const style = document.createElement('style');
+      style.id = 'dev1-md-source-highlight-style';
+      style.textContent = `
+        ::highlight(dev1-md-source-candidate) {
+          background-color: rgba(245, 158, 11, 0.34);
+          color: inherit;
+        }
+      `;
+      (document.head || document.documentElement).appendChild(style);
+    }
+
+    _showMarkdownSourceCandidateHighlights(label = '正文候选', candidates = []) {
+      const targets = (Array.isArray(candidates) ? candidates : [])
+        .filter((element) => element instanceof Element)
+        .slice(0, 5);
+      if (!targets.length) return false;
+
+      this._removeMarkdownSourceHighlight();
+
+      try {
+        targets[0].scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      } catch (_) { }
+
+      const createTargetRange = (target) => {
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(target);
+          return range;
+        } catch (_) {
+          return null;
+        }
+      };
+
+      const ranges = targets
+        .map((target) => createTargetRange(target))
+        .filter(Boolean);
+
+      try {
+        const highlights = window.CSS && window.CSS.highlights;
+        const HighlightCtor = typeof Highlight === 'function' ? Highlight : null;
+        if (ranges.length && highlights && typeof highlights.set === 'function' && HighlightCtor) {
+          this._ensureMarkdownSourceHighlightStyles();
+          highlights.set('dev1-md-source-candidate', new HighlightCtor(...ranges));
+          this._showMarkdownSourceNotice(`已固定高亮 ${targets.length} 个正文候选`);
+          return true;
+        }
+      } catch (_) { }
+
+      const records = targets.map((target) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'dev1-md-source-candidate-highlight';
+        overlay.style.cssText = `
+          position: fixed;
+          inset: 0;
+          z-index: 2147483646;
+          pointer-events: none;
+          overflow: hidden;
+        `;
+        document.documentElement.appendChild(overlay);
+        return { target, range: createTargetRange(target), overlay };
+      });
+
+      const updateOverlay = () => {
+        const liveRecords = records.filter((record) => record.overlay.isConnected && record.target.isConnected && record.range);
+        if (!liveRecords.length) {
+          this._removeMarkdownSourceHighlight();
+          return;
+        }
+        liveRecords.forEach((record) => {
+          let rects = [];
+          try {
+            rects = Array.from(record.range.getClientRects())
+              .filter((rect) => rect.width > 0 && rect.height > 0)
+              .filter((rect) => rect.bottom >= 0 && rect.right >= 0 && rect.top <= window.innerHeight && rect.left <= window.innerWidth)
+              .slice(0, 80);
+          } catch (_) { }
+          if (!rects.length) {
+            record.overlay.style.display = 'none';
+            return;
+          }
+          record.overlay.style.display = '';
+          record.overlay.replaceChildren();
+          rects.forEach((rect) => {
+            const mark = document.createElement('div');
+            mark.style.cssText = `
+              position: absolute;
+              left: ${rect.left}px;
+              top: ${rect.top}px;
+              width: ${rect.width}px;
+              height: ${rect.height}px;
+              box-sizing: border-box;
+              border-radius: 2px;
+              background: rgba(245, 158, 11, 0.34);
+              box-shadow: inset 0 -1px 0 rgba(217, 119, 6, 0.42);
+            `;
+            record.overlay.appendChild(mark);
+          });
+        });
+        this._mdSourceHighlightFrame = requestAnimationFrame(updateOverlay);
+      };
+      updateOverlay();
+      this._showMarkdownSourceNotice(`已固定高亮 ${targets.length} 个正文候选`);
+      return true;
     }
 
     _showMarkdownSourceHighlight(label = '正文来源', lookup = null) {
@@ -3702,6 +3870,10 @@
       } else if (lookupText) {
         highlightRange = this._findMarkdownSourceRange(lookupConfig, source);
         highlightTarget = highlightRange ? null : this._findMarkdownVisibleTextMatchElement(lookupConfig);
+        if (!highlightRange && !highlightTarget) {
+          const candidates = this._getMarkdownVisibleTextMatchCandidates(lookupConfig, { limit: 5, minScore: 3200 });
+          if (this._showMarkdownSourceCandidateHighlights('正文候选', candidates)) return;
+        }
       } else {
         highlightTarget = source;
       }
@@ -3781,10 +3953,6 @@
         this._mdSourceHighlightFrame = requestAnimationFrame(updateOverlay);
       };
       updateOverlay();
-      this._mdSourceHighlightTimer = setTimeout(() => {
-        overlay.style.opacity = '0';
-        setTimeout(() => this._removeMarkdownSourceHighlight(), 140);
-      }, 1500);
     }
 
     _getMarkdownImageFileMime(file) {
@@ -4321,8 +4489,6 @@
         flex-direction: column;
       `;
 
-      const defaultTemplate = `---\ntitle: "{{title}}"\nsource: "{{url}}"\nauthor: "{{author}}"\npublished: "{{published}}"\ncreated: "{{created}}"\ndescription: "{{description}}"\ntags:\n  - clippings\n---\n\n{{content}}`;
-      
       const scoped = this._getScopedStorage();
       const currentUrl = this._getCurrentUrl();
       const tabId = this.config?.existingTabId;
@@ -4330,6 +4496,7 @@
       let initialContent = null;
       let initialNotes = '';
       let initialArticle = '';
+      let cachedArticle = '';
       let metadata = null;
       if (scoped && tabId != null) {
         try {
@@ -4337,39 +4504,30 @@
           const storedNotes = await scoped.getScoped(tabId, 'md_notes', currentUrl);
           if (storedNotes != null) initialNotes = storedNotes;
           const storedArticle = await scoped.getScoped(tabId, 'md_article', currentUrl);
-          if (storedArticle != null) initialArticle = storedArticle;
+          if (storedArticle != null) {
+            cachedArticle = storedArticle;
+            initialArticle = storedArticle;
+          }
         } catch (e) {}
       }
 
-      if (!initialArticle) {
-        try {
-            const response = await sendRuntimeMessage({ action: 'dev1SnapshotHelperGetArticleContent' }, 30000);
-            if (response && response.success) {
-                initialArticle = response.article;
-                metadata = response.metadata;
-            } else {
-                initialArticle = '[正文提取失败]';
-            }
-        } catch (e) {
-            initialArticle = '[正文提取超时或出错]';
+      try {
+        const response = await sendRuntimeMessage({ action: 'dev1SnapshotHelperGetArticleContent' }, 30000);
+        if (response && response.success) {
+          initialArticle = response.article || '';
+          metadata = response.metadata;
+          if (scoped && tabId != null) {
+            await scoped.setScoped(tabId, 'md_article', currentUrl, initialArticle);
+          }
+        } else {
+          initialArticle = cachedArticle || '[正文提取失败]';
         }
+      } catch (e) {
+        initialArticle = cachedArticle || '[正文提取超时或出错]';
       }
 
       if (initialContent == null) {
-        const titleVal = (metadata && metadata.title) || this.config.title || '';
-        const urlVal = this.config.url || '';
-        const authorVal = (metadata && metadata.author) || '';
-        const publishedVal = (metadata && metadata.published) || '';
-        const createdVal = new Date().toISOString().split('T')[0];
-        const descVal = (metadata && metadata.description) || '';
-
-        initialContent = defaultTemplate
-            .replace(/\{\{title\}\}/g, titleVal)
-            .replace(/\{\{url\}\}/g, urlVal)
-            .replace(/\{\{author\}\}/g, authorVal)
-            .replace(/\{\{published\}\}/g, publishedVal)
-            .replace(/\{\{created\}\}/g, createdVal)
-            .replace(/\{\{description\}\}/g, descVal);
+        initialContent = this._buildMarkdownDefaultTemplate(metadata, currentUrl);
       }
 
       const header = document.createElement('div');
@@ -4556,22 +4714,105 @@
         return btn;
       };
 
+      const createFieldRefreshButton = (title) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.noDrag = 'true';
+        btn.title = title;
+        btn.setAttribute('aria-label', title);
+        btn.style.cssText = `
+          width: 22px;
+          height: 22px;
+          border: 0;
+          border-radius: 6px;
+          background: transparent;
+          color: var(--text-muted);
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          flex: 0 0 22px;
+          transition: color 0.16s ease, opacity 0.16s ease;
+        `;
+        btn.innerHTML = `
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 0 0-15.5-6.3L3 8"></path>
+            <path d="M3 3v5h5"></path>
+            <path d="M3 12a9 9 0 0 0 15.5 6.3L21 16"></path>
+            <path d="M16 16h5v5"></path>
+          </svg>
+        `;
+        btn.addEventListener('mouseenter', () => {
+          if (btn.disabled) return;
+          btn.style.color = 'var(--text-main)';
+        });
+        btn.addEventListener('mouseleave', () => {
+          if (btn.disabled) return;
+          btn.style.color = 'var(--text-muted)';
+        });
+        return btn;
+      };
+
+      const setFieldRefreshState = (btn, state, fallbackTitle) => {
+        if (!btn) return;
+        if (btn._dev1RefreshStateTimer) {
+          clearTimeout(btn._dev1RefreshStateTimer);
+          btn._dev1RefreshStateTimer = null;
+        }
+        const svg = btn.querySelector('svg');
+        btn.disabled = state === 'loading';
+        btn.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+        btn.title = state === 'loading' ? '获取中...' : fallbackTitle;
+        btn.style.opacity = state === 'loading' ? '0.58' : '1';
+        btn.style.cursor = state === 'loading' ? 'default' : 'pointer';
+        btn.style.background = 'transparent';
+        btn.style.color = state === 'error' ? '#ef4444' : (state === 'success' ? 'var(--accent-color)' : 'var(--text-muted)');
+        if (svg) svg.style.transform = state === 'loading' ? 'rotate(180deg)' : '';
+        if (state === 'success' || state === 'error') {
+          btn._dev1RefreshStateTimer = setTimeout(() => setFieldRefreshState(btn, 'idle', fallbackTitle), 1200);
+        }
+      };
+
       const createSourceLabel = (text, title, highlightLabel, getLookup) => {
         const label = document.createElement('div');
         label.style.cssText = `
           display: flex;
           align-items: center;
-          gap: 4px;
+          justify-content: space-between;
+          gap: 8px;
+          width: 100%;
+          box-sizing: border-box;
           font-size: 11px;
           font-weight: 600;
           color: var(--text-muted);
           margin-bottom: -6px;
           flex-shrink: 0;
         `;
+        const left = document.createElement('span');
+        left.style.cssText = `
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          min-width: 0;
+        `;
         const textEl = document.createElement('span');
         textEl.textContent = text;
-        label.appendChild(textEl);
-        label.appendChild(createSourceLocateButton(title, highlightLabel, getLookup));
+        left.appendChild(textEl);
+        left.appendChild(createSourceLocateButton(title, highlightLabel, getLookup));
+        const actions = document.createElement('span');
+        actions.style.cssText = `
+          display: inline-flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 4px;
+          margin-left: auto;
+          flex: 0 0 auto;
+        `;
+        label.appendChild(left);
+        label.appendChild(actions);
+        label._leftActions = left;
+        label._rightActions = actions;
         return label;
       };
 
@@ -4582,10 +4823,14 @@
         '{{content}} 对应正文来源',
         () => this._getMarkdownTextareaSourceLookup(textarea, 'template', '{{content}} 对应正文来源')
       );
+      const refreshTemplateTitle = '重新获取导出模板';
+      const refreshTemplateBtn = createFieldRefreshButton(refreshTemplateTitle);
+      templateLabel._rightActions.appendChild(refreshTemplateBtn);
 
       textarea = document.createElement('textarea');
       textarea.style.cssText = `
         width: 100%;
+        box-sizing: border-box;
         flex: 2;
         min-height: 150px;
         font-family: monospace;
@@ -4601,6 +4846,7 @@
       const notesArea = document.createElement('textarea');
       notesArea.style.cssText = `
         width: 100%;
+        box-sizing: border-box;
         flex: 1;
         min-height: 80px;
         font-family: system-ui, -apple-system, sans-serif;
@@ -4621,10 +4867,14 @@
         '正文来源',
         () => this._getMarkdownTextareaSourceLookup(articleArea, 'article', '正文来源')
       );
+      const refreshArticleTitle = '重新获取正文';
+      const refreshArticleBtn = createFieldRefreshButton(refreshArticleTitle);
+      articleLabel._rightActions.appendChild(refreshArticleBtn);
 
       articleArea = document.createElement('textarea');
       articleArea.style.cssText = `
         width: 100%;
+        box-sizing: border-box;
         flex: 1;
         font-family: system-ui, -apple-system, sans-serif;
       `;
@@ -4664,7 +4914,7 @@
           <line x1="3" y1="18" x2="3.01" y2="18"></line>
         </svg>
       `;
-      articleLabel.appendChild(tocBtn);
+      articleLabel._leftActions.appendChild(tocBtn);
 
       let tocPanel = null;
 
@@ -4684,46 +4934,118 @@
         tocPanel.style.height = `${panelHeight}px`;
       };
 
-      const findAndSelectText = (rawText, occurrenceIndex = 0) => {
+      const scrollTextareaMatchToCenter = (targetTextarea, matchStart) => {
+        if (!targetTextarea || matchStart < 0) return false;
+        const textVal = targetTextarea.value || '';
+        const style = window.getComputedStyle(targetTextarea);
+        const visibleHeight = targetTextarea.clientHeight;
+        if (!visibleHeight) return false;
+
+        const mirror = document.createElement('div');
+        const rect = targetTextarea.getBoundingClientRect();
+        const paddingLeft = parseFloat(style.paddingLeft) || 0;
+        const paddingRight = parseFloat(style.paddingRight) || 0;
+        const mirrorWidth = Math.max(0, (targetTextarea.clientWidth || rect.width || 0) - paddingLeft - paddingRight);
+        if (!mirrorWidth) return false;
+
+        const copyProps = [
+          'fontFamily',
+          'fontSize',
+          'fontWeight',
+          'fontStyle',
+          'fontVariant',
+          'fontStretch',
+          'lineHeight',
+          'letterSpacing',
+          'textTransform',
+          'textAlign',
+          'textIndent',
+          'wordSpacing',
+          'wordBreak',
+          'tabSize',
+          'direction',
+          'paddingTop',
+          'paddingRight',
+          'paddingBottom',
+          'paddingLeft'
+        ];
+        copyProps.forEach(prop => {
+          mirror.style[prop] = style[prop];
+        });
+        mirror.style.cssText += `
+          position: absolute;
+          left: -100000px;
+          top: 0;
+          width: ${mirrorWidth}px;
+          height: auto;
+          min-height: 0;
+          visibility: hidden;
+          overflow: hidden;
+          box-sizing: content-box;
+          white-space: ${targetTextarea.wrap === 'off' ? 'pre' : 'pre-wrap'};
+          overflow-wrap: break-word;
+          word-wrap: break-word;
+          pointer-events: none;
+          z-index: -1;
+        `;
+
+        const marker = document.createElement('span');
+        marker.textContent = '\u200b';
+        mirror.textContent = textVal.slice(0, matchStart);
+        mirror.appendChild(marker);
+        (document.body || document.documentElement).appendChild(mirror);
+
+        try {
+          const markerTop = marker.offsetTop;
+          const lineHeight = parseFloat(style.lineHeight) || marker.offsetHeight || 16;
+          const maxScroll = Math.max(0, targetTextarea.scrollHeight - visibleHeight);
+          const targetScroll = Math.max(0, Math.min(maxScroll, markerTop - (visibleHeight / 2) + (lineHeight / 2)));
+          targetTextarea.scrollTop = targetScroll;
+          return true;
+        } finally {
+          mirror.remove();
+        }
+      };
+
+      const findAndSelectText = (rawText, occurrenceIndex = 0, exactStart = -1) => {
         const textVal = articleArea.value;
         let pos = -1;
-        let currentOccurrence = 0;
-        let searchPos = 0;
-        while ((searchPos = textVal.indexOf(rawText, searchPos)) !== -1) {
-          if (currentOccurrence === occurrenceIndex) {
-            pos = searchPos;
-            break;
+        if (Number.isFinite(exactStart) && exactStart >= 0 && textVal.slice(exactStart, exactStart + rawText.length) === rawText) {
+          pos = exactStart;
+        } else {
+          let currentOccurrence = 0;
+          let searchPos = 0;
+          while ((searchPos = textVal.indexOf(rawText, searchPos)) !== -1) {
+            if (currentOccurrence === occurrenceIndex) {
+              pos = searchPos;
+              break;
+            }
+            currentOccurrence++;
+            searchPos += rawText.length;
           }
-          currentOccurrence++;
-          searchPos += rawText.length;
-        }
-        
-        if (pos === -1) {
-          pos = textVal.indexOf(rawText);
+
+          if (pos === -1) {
+            pos = textVal.indexOf(rawText);
+          }
         }
         
         if (pos !== -1) {
           articleArea.focus();
           articleArea.setSelectionRange(pos, pos + rawText.length);
-          
-          const textBefore = textVal.substring(0, pos);
-          const lineCount = textBefore.split('\n').length - 1;
-          const style = window.getComputedStyle(articleArea);
-          const lineHeight = parseFloat(style.lineHeight) || 16;
-          
-          const visibleHeight = articleArea.clientHeight;
-          const targetScroll = Math.max(0, lineCount * lineHeight - visibleHeight / 3);
-          articleArea.scrollTop = targetScroll;
+          if (!scrollTextareaMatchToCenter(articleArea, pos)) {
+            const textBefore = textVal.substring(0, pos);
+            const lineCount = textBefore.split('\n').length - 1;
+            const style = window.getComputedStyle(articleArea);
+            const lineHeight = parseFloat(style.lineHeight) || 16;
+            const visibleHeight = articleArea.clientHeight;
+            const targetScroll = Math.max(0, lineCount * lineHeight - visibleHeight / 2);
+            articleArea.scrollTop = targetScroll;
+          }
           
           articleArea.dispatchEvent(new Event('input'));
           articleArea.dispatchEvent(new Event('select'));
-          
-          const locateBtn = articleLabel.querySelector('button');
-          if (locateBtn) {
-            setTimeout(() => {
-              locateBtn.click();
-            }, 80);
-          }
+          articleArea.focus();
+          articleArea.setSelectionRange(pos, pos + rawText.length);
         }
       };
 
@@ -4734,6 +5056,7 @@
         
         const lines = articleArea.value.split('\n');
         const tocItems = [];
+        let lineStart = 0;
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
           const trimmed = line.trim();
@@ -4745,8 +5068,10 @@
               level: headingMatch[1].length,
               text: headingMatch[2],
               raw: line,
+              startOffset: lineStart,
               index: i
             });
+            lineStart += line.length + 1;
             continue;
           }
           
@@ -4761,9 +5086,11 @@
               level: 2,
               text: displayName,
               raw: line,
+              startOffset: lineStart,
               index: i
             });
           }
+          lineStart += line.length + 1;
         }
         
         if (tocItems.length === 0) {
@@ -4858,7 +5185,7 @@
           itemEl.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            findAndSelectText(item.raw, occurrenceIndex);
+            findAndSelectText(item.raw, occurrenceIndex, item.startOffset);
           });
           
           listContainer.appendChild(itemEl);
@@ -4944,6 +5271,8 @@
           overflow-y: auto;
           flex: 1;
           box-sizing: border-box;
+          scrollbar-width: thin;
+          scrollbar-color: var(--panel-border) transparent;
         `;
         
         tocPanel.appendChild(tocHeader);
@@ -5016,21 +5345,14 @@
       tab2.addEventListener('click', () => switchTab(2));
 
       const btnGroup = document.createElement('div');
-      btnGroup.style.cssText = `display: flex; gap: 8px; margin-top: auto; flex-shrink: 0;`;
-
-      const refreshBtn = document.createElement('button');
-      refreshBtn.type = 'button';
-      refreshBtn.className = 'md-btn md-btn-secondary';
-      refreshBtn.textContent = '重新获取';
-      refreshBtn.style.cssText = `outline: none;`;
+      btnGroup.style.cssText = `display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; flex-shrink: 0;`;
 
       const downloadBtn = document.createElement('button');
       downloadBtn.type = 'button';
       downloadBtn.className = 'md-btn md-btn-primary';
       downloadBtn.textContent = '导出';
-      downloadBtn.style.cssText = `outline: none;`;
+      downloadBtn.style.cssText = `outline: none; flex: 0 0 calc((100% - 8px) / 2) !important; max-width: calc((100% - 8px) / 2) !important;`;
 
-      btnGroup.appendChild(refreshBtn);
       btnGroup.appendChild(downloadBtn);
 
       body.appendChild(tab1Content);
@@ -5071,6 +5393,7 @@
         helpPopover.innerHTML = `
           <div>1. 可以拖动图片进入模板、笔记或正文输入框；有 http/https 链接的图片会保留链接，本地或临时图片会临时存储并在导出时转为 Base64。</div>
           <div style="margin-top:6px;">2. 如果处于「队列批量处理」，这里的改变会临时存储，跟随 URL；Tab 页关闭后对应临时存储会清除。</div>
+          <div style="margin-top:6px;">3. <span style="color:#f59e0b;">每次打开本面板</span>都会重新获取一次「正文（提取结果）」并<span style="color:#f59e0b;">更新正文框</span>。</div>
         `;
         panel.appendChild(helpPopover);
         helpPopoverOutsideHandler = (outsideEvent) => {
@@ -5141,24 +5464,40 @@
       this._bindMarkdownImagePaste(notesArea);
       this._bindMarkdownImagePaste(articleArea);
 
-      refreshBtn.addEventListener('click', async () => {
-        refreshBtn.textContent = '提取中...';
-        refreshBtn.disabled = true;
+      refreshTemplateBtn.addEventListener('click', async () => {
+        setFieldRefreshState(refreshTemplateBtn, 'loading', refreshTemplateTitle);
         try {
-            const response = await sendRuntimeMessage({ action: 'dev1SnapshotHelperGetArticleContent' }, 30000);
-            if (response && response.success) {
-                articleArea.value = response.article;
-                await saveContent();
-                refreshBtn.textContent = '重新获取';
-            } else {
-                refreshBtn.textContent = '获取失败';
-                setTimeout(() => refreshBtn.textContent = '重新获取', 2000);
-            }
+          const response = await sendRuntimeMessage({ action: 'dev1SnapshotHelperGetArticleContent' }, 30000);
+          const didRefresh = !!(response && response.success);
+          const nextMetadata = didRefresh ? response.metadata : metadata;
+          if (nextMetadata) metadata = nextMetadata;
+          textarea.value = this._buildMarkdownDefaultTemplate(nextMetadata, this._getCurrentUrl());
+          textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          await saveContent();
+          setFieldRefreshState(refreshTemplateBtn, didRefresh ? 'success' : 'error', refreshTemplateTitle);
         } catch (e) {
-            refreshBtn.textContent = '获取失败';
-            setTimeout(() => refreshBtn.textContent = '重新获取', 2000);
-        } finally {
-            refreshBtn.disabled = false;
+          textarea.value = this._buildMarkdownDefaultTemplate(metadata, this._getCurrentUrl());
+          textarea.dispatchEvent(new Event('input', { bubbles: true }));
+          await saveContent();
+          setFieldRefreshState(refreshTemplateBtn, 'error', refreshTemplateTitle);
+        }
+      });
+
+      refreshArticleBtn.addEventListener('click', async () => {
+        setFieldRefreshState(refreshArticleBtn, 'loading', refreshArticleTitle);
+        try {
+          const response = await sendRuntimeMessage({ action: 'dev1SnapshotHelperGetArticleContent' }, 30000);
+          if (response && response.success) {
+            articleArea.value = response.article || '';
+            if (response.metadata) metadata = response.metadata;
+            articleArea.dispatchEvent(new Event('input', { bubbles: true }));
+            await saveContent();
+            setFieldRefreshState(refreshArticleBtn, 'success', refreshArticleTitle);
+          } else {
+            setFieldRefreshState(refreshArticleBtn, 'error', refreshArticleTitle);
+          }
+        } catch (e) {
+          setFieldRefreshState(refreshArticleBtn, 'error', refreshArticleTitle);
         }
       });
 

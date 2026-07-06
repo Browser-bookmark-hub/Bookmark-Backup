@@ -377,7 +377,7 @@
           editMode: '编辑模式',
           mdFormatHtml: 'HTML (带颜色)',
           mdFormatPure: 'MD',
-          mdPureColorless: '正常颜色',
+          mdPureColorless: '常规颜色',
           toolGroupBoxes: '框线',
           toolGroupBrackets: '括号',
           toolGroupPills: '胶囊',
@@ -496,7 +496,7 @@
           editMode: 'Edit Mode',
           mdFormatHtml: 'HTML (Colored)',
           mdFormatPure: 'MD',
-          mdPureColorless: 'Normal',
+          mdPureColorless: 'Regular',
           toolGroupBoxes: 'Boxes',
           toolGroupBrackets: 'Brackets',
           toolGroupPills: 'Pills',
@@ -5921,10 +5921,10 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         : `color:${variant};`);
       const softBg = isPure ? (this.darkModeEnabled ? 'rgba(255, 213, 79, 0.3)' : 'rgba(255, 213, 79, 0.4)') : (isRainbow ? this.buildRainbowGradient(color, { textContent: text || source || '' }, 0.28) : rgbaFromHex(renderColor, 0.18));
       switch (toolId) {
-        case 'md-edit-bold': return `<strong style="${textStyle}">${escaped}</strong>`;
+        case 'md-edit-bold': return `<strong style="${textStyle}font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;">${escaped}</strong>`;
         case 'md-edit-italic': return `<em style="${textStyle}">${escaped}</em>`;
-        case 'md-edit-bold-italic': return `<strong style="${textStyle}"><em>${escaped}</em></strong>`;
-        case 'md-edit-strikethrough': return `<del style="${textStyle}text-decoration-color:${renderColor};text-decoration-thickness:2px;">${escaped}</del>`;
+        case 'md-edit-bold-italic': return `<strong style="${textStyle}font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;"><em>${escaped}</em></strong>`;
+        case 'md-edit-strikethrough': return `<del style="text-decoration-color:currentColor;text-decoration-thickness:2px;">${escaped}</del>`;
         case 'md-edit-mark': return `<mark style="background:${softBg};color:${isPure ? 'inherit' : (resolvedVariant === 'white' ? '#ffffff' : '#0f172a')};border-radius:3px;padding:1px 3px;">${escaped}</mark>`;
         case 'md-code-inline':
         case 'md-edit-code-inline': {
@@ -6317,12 +6317,17 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       }
       const font = value => this.wrapMarkdownHtmlColor(value, color, 'font');
       const mark = value => this.wrapMarkdownHtmlColor(value, color, 'background');
+      const del = value => safeString(value).split('\n').map(line => (
+        line.trim()
+          ? `<del style="text-decoration-color:currentColor;text-decoration-thickness:2px;">${this.escapeHtml(line)}</del>`
+          : line
+      )).join('\n');
       switch (toolId) {
         case 'md-edit-mark': return mark(text);
-        case 'md-edit-bold': return `**${font(text)}**`;
+        case 'md-edit-bold': return `<strong style="font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;">${font(text)}</strong>`;
         case 'md-edit-italic': return `*${font(text)}*`;
-        case 'md-edit-bold-italic': return `***${font(text)}***`;
-        case 'md-edit-strikethrough': return `~~${font(text)}~~`;
+        case 'md-edit-bold-italic': return `<strong style="font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;"><em>${font(text)}</em></strong>`;
+        case 'md-edit-strikethrough': return del(text);
         case 'md-code-inline':
         case 'md-edit-code-inline': return `<code style="font-family: monospace; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; color: ${this.normalizeMarkdownHtmlColor(color)};">${this.escapeHtml(text)}</code>`;
         case 'md-edit-sup': return `<sup style="color:${this.normalizeMarkdownHtmlColor(color)}">${this.escapeHtml(text)}</sup>`;
@@ -7498,7 +7503,9 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         switch (id) {
           case 'md-bold':
           case 'md-edit-bold':
-            element.style.fontWeight = '700';
+            element.style.fontWeight = '900';
+            element.style.setProperty('-webkit-text-stroke', '.55px currentColor', 'important');
+            element.style.setProperty('text-shadow', '.7px 0 currentColor, -.7px 0 currentColor', 'important');
             return true;
           case 'md-italic':
           case 'md-edit-italic':
@@ -7506,15 +7513,26 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
             return true;
           case 'md-bold-italic':
           case 'md-edit-bold-italic':
-            element.style.fontWeight = '700';
+            element.style.fontWeight = '900';
             element.style.fontStyle = 'italic';
+            element.style.setProperty('-webkit-text-stroke', '.55px currentColor', 'important');
+            element.style.setProperty('text-shadow', '.7px 0 currentColor, -.7px 0 currentColor', 'important');
             return true;
           case 'md-underline':
-            element.style.textDecoration = 'underline';
+            element.style.setProperty('color', 'inherit', 'important');
+            element.style.setProperty('text-decoration', 'underline solid currentColor', 'important');
+            element.style.setProperty('text-decoration-color', 'currentColor', 'important');
+            element.style.setProperty('text-decoration-thickness', '2px', 'important');
+            element.style.setProperty('text-underline-offset', '2px', 'important');
+            this.removeRainbowLine(element);
             return true;
           case 'md-strikethrough':
           case 'md-edit-strikethrough':
-            element.style.textDecoration = 'line-through';
+            element.style.setProperty('color', 'inherit', 'important');
+            element.style.setProperty('text-decoration', 'line-through solid currentColor', 'important');
+            element.style.setProperty('text-decoration-color', 'currentColor', 'important');
+            element.style.setProperty('text-decoration-thickness', '2px', 'important');
+            this.removeRainbowLine(element);
             return true;
           case 'md-mark':
           case 'md-edit-mark':
@@ -7590,8 +7608,10 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         case 'md-bold':
         case 'md-edit-bold':
           clearBg();
-          element.style.fontWeight = '700';
+          element.style.fontWeight = '900';
           applyTextColor();
+          element.style.setProperty('-webkit-text-stroke', '.55px currentColor', 'important');
+          element.style.setProperty('text-shadow', '.7px 0 currentColor, -.7px 0 currentColor', 'important');
           return true;
         case 'md-italic':
         case 'md-edit-italic':
@@ -7602,37 +7622,29 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
         case 'md-bold-italic':
         case 'md-edit-bold-italic':
           clearBg();
-          element.style.fontWeight = '700';
+          element.style.fontWeight = '900';
           element.style.fontStyle = 'italic';
           applyTextColor();
+          element.style.setProperty('-webkit-text-stroke', '.55px currentColor', 'important');
+          element.style.setProperty('text-shadow', '.7px 0 currentColor, -.7px 0 currentColor', 'important');
           return true;
         case 'md-underline':
           clearBg();
-          element.style.color = 'inherit';
-          if (isRainbow) {
-            element.style.setProperty('text-decoration', 'none', 'important');
-            element.style.setProperty('text-decoration-line', 'none', 'important');
-            this.renderRainbowLineAfterLayout(element, 'underline', this.ensureRainbowSeed(element, color), { thickness: 2, offset: 2 });
-          } else {
-            this.removeRainbowLine(element);
-            element.style.textDecoration = `underline solid ${solidColor}`;
-            element.style.textDecorationThickness = '2px';
-            element.style.textUnderlineOffset = '2px';
-          }
+          element.style.setProperty('color', 'inherit', 'important');
+          element.style.setProperty('text-decoration', 'underline solid currentColor', 'important');
+          element.style.setProperty('text-decoration-color', 'currentColor', 'important');
+          element.style.setProperty('text-decoration-thickness', '2px', 'important');
+          element.style.setProperty('text-underline-offset', '2px', 'important');
+          this.removeRainbowLine(element);
           return true;
         case 'md-strikethrough':
         case 'md-edit-strikethrough':
           clearBg();
-          element.style.color = isRainbow ? 'inherit' : (isTransparent ? readableText : solidColor);
-          if (isRainbow) {
-            element.style.setProperty('text-decoration', 'none', 'important');
-            element.style.setProperty('text-decoration-line', 'none', 'important');
-            this.renderRainbowLineAfterLayout(element, 'strikethrough', this.ensureRainbowSeed(element, color), { thickness: 2, position: 'middle' });
-          } else {
-            this.removeRainbowLine(element);
-            element.style.textDecoration = `line-through solid ${solidColor}`;
-            element.style.textDecorationThickness = '2px';
-          }
+          element.style.setProperty('color', 'inherit', 'important');
+          element.style.setProperty('text-decoration', 'line-through solid currentColor', 'important');
+          element.style.setProperty('text-decoration-color', 'currentColor', 'important');
+          element.style.setProperty('text-decoration-thickness', '2px', 'important');
+          this.removeRainbowLine(element);
           return true;
         case 'md-mark':
         case 'md-edit-mark':
@@ -9544,9 +9556,6 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
           dashed: ['dashed', { thickness: 2, offset: 2 }],
           'thick-underline': ['underline', { thickness: 4, offset: 3 }],
           strikethrough: ['strikethrough', { thickness: 2, position: 'middle' }],
-          'md-underline': ['underline', { thickness: 2, offset: 2 }],
-          'md-strikethrough': ['strikethrough', { thickness: 2, position: 'middle' }],
-          'md-edit-strikethrough': ['strikethrough', { thickness: 2, position: 'middle' }]
         };
         const meta = lineTools[tool];
         if (meta) this.renderRainbowLineAfterLayout(element, meta[0], this.ensureRainbowSeed(element, color), meta[1]);

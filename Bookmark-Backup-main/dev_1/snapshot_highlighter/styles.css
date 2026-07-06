@@ -377,7 +377,9 @@
 
 .custom-highlight.dev1-snapshot-highlight.tool-md-bold,
 .custom-highlight.dev1-snapshot-highlight.tool-md-edit-bold {
-  font-weight: 700 !important;
+  font-weight: 900 !important;
+  -webkit-text-stroke: .55px currentColor !important;
+  text-shadow: .7px 0 currentColor, -.7px 0 currentColor !important;
 }
 
 .custom-highlight.dev1-snapshot-highlight.tool-md-italic,
@@ -387,25 +389,24 @@
 
 .custom-highlight.dev1-snapshot-highlight.tool-md-bold-italic,
 .custom-highlight.dev1-snapshot-highlight.tool-md-edit-bold-italic {
-  font-weight: 700 !important;
+  font-weight: 900 !important;
   font-style: italic !important;
+  -webkit-text-stroke: .55px currentColor !important;
+  text-shadow: .7px 0 currentColor, -.7px 0 currentColor !important;
 }
 
 .custom-highlight.dev1-snapshot-highlight.tool-md-underline {
-  text-decoration: underline solid var(--dev1-highlight-color, #ffeb3b) 2px !important;
+  color: inherit !important;
+  text-decoration: underline solid currentColor 2px !important;
+  text-decoration-color: currentColor !important;
   text-underline-offset: 2px !important;
 }
 
 .custom-highlight.dev1-snapshot-highlight.tool-md-strikethrough,
 .custom-highlight.dev1-snapshot-highlight.tool-md-edit-strikethrough {
-  text-decoration: line-through solid var(--dev1-highlight-color, #ffeb3b) 2px !important;
-}
-
-.custom-highlight.dev1-snapshot-highlight.tool-md-underline[data-rb-variant],
-.custom-highlight.dev1-snapshot-highlight.tool-md-strikethrough[data-rb-variant],
-.custom-highlight.dev1-snapshot-highlight.tool-md-edit-strikethrough[data-rb-variant] {
-  text-decoration: none !important;
-  text-decoration-line: none !important;
+  color: inherit !important;
+  text-decoration: line-through solid currentColor 2px !important;
+  text-decoration-color: currentColor !important;
 }
 
 .custom-highlight.dev1-snapshot-highlight.tool-md-mark,
@@ -2589,6 +2590,13 @@
   color: #7f8c8d !important;
   text-align: center !important;
   line-height: 1.2 !important;
+}
+
+.md-rendered-content[data-md-tool="md-edit-bold"] strong,
+.md-rendered-content[data-md-tool="md-edit-bold-italic"] strong {
+  font-weight: 900 !important;
+  -webkit-text-stroke: .55px currentColor !important;
+  text-shadow: .7px 0 currentColor, -.7px 0 currentColor !important;
 }
 
 .highlight-tool-picker.dark-theme .tool-desc {

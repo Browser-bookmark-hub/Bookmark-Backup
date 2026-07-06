@@ -6688,11 +6688,12 @@ async function dev1ExtractMarkdownArticle(tabId) {
                 )).join('\n');
                 const font = (value) => wrapLines(value, (line) => `<font color="${color}">${line}</font>`);
                 const mark = (value) => wrapLines(value, (line) => `<mark style="background:${color}">${line}</mark>`);
+                const del = (value) => wrapLines(value, (line) => `<del style="text-decoration-color:currentColor;text-decoration-thickness:2px;">${line}</del>`);
                 if (toolId === 'md-edit-mark') return mark(plain);
-                if (toolId === 'md-edit-bold') return `**${font(plain)}**`;
+                if (toolId === 'md-edit-bold') return `<strong style="font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;">${font(plain)}</strong>`;
                 if (toolId === 'md-edit-italic') return `*${font(plain)}*`;
-                if (toolId === 'md-edit-bold-italic') return `***${font(plain)}***`;
-                if (toolId === 'md-edit-strikethrough') return `~~${font(plain)}~~`;
+                if (toolId === 'md-edit-bold-italic') return `<strong style="font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;"><em>${font(plain)}</em></strong>`;
+                if (toolId === 'md-edit-strikethrough') return del(plain);
                 if (toolId === 'md-edit-code-inline' || toolId === 'md-code-inline') return `<code style="font-family: monospace; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; color: ${color};">${escapeHtml(plain)}</code>`;
                 if (toolId === 'md-edit-sup') return `<sup style="color:${color}">${escapeHtml(plain)}</sup>`;
                 if (toolId === 'md-edit-sub') return `<sub style="color:${color}">${escapeHtml(plain)}</sub>`;
@@ -6772,17 +6773,18 @@ async function dev1ExtractMarkdownArticle(tabId) {
                 )).join('\n');
                 const font = (value) => wrapLines(value, (line) => `<font color="${color}">${line}</font>`);
                 const mark = (value) => wrapLines(value, (line) => `<mark style="background:${color}">${line}</mark>`);
+                const del = (value) => wrapLines(value, (line) => `<del style="text-decoration-color:currentColor;text-decoration-thickness:2px;">${line}</del>`);
                 switch (toolId) {
                     case 'md-mark':
                     case 'md-edit-mark': return mark(text);
                     case 'md-bold':
-                    case 'md-edit-bold': return `**${font(text)}**`;
+                    case 'md-edit-bold': return `<strong style="font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;">${font(text)}</strong>`;
                     case 'md-italic':
                     case 'md-edit-italic': return `*${font(text)}*`;
                     case 'md-bold-italic':
-                    case 'md-edit-bold-italic': return `***${font(text)}***`;
+                    case 'md-edit-bold-italic': return `<strong style="font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;"><em>${font(text)}</em></strong>`;
                     case 'md-strikethrough':
-                    case 'md-edit-strikethrough': return `~~${font(text)}~~`;
+                    case 'md-edit-strikethrough': return del(text);
                     case 'md-underline': return `<u>${font(text)}</u>`;
                     case 'md-sup':
                     case 'md-edit-sup': return `<sup style="color:${color}">${escapeHtml(text)}</sup>`;
@@ -7092,11 +7094,12 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
                 )).join('\n');
                 const font = (value) => wrapLines(value, (line) => `<font color="${color}">${line}</font>`);
                 const mark = (value) => wrapLines(value, (line) => `<mark style="background:${color}">${line}</mark>`);
+                const del = (value) => wrapLines(value, (line) => `<del style="text-decoration-color:currentColor;text-decoration-thickness:2px;">${line}</del>`);
                 if (toolId === 'md-edit-mark') return mark(plain);
-                if (toolId === 'md-edit-bold') return `**${font(plain)}**`;
+                if (toolId === 'md-edit-bold') return `<strong style="font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;">${font(plain)}</strong>`;
                 if (toolId === 'md-edit-italic') return `*${font(plain)}*`;
-                if (toolId === 'md-edit-bold-italic') return `***${font(plain)}***`;
-                if (toolId === 'md-edit-strikethrough') return `~~${font(plain)}~~`;
+                if (toolId === 'md-edit-bold-italic') return `<strong style="font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;"><em>${font(plain)}</em></strong>`;
+                if (toolId === 'md-edit-strikethrough') return del(plain);
                 if (toolId === 'md-edit-code-inline' || toolId === 'md-code-inline') return `<code style="font-family: monospace; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; color: ${color};">${escapeHtml(plain)}</code>`;
                 if (toolId === 'md-edit-sup') return `<sup style="color:${color}">${escapeHtml(plain)}</sup>`;
                 if (toolId === 'md-edit-sub') return `<sub style="color:${color}">${escapeHtml(plain)}</sub>`;
@@ -7176,17 +7179,18 @@ async function dev1CaptureMarkdownContent(tabId, urlText = '') {
                 )).join('\n');
                 const font = (value) => wrapLines(value, (line) => `<font color="${color}">${line}</font>`);
                 const mark = (value) => wrapLines(value, (line) => `<mark style="background:${color}">${line}</mark>`);
+                const del = (value) => wrapLines(value, (line) => `<del style="text-decoration-color:currentColor;text-decoration-thickness:2px;">${line}</del>`);
                 switch (toolId) {
                     case 'md-mark':
                     case 'md-edit-mark': return mark(text);
                     case 'md-bold':
-                    case 'md-edit-bold': return `**${font(text)}**`;
+                    case 'md-edit-bold': return `<strong style="font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;">${font(text)}</strong>`;
                     case 'md-italic':
                     case 'md-edit-italic': return `*${font(text)}*`;
                     case 'md-bold-italic':
-                    case 'md-edit-bold-italic': return `***${font(text)}***`;
+                    case 'md-edit-bold-italic': return `<strong style="font-weight:900;-webkit-text-stroke:.55px currentColor;text-shadow:.7px 0 currentColor,-.7px 0 currentColor;"><em>${font(text)}</em></strong>`;
                     case 'md-strikethrough':
-                    case 'md-edit-strikethrough': return `~~${font(text)}~~`;
+                    case 'md-edit-strikethrough': return del(text);
                     case 'md-underline': return `<u>${font(text)}</u>`;
                     case 'md-sup':
                     case 'md-edit-sup': return `<sup style="color:${color}">${escapeHtml(text)}</sup>`;
