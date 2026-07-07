@@ -4343,6 +4343,10 @@ a.tree-label.tree-bookmark-link:hover {
     line-height: 1.45;
 }
 
+#historySlimmingSettingsStatus:empty {
+    display: none;
+}
+
 .history-safety-status {
     font-size: 12px;
     line-height: 1.55;

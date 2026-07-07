@@ -20288,8 +20288,6 @@ document.addEventListener('DOMContentLoaded', function () {
         title: lang === 'en' ? 'Compaction Settings' : '精简设置',
         snapshotLabel: lang === 'en' ? 'Save snapshot data' : '保存快照数据',
         changeLabel: lang === 'en' ? 'Save change data' : '保存变化数据',
-        cancelText: lang === 'en' ? 'Cancel' : '取消',
-        saveText: lang === 'en' ? 'Save' : '保存',
         noteText: lang === 'en'
             ? 'Choose which detailed history data to write to the <span style="color: #f97316; font-weight: 500;">extension\'s internal storage (chrome.storage)</span>. Unchecked data will not be saved to save <span style="color: #f97316; font-weight: 500;">browser</span> storage space.'
             : '选择写入<span style="color: #f97316; font-weight: 500;">插件内部存储（chrome.storage）</span>的历史详情数据。未勾选的数据将不会被保存，以节省<span style="color: #f97316; font-weight: 500;">浏览器</span>的存储空间。',
@@ -20334,10 +20332,6 @@ document.addEventListener('DOMContentLoaded', function () {
                             </span>
                         </label>
                     </div>
-                    <div class="backup-history-secondary-actions">
-                        <button id="backupHistorySlimmingDialogCancelBtn" type="button" class="restore-modal-action-btn secondary">${escapeHtml(labels.cancelText)}</button>
-                        <button id="backupHistorySlimmingDialogSaveBtn" type="button" class="restore-modal-action-btn primary">${escapeHtml(labels.saveText)}</button>
-                    </div>
                 </div>
             `
         });
@@ -20345,34 +20339,38 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const saveSnapshotInput = document.getElementById('backupHistorySlimmingDialogSaveSnapshotData');
         const saveChangeInput = document.getElementById('backupHistorySlimmingDialogSaveChangeData');
-        const cancelBtn = document.getElementById('backupHistorySlimmingDialogCancelBtn');
-        const saveBtn = document.getElementById('backupHistorySlimmingDialogSaveBtn');
 
-        const closeDialog = () => {
-            removeBackupHistorySlimmingSettingsDialog();
+        const syncDialogInputsToState = (settings = backupHistorySlimmingState) => {
+            const normalized = normalizeBackupHistorySlimmingSettings(settings);
+            if (saveSnapshotInput) saveSnapshotInput.checked = normalized.saveSnapshotData === true;
+            if (saveChangeInput) saveChangeInput.checked = normalized.saveChangeData === true;
         };
 
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                closeDialog();
+        const setDialogSavingState = (isSaving) => {
+            [saveSnapshotInput, saveChangeInput].forEach((input) => {
+                if (input) input.disabled = isSaving;
             });
-        }
+        };
 
-        if (saveBtn) {
-            saveBtn.addEventListener('click', async (e) => {
-                e.preventDefault();
-                const nextSettings = {
-                    saveSnapshotData: saveSnapshotInput ? saveSnapshotInput.checked : currentState.saveSnapshotData,
-                    saveChangeData: saveChangeInput ? saveChangeInput.checked : currentState.saveChangeData
-                };
-                const ok = await persistBackupHistorySlimmingSettings(nextSettings, {
+        const persistDialogSettings = async () => {
+            const nextSettings = {
+                saveSnapshotData: saveSnapshotInput ? saveSnapshotInput.checked : currentState.saveSnapshotData,
+                saveChangeData: saveChangeInput ? saveChangeInput.checked : currentState.saveChangeData
+            };
+            setDialogSavingState(true);
+            try {
+                await persistBackupHistorySlimmingSettings(nextSettings, {
                     silent: false,
                     successMessage: lang === 'en' ? 'Backup history compaction settings saved' : '备份历史精简设置已保存'
                 });
-                if (ok) closeDialog();
-            });
-        }
+                syncDialogInputsToState();
+            } finally {
+                setDialogSavingState(false);
+            }
+        };
+
+        if (saveSnapshotInput) saveSnapshotInput.addEventListener('change', persistDialogSettings);
+        if (saveChangeInput) saveChangeInput.addEventListener('change', persistDialogSettings);
     };
 
     const removeLatestSafetyCheckpointDialog = () => {

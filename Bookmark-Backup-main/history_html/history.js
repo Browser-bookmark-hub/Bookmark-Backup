@@ -3796,10 +3796,6 @@ function applyLanguage() {
     if (historySlimmingSaveSnapshotDataText) historySlimmingSaveSnapshotDataText.textContent = i18n.historySlimmingSaveSnapshotData[currentLang];
     const historySlimmingSaveChangeDataText = document.getElementById('historySlimmingSaveChangeDataText');
     if (historySlimmingSaveChangeDataText) historySlimmingSaveChangeDataText.textContent = i18n.historySlimmingSaveChangeData[currentLang];
-    const historySlimmingSettingsCancelBtn = document.getElementById('historySlimmingSettingsCancelBtn');
-    if (historySlimmingSettingsCancelBtn) historySlimmingSettingsCancelBtn.textContent = i18n.clearBackupHistoryCancelBtn[currentLang];
-    const historySlimmingSettingsSaveBtn = document.getElementById('historySlimmingSettingsSaveBtn');
-    if (historySlimmingSettingsSaveBtn) historySlimmingSettingsSaveBtn.textContent = currentLang === 'zh_CN' ? '保存' : 'Save';
     syncHistorySlimmingSettingsModalUi();
 
     const historySafetyCheckpointModalTitle = document.getElementById('historySafetyCheckpointModalTitle');
@@ -20412,24 +20408,37 @@ function initBackupHistorySlimmingAndSafetyControls() {
 
     if (settingsModal && !settingsModal.hasAttribute('data-history-slimming-modal-bound')) {
         const closeBtn = document.getElementById('historySlimmingSettingsModalClose');
-        const cancelBtn = document.getElementById('historySlimmingSettingsCancelBtn');
-        const saveBtn = document.getElementById('historySlimmingSettingsSaveBtn');
         const snapshotCheckbox = document.getElementById('historySlimmingSaveSnapshotData');
         const changeCheckbox = document.getElementById('historySlimmingSaveChangeData');
+        let isSavingSlimmingSettings = false;
+
+        const setSlimmingInputsSavingState = (isSaving) => {
+            [snapshotCheckbox, changeCheckbox].forEach((input) => {
+                if (input) input.disabled = isSaving;
+            });
+        };
 
         const commitSettings = async () => {
-            const response = await saveHistoryBackupHistorySlimmingSettings({
-                saveSnapshotData: snapshotCheckbox ? snapshotCheckbox.checked : historyBackupHistorySlimmingSettings.saveSnapshotData,
-                saveChangeData: changeCheckbox ? changeCheckbox.checked : historyBackupHistorySlimmingSettings.saveChangeData
-            });
-            if (response && response.success) {
-                closeHistorySlimmingSettingsModal();
+            if (isSavingSlimmingSettings) return;
+            isSavingSlimmingSettings = true;
+            setSlimmingInputsSavingState(true);
+            try {
+                const response = await saveHistoryBackupHistorySlimmingSettings({
+                    saveSnapshotData: snapshotCheckbox ? snapshotCheckbox.checked : historyBackupHistorySlimmingSettings.saveSnapshotData,
+                    saveChangeData: changeCheckbox ? changeCheckbox.checked : historyBackupHistorySlimmingSettings.saveChangeData
+                });
+                if (!(response && response.success)) {
+                    syncHistorySlimmingSettingsModalUi();
+                }
+            } finally {
+                isSavingSlimmingSettings = false;
+                setSlimmingInputsSavingState(false);
             }
         };
 
         if (closeBtn) closeBtn.addEventListener('click', closeHistorySlimmingSettingsModal);
-        if (cancelBtn) cancelBtn.addEventListener('click', closeHistorySlimmingSettingsModal);
-        if (saveBtn) saveBtn.addEventListener('click', commitSettings);
+        if (snapshotCheckbox) snapshotCheckbox.addEventListener('change', commitSettings);
+        if (changeCheckbox) changeCheckbox.addEventListener('change', commitSettings);
         settingsModal.addEventListener('click', (e) => {
             if (e.target === settingsModal) closeHistorySlimmingSettingsModal();
         });
