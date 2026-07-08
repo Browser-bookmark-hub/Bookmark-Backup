@@ -1,3 +1,18 @@
+// =================================================================================
+// TABLE OF CONTENTS (目录索引)
+// =================================================================================
+// I.     PRELUDE, CLASS CORE & THEME (前置工具、类核心与主题)
+// II.    STATE, EVENTS & TOOLBAR (状态、事件与工具栏)
+// III.   PICKERS & OPERATIONS (选择器与操作面板)
+// IV.    SELECTION, HIGHLIGHT CREATION & STYLES (选区、高亮创建与样式)
+// V.     EFFECTS, CURSOR & OVERLAYS (效果、光标与覆盖层)
+// VI.    RESTORE, CLEANUP & API EXPORT (恢复、清理与 API 导出)
+// =================================================================================
+
+// =================================================================================
+// I. PRELUDE, CLASS CORE & THEME (前置工具、类核心与主题)
+// =================================================================================
+
 (function () {
   'use strict';
 
@@ -169,6 +184,7 @@
     const lum = luminance(background);
     return lum > 0.38 ? '#0f172a' : '#ffffff';
   }
+
 
   class SnapshotHighlighter {
     constructor() {
@@ -631,6 +647,11 @@
       });
     }
 
+// =================================================================================
+// II. STATE, EVENTS & TOOLBAR (状态、事件与工具栏)
+// =================================================================================
+
+
     normalizeToolbarUi(value = {}) {
       const raw = value && typeof value === 'object' ? value : {};
       const left = Number(raw.left);
@@ -1089,485 +1110,6 @@
       return `${this.t('highlightNote')}${this.lang === 'en' ? ': 「' : '：「'}${normalized}」`;
     }
 
-    bindEvents() {
-      if (!this.selectionListener) {
-        this.selectionListener = () => {
-          setTimeout(() => this.highlightSelectedText(), 30);
-        };
-        document.addEventListener('mouseup', this.selectionListener, true);
-      }
-      if (!this.beforeUnloadListener) {
-        this.beforeUnloadListener = () => {
-          try { this.requestSave(true); } catch (_) { }
-        };
-        window.addEventListener('beforeunload', this.beforeUnloadListener);
-      }
-      if (!this.documentClickListener) {
-        this.documentClickListener = (event) => this.handleOutsideClick(event);
-        document.addEventListener('mousedown', this.documentClickListener, true);
-      }
-      if (!this.keydownListener) {
-        this.keydownListener = (event) => {
-          if (event.key === 'Escape' && (this.activeColorPicker || this.activeToolPicker || this.activeOperationsPanel || this.activeHighlightPanel || this.indicatorPanel)) {
-            this.closeTransientPanels();
-          }
-        };
-        document.addEventListener('keydown', this.keydownListener, true);
-      }
-      if (!this.cursorPointerListener) {
-        this.cursorPointerListener = (event) => this._handleGlobalPointerMove(event);
-        document.addEventListener('pointermove', this.cursorPointerListener, true);
-        document.addEventListener('pointerdown', this.cursorPointerListener, true);
-      }
-      if (!this.presentationDownListener) {
-        this.presentationDownListener = (event) => this.handlePresentationPointerDown(event);
-        document.addEventListener('pointerdown', this.presentationDownListener, true);
-      }
-      this._attachCursorWatchers();
-      if (!this.externalColorListener) {
-        this.externalColorListener = (event) => {
-          const detail = event && event.detail;
-          if (detail) this.setColor(detail);
-        };
-        window.addEventListener('dev1SnapshotHighlighterSetColor', this.externalColorListener);
-      }
-      if (!this.highlightClickListener) {
-        this.highlightClickListener = (event) => this.handleHighlightClick(event);
-        document.addEventListener('click', this.highlightClickListener, true);
-      }
-      if (!this.urlTimer) {
-        this.urlTimer = setInterval(() => {
-          this.checkUrlChange();
-        }, 500);
-      }
-      if (!this.urlChangeListener) {
-        this.installHistoryHooks();
-        this.urlChangeListener = () => this.checkUrlChange();
-        window.addEventListener(URL_CHANGE_EVENT, this.urlChangeListener);
-        window.addEventListener('popstate', this.urlChangeListener);
-        window.addEventListener('hashchange', this.urlChangeListener);
-      }
-      this.bindLifecycleRestoreEvents();
-      if (!this.overlayRefreshListener) {
-        this.overlayRefreshListener = (event) => {
-          if (event && event.type === 'scroll') {
-            if (this._scrollTimer) clearTimeout(this._scrollTimer);
-            document.body.classList.add('dev1-highlighter-scrolling');
-            this._scrollTimer = setTimeout(() => {
-              document.body.classList.remove('dev1-highlighter-scrolling');
-            }, 150);
-
-            if (this._hasFixedOrStickyHighlights === null) {
-              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
-            }
-            if (!this._hasFixedOrStickyHighlights) {
-              return;
-            }
-            try { this.updateFrameOverlayLayerSize(); } catch (_) { }
-            try { this.groupFrameGeometries.clear(); } catch (_) { }
-            try { this.overlayUpdateSoon(); } catch (_) { }
-            return;
-          }
-          try { this.groupFrameGeometries.clear(); } catch (_) { }
-          try { this.overlayUpdateSoon(); } catch (_) { }
-        };
-        window.addEventListener('resize', this.overlayRefreshListener, { passive: true });
-        window.addEventListener('scroll', this.overlayRefreshListener, { passive: true });
-        document.addEventListener('scroll', this.overlayRefreshListener, true);
-      }
-      if (!this.visualViewportRefreshListener && window.visualViewport) {
-        this.visualViewportRefreshListener = (event) => {
-          if (event && event.type === 'scroll') {
-            if (this._scrollTimer) clearTimeout(this._scrollTimer);
-            document.body.classList.add('dev1-highlighter-scrolling');
-            this._scrollTimer = setTimeout(() => {
-              document.body.classList.remove('dev1-highlighter-scrolling');
-            }, 150);
-
-            if (this._hasFixedOrStickyHighlights === null) {
-              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
-            }
-            if (!this._hasFixedOrStickyHighlights) {
-              return;
-            }
-            try { this.updateFrameOverlayLayerSize(); } catch (_) { }
-            try { this.groupFrameGeometries.clear(); } catch (_) { }
-            try { this.overlayUpdateSoon(); } catch (_) { }
-            return;
-          }
-          try { this.groupFrameGeometries.clear(); } catch (_) { }
-          try { this.overlayUpdateSoon(); } catch (_) { }
-        };
-        try {
-          window.visualViewport.addEventListener('resize', this.visualViewportRefreshListener, { passive: true });
-          window.visualViewport.addEventListener('scroll', this.visualViewportRefreshListener, { passive: true });
-        } catch (_) { }
-      }
-    }
-
-    bindRestoreOnlyEvents() {
-      if (!this.beforeUnloadListener) {
-        this.beforeUnloadListener = () => {
-          try { this.requestSave(true); } catch (_) { }
-        };
-        window.addEventListener('beforeunload', this.beforeUnloadListener);
-      }
-      if (!this.documentClickListener) {
-        this.documentClickListener = (event) => this.handleOutsideClick(event);
-        document.addEventListener('mousedown', this.documentClickListener, true);
-      }
-      if (!this.keydownListener) {
-        this.keydownListener = (event) => {
-          if (event.key === 'Escape' && (this.activeColorPicker || this.activeToolPicker || this.activeOperationsPanel || this.activeHighlightPanel || this.indicatorPanel)) {
-            this.closeTransientPanels();
-          }
-        };
-        document.addEventListener('keydown', this.keydownListener, true);
-      }
-      if (!this.highlightClickListener) {
-        this.highlightClickListener = (event) => this.handleHighlightClick(event);
-        document.addEventListener('click', this.highlightClickListener, true);
-      }
-      if (!this.urlTimer) {
-        this.urlTimer = setInterval(() => {
-          this.checkUrlChange();
-        }, 500);
-      }
-      if (!this.urlChangeListener) {
-        this.installHistoryHooks();
-        this.urlChangeListener = () => this.checkUrlChange();
-        window.addEventListener(URL_CHANGE_EVENT, this.urlChangeListener);
-        window.addEventListener('popstate', this.urlChangeListener);
-        window.addEventListener('hashchange', this.urlChangeListener);
-      }
-      this.bindLifecycleRestoreEvents();
-      if (!this.overlayRefreshListener) {
-        this.overlayRefreshListener = (event) => {
-          if (event && event.type === 'scroll') {
-            if (this._scrollTimer) clearTimeout(this._scrollTimer);
-            document.body.classList.add('dev1-highlighter-scrolling');
-            this._scrollTimer = setTimeout(() => {
-              document.body.classList.remove('dev1-highlighter-scrolling');
-            }, 150);
-
-            if (this._hasFixedOrStickyHighlights === null) {
-              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
-            }
-            if (!this._hasFixedOrStickyHighlights) {
-              return;
-            }
-            try { this.updateFrameOverlayLayerSize(); } catch (_) { }
-            try { this.groupFrameGeometries.clear(); } catch (_) { }
-            try { this.overlayUpdateSoon(); } catch (_) { }
-            return;
-          }
-          try { this.groupFrameGeometries.clear(); } catch (_) { }
-          try { this.overlayUpdateSoon(); } catch (_) { }
-        };
-        window.addEventListener('resize', this.overlayRefreshListener, { passive: true });
-        window.addEventListener('scroll', this.overlayRefreshListener, { passive: true });
-        document.addEventListener('scroll', this.overlayRefreshListener, true);
-      }
-      if (!this.visualViewportRefreshListener && window.visualViewport) {
-        this.visualViewportRefreshListener = (event) => {
-          if (event && event.type === 'scroll') {
-            if (this._scrollTimer) clearTimeout(this._scrollTimer);
-            document.body.classList.add('dev1-highlighter-scrolling');
-            this._scrollTimer = setTimeout(() => {
-              document.body.classList.remove('dev1-highlighter-scrolling');
-            }, 150);
-
-            if (this._hasFixedOrStickyHighlights === null) {
-              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
-            }
-            if (!this._hasFixedOrStickyHighlights) {
-              return;
-            }
-            try { this.updateFrameOverlayLayerSize(); } catch (_) { }
-            try { this.groupFrameGeometries.clear(); } catch (_) { }
-            try { this.overlayUpdateSoon(); } catch (_) { }
-            return;
-          }
-          try { this.groupFrameGeometries.clear(); } catch (_) { }
-          try { this.overlayUpdateSoon(); } catch (_) { }
-        };
-        try {
-          window.visualViewport.addEventListener('resize', this.visualViewportRefreshListener, { passive: true });
-          window.visualViewport.addEventListener('scroll', this.visualViewportRefreshListener, { passive: true });
-        } catch (_) { }
-      }
-    }
-
-    unbindEvents() {
-      if (this.selectionListener) {
-        document.removeEventListener('mouseup', this.selectionListener, true);
-        this.selectionListener = null;
-      }
-      if (this.beforeUnloadListener) {
-        window.removeEventListener('beforeunload', this.beforeUnloadListener);
-        this.beforeUnloadListener = null;
-      }
-      if (this.documentClickListener) {
-        document.removeEventListener('mousedown', this.documentClickListener, true);
-        this.documentClickListener = null;
-      }
-      if (this.keydownListener) {
-        document.removeEventListener('keydown', this.keydownListener, true);
-        this.keydownListener = null;
-      }
-      if (this.cursorPointerListener) {
-        document.removeEventListener('pointermove', this.cursorPointerListener, true);
-        document.removeEventListener('pointerdown', this.cursorPointerListener, true);
-        this.cursorPointerListener = null;
-      }
-      if (this.presentationDownListener) {
-        document.removeEventListener('pointerdown', this.presentationDownListener, true);
-        this.presentationDownListener = null;
-      }
-      const pOverlay = document.getElementById('dev1-presentation-pen-overlay');
-      if (pOverlay) pOverlay.remove();
-      this._detachCursorWatchers();
-      if (this.externalColorListener) {
-        window.removeEventListener('dev1SnapshotHighlighterSetColor', this.externalColorListener);
-        this.externalColorListener = null;
-      }
-      if (this.highlightClickListener) {
-        document.removeEventListener('click', this.highlightClickListener, true);
-        this.highlightClickListener = null;
-      }
-      if (this.urlTimer) {
-        clearInterval(this.urlTimer);
-        this.urlTimer = null;
-      }
-      if (this.urlChangeListener) {
-        window.removeEventListener(URL_CHANGE_EVENT, this.urlChangeListener);
-        window.removeEventListener('popstate', this.urlChangeListener);
-        window.removeEventListener('hashchange', this.urlChangeListener);
-        this.urlChangeListener = null;
-      }
-      this.unbindLifecycleRestoreEvents();
-      if (this.overlayRefreshListener) {
-        window.removeEventListener('resize', this.overlayRefreshListener);
-        window.removeEventListener('scroll', this.overlayRefreshListener);
-        document.removeEventListener('scroll', this.overlayRefreshListener, true);
-        this.overlayRefreshListener = null;
-      }
-      if (this.visualViewportRefreshListener && window.visualViewport) {
-        try {
-          window.visualViewport.removeEventListener('resize', this.visualViewportRefreshListener);
-          window.visualViewport.removeEventListener('scroll', this.visualViewportRefreshListener);
-        } catch (_) { }
-        this.visualViewportRefreshListener = null;
-      }
-    }
-
-    bindLifecycleRestoreEvents() {
-      if (this.lifecycleRestoreListener) return;
-      this.lifecycleRestoreListener = (event) => {
-        const type = safeString(event && event.type) || 'lifecycle';
-        if (type === 'visibilitychange' && document.visibilityState === 'hidden') return;
-        this.scheduleLifecycleRestore(type);
-      };
-      try { document.addEventListener('visibilitychange', this.lifecycleRestoreListener, { passive: true }); } catch (_) { }
-      try { window.addEventListener('pageshow', this.lifecycleRestoreListener, false); } catch (_) { }
-      try { window.addEventListener('focus', this.lifecycleRestoreListener, false); } catch (_) { }
-    }
-
-    unbindLifecycleRestoreEvents() {
-      if (this.lifecycleRestoreListener) {
-        try { document.removeEventListener('visibilitychange', this.lifecycleRestoreListener); } catch (_) { }
-        try { window.removeEventListener('pageshow', this.lifecycleRestoreListener); } catch (_) { }
-        try { window.removeEventListener('focus', this.lifecycleRestoreListener); } catch (_) { }
-        this.lifecycleRestoreListener = null;
-      }
-      if (this._lifecycleRestoreTimer) {
-        clearTimeout(this._lifecycleRestoreTimer);
-        this._lifecycleRestoreTimer = null;
-      }
-    }
-
-    scheduleLifecycleRestore(reason = 'lifecycle', delay = 140) {
-      if (!this.visible) return;
-      if (document.visibilityState === 'hidden') return;
-      const elapsed = now() - this._lastLifecycleRestoreAt;
-      if (elapsed >= 0 && elapsed < 650) return;
-      if (this._lifecycleRestoreTimer) clearTimeout(this._lifecycleRestoreTimer);
-      this._lifecycleRestoreTimer = setTimeout(() => {
-        this._lifecycleRestoreTimer = null;
-        this.restoreVisibleHighlightsAfterLifecycle(reason).catch(() => { });
-      }, delay);
-    }
-
-    async restoreVisibleHighlightsAfterLifecycle(reason = 'lifecycle') {
-      if (!this.visible) return false;
-      if (document.visibilityState === 'hidden') return false;
-      if (this._lifecycleRestoreRunning) {
-        this.scheduleLifecycleRestore(reason, 260);
-        return false;
-      }
-      this._lifecycleRestoreRunning = true;
-      this._lastLifecycleRestoreAt = now();
-      try {
-        if (window.location.href !== this.currentUrl) {
-          await this.handleUrlChange(window.location.href);
-          return true;
-        }
-
-        const loaded = await this.loadState(this.currentUrl, { resetOnMissing: false });
-        const hasMemoryState = this.highlights.size > 0 || (Array.isArray(this.editFragments) && this.editFragments.length > 0);
-        if (!loaded && !hasMemoryState) return false;
-
-        this.cancelRestoreJob();
-        const entries = Array.from(this.highlights.values()).filter(Boolean);
-        const allHighlightsPresent = entries.every(entry => this.isHighlightEntryRestored(entry));
-        if (!allHighlightsPresent) {
-          this.removeAllGroupFrameOverlays();
-          this.clearDomHighlights();
-          this.clearHighlightNoteStaticLabels();
-        }
-        this.restoreHighlightsWithRetry();
-
-        if (this.restoreDisplayOnly) {
-          this.removeToolbar();
-          this.removeCursorStyle();
-        } else {
-          if (!this.toolbar || !document.body || !document.body.contains(this.toolbar)) {
-            this.createPermanentToolbar();
-          }
-          await this._refreshActiveTheme();
-          this.applyToolbarPosition();
-          this.updatePermanentToolbarIndicator();
-          this.updateCursorStyle();
-          if (loaded) await this.persistAutoRestoreMarker(this.currentUrl);
-        }
-        try { this.groupFrameGeometries.clear(); } catch (_) { }
-        try { this.overlayUpdateSoon(); } catch (_) { }
-        return true;
-      } finally {
-        this._lifecycleRestoreRunning = false;
-      }
-    }
-
-    installHistoryHooks() {
-      if (window[HISTORY_HOOK_KEY]) return;
-      try {
-        ['pushState', 'replaceState'].forEach(method => {
-          const original = history[method];
-          if (typeof original !== 'function') return;
-          history[method] = function patchedHistoryMethod(...args) {
-            const result = original.apply(this, args);
-            try {
-              window.dispatchEvent(new Event(URL_CHANGE_EVENT));
-            } catch (_) { }
-            return result;
-          };
-        });
-        window[HISTORY_HOOK_KEY] = true;
-      } catch (_) { }
-    }
-
-    checkUrlChange() {
-      if (window.location.href !== this.currentUrl) {
-        this.handleUrlChange(window.location.href).catch(() => { });
-      }
-    }
-
-    async handleUrlChange(nextUrl) {
-      const oldUrl = this.currentUrl;
-      this.exitMdEditMode({ keepTool: true, silent: true });
-      await this.saveState(oldUrl);
-      this.cancelRestoreJob();
-      this.restoreEditFragmentsDomOnly();
-      this.removeAllGroupFrameOverlays();
-      this.clearDomHighlights();
-      this.clearHighlightNoteStaticLabels();
-      this.highlights.clear();
-      this.editFragments = [];
-      this.currentUrl = nextUrl;
-      this.closePanels();
-      await this.loadState(nextUrl);
-      if (this.visible && !this.restoreDisplayOnly) await this.persistAutoRestoreMarker(nextUrl);
-      if (!this.restoreDisplayOnly) this.applyToolbarPosition();
-      this.restoreHighlightsWithRetry();
-      if (!this.restoreDisplayOnly) {
-        this.updatePermanentToolbarIndicator();
-        this.updateCursorStyle();
-      }
-    }
-
-    handleOutsideClick(event) {
-      const target = event.target;
-      if (!target) return;
-      if (elementFromNode(target)?.closest(UI_SELECTOR)) return;
-      if (elementFromNode(target)?.closest(HIGHLIGHT_ANY_SELECTOR)) return;
-      this.closeTransientPanels();
-    }
-
-    handleHighlightClick(event) {
-      const target = event.target;
-      const noteLabel = target && target.closest && target.closest(`.${NOTE_STATIC_CLASS}[data-highlight-id]`);
-      if (noteLabel && !this.isUiElement(noteLabel)) {
-        if (!this.visible) return;
-        const highlightId = noteLabel.dataset.highlightId || '';
-        const group = this.getGroupElements(highlightId);
-        const el = group[group.length - 1] || group[0] || null;
-        if (!el) return;
-        event.stopPropagation();
-        this.showHighlightActionPanel(el);
-        return;
-      }
-      const el = target && target.closest && target.closest(HIGHLIGHT_ANY_SELECTOR);
-      if (!el || this.isUiElement(el)) return;
-      if (!this.visible) return;
-      event.stopPropagation();
-      this.showHighlightActionPanel(el);
-    }
-
-    closeTransientPanels() {
-      ['activeColorPicker', 'activeToolPicker', 'activeOperationsPanel', 'activeHighlightPanel', 'indicatorPanel'].forEach(key => {
-        this.closeTransientPanelByKey(key);
-      });
-    }
-
-    closeTransientPanelByKey(key) {
-      const el = this[key];
-      if (el) this.untrackPanelPosition(el);
-      if (el && el.parentNode) {
-        el.dataset.open = 'false';
-        el.style.pointerEvents = 'none';
-        const targetEl = el;
-        setTimeout(() => {
-          try { targetEl.remove(); } catch (_) {}
-        }, 150);
-      }
-      this[key] = null;
-      this.releaseCursorForPanelKey(key);
-    }
-
-    releaseCursorForPanelKey(key) {
-      const reasons = {
-        activeColorPicker: ['colorPicker', 'hoverUI'],
-        activeToolPicker: ['toolPicker', 'hoverUI'],
-        activeOperationsPanel: ['operations', 'hoverUI'],
-        activeHighlightPanel: ['hoverUI'],
-        indicatorPanel: ['hoverUI']
-      }[key] || [];
-      reasons.forEach(reason => this._releaseCursor(reason));
-    }
-
-    closePanels() {
-      this.closeTransientPanels();
-      this.exitBatchDeleteMode();
-      if (this._restoreRetryTimer) {
-        clearTimeout(this._restoreRetryTimer);
-        this._restoreRetryTimer = null;
-      }
-      this.cancelRestoreJob();
-      this._panelPositioners.clear();
-      this.teardownPanelRepositionEventsIfIdle();
-      this.selectedHighlightIds.clear();
-      this.selectedEditFragmentIds.clear();
-    }
 
     createToolbarButton(icon, label, onClick, className = '') {
       const btn = document.createElement('button');
@@ -2356,6 +1898,7 @@
       });
     }
 
+
     createIndicatorCapsule() {
       const indicator = document.createElement('div');
       indicator.className = 'permanent-toolbar-indicator';
@@ -2924,6 +2467,492 @@
       return true;
     }
 
+
+    bindEvents() {
+      if (!this.selectionListener) {
+        this.selectionListener = () => {
+          setTimeout(() => this.highlightSelectedText(), 30);
+        };
+        document.addEventListener('mouseup', this.selectionListener, true);
+      }
+      if (!this.beforeUnloadListener) {
+        this.beforeUnloadListener = () => {
+          try { this.requestSave(true); } catch (_) { }
+        };
+        window.addEventListener('beforeunload', this.beforeUnloadListener);
+      }
+      if (!this.documentClickListener) {
+        this.documentClickListener = (event) => this.handleOutsideClick(event);
+        document.addEventListener('mousedown', this.documentClickListener, true);
+      }
+      if (!this.keydownListener) {
+        this.keydownListener = (event) => {
+          if (event.key === 'Escape' && (this.activeColorPicker || this.activeToolPicker || this.activeOperationsPanel || this.activeHighlightPanel || this.indicatorPanel)) {
+            this.closeTransientPanels();
+          }
+        };
+        document.addEventListener('keydown', this.keydownListener, true);
+      }
+      if (!this.cursorPointerListener) {
+        this.cursorPointerListener = (event) => this._handleGlobalPointerMove(event);
+        document.addEventListener('pointermove', this.cursorPointerListener, true);
+        document.addEventListener('pointerdown', this.cursorPointerListener, true);
+      }
+      if (!this.presentationDownListener) {
+        this.presentationDownListener = (event) => this.handlePresentationPointerDown(event);
+        document.addEventListener('pointerdown', this.presentationDownListener, true);
+      }
+      this._attachCursorWatchers();
+      if (!this.externalColorListener) {
+        this.externalColorListener = (event) => {
+          const detail = event && event.detail;
+          if (detail) this.setColor(detail);
+        };
+        window.addEventListener('dev1SnapshotHighlighterSetColor', this.externalColorListener);
+      }
+      if (!this.highlightClickListener) {
+        this.highlightClickListener = (event) => this.handleHighlightClick(event);
+        document.addEventListener('click', this.highlightClickListener, true);
+      }
+      if (!this.urlTimer) {
+        this.urlTimer = setInterval(() => {
+          this.checkUrlChange();
+        }, 500);
+      }
+      if (!this.urlChangeListener) {
+        this.installHistoryHooks();
+        this.urlChangeListener = () => this.checkUrlChange();
+        window.addEventListener(URL_CHANGE_EVENT, this.urlChangeListener);
+        window.addEventListener('popstate', this.urlChangeListener);
+        window.addEventListener('hashchange', this.urlChangeListener);
+      }
+      this.bindLifecycleRestoreEvents();
+      if (!this.overlayRefreshListener) {
+        this.overlayRefreshListener = (event) => {
+          if (event && event.type === 'scroll') {
+            if (this._scrollTimer) clearTimeout(this._scrollTimer);
+            document.body.classList.add('dev1-highlighter-scrolling');
+            this._scrollTimer = setTimeout(() => {
+              document.body.classList.remove('dev1-highlighter-scrolling');
+            }, 150);
+
+            if (this._hasFixedOrStickyHighlights === null) {
+              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
+            }
+            if (!this._hasFixedOrStickyHighlights) {
+              return;
+            }
+            try { this.updateFrameOverlayLayerSize(); } catch (_) { }
+            try { this.groupFrameGeometries.clear(); } catch (_) { }
+            try { this.overlayUpdateSoon(); } catch (_) { }
+            return;
+          }
+          try { this.groupFrameGeometries.clear(); } catch (_) { }
+          try { this.overlayUpdateSoon(); } catch (_) { }
+        };
+        window.addEventListener('resize', this.overlayRefreshListener, { passive: true });
+        window.addEventListener('scroll', this.overlayRefreshListener, { passive: true });
+        document.addEventListener('scroll', this.overlayRefreshListener, true);
+      }
+      if (!this.visualViewportRefreshListener && window.visualViewport) {
+        this.visualViewportRefreshListener = (event) => {
+          if (event && event.type === 'scroll') {
+            if (this._scrollTimer) clearTimeout(this._scrollTimer);
+            document.body.classList.add('dev1-highlighter-scrolling');
+            this._scrollTimer = setTimeout(() => {
+              document.body.classList.remove('dev1-highlighter-scrolling');
+            }, 150);
+
+            if (this._hasFixedOrStickyHighlights === null) {
+              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
+            }
+            if (!this._hasFixedOrStickyHighlights) {
+              return;
+            }
+            try { this.updateFrameOverlayLayerSize(); } catch (_) { }
+            try { this.groupFrameGeometries.clear(); } catch (_) { }
+            try { this.overlayUpdateSoon(); } catch (_) { }
+            return;
+          }
+          try { this.groupFrameGeometries.clear(); } catch (_) { }
+          try { this.overlayUpdateSoon(); } catch (_) { }
+        };
+        try {
+          window.visualViewport.addEventListener('resize', this.visualViewportRefreshListener, { passive: true });
+          window.visualViewport.addEventListener('scroll', this.visualViewportRefreshListener, { passive: true });
+        } catch (_) { }
+      }
+    }
+
+    bindRestoreOnlyEvents() {
+      if (!this.beforeUnloadListener) {
+        this.beforeUnloadListener = () => {
+          try { this.requestSave(true); } catch (_) { }
+        };
+        window.addEventListener('beforeunload', this.beforeUnloadListener);
+      }
+      if (!this.documentClickListener) {
+        this.documentClickListener = (event) => this.handleOutsideClick(event);
+        document.addEventListener('mousedown', this.documentClickListener, true);
+      }
+      if (!this.keydownListener) {
+        this.keydownListener = (event) => {
+          if (event.key === 'Escape' && (this.activeColorPicker || this.activeToolPicker || this.activeOperationsPanel || this.activeHighlightPanel || this.indicatorPanel)) {
+            this.closeTransientPanels();
+          }
+        };
+        document.addEventListener('keydown', this.keydownListener, true);
+      }
+      if (!this.highlightClickListener) {
+        this.highlightClickListener = (event) => this.handleHighlightClick(event);
+        document.addEventListener('click', this.highlightClickListener, true);
+      }
+      if (!this.urlTimer) {
+        this.urlTimer = setInterval(() => {
+          this.checkUrlChange();
+        }, 500);
+      }
+      if (!this.urlChangeListener) {
+        this.installHistoryHooks();
+        this.urlChangeListener = () => this.checkUrlChange();
+        window.addEventListener(URL_CHANGE_EVENT, this.urlChangeListener);
+        window.addEventListener('popstate', this.urlChangeListener);
+        window.addEventListener('hashchange', this.urlChangeListener);
+      }
+      this.bindLifecycleRestoreEvents();
+      if (!this.overlayRefreshListener) {
+        this.overlayRefreshListener = (event) => {
+          if (event && event.type === 'scroll') {
+            if (this._scrollTimer) clearTimeout(this._scrollTimer);
+            document.body.classList.add('dev1-highlighter-scrolling');
+            this._scrollTimer = setTimeout(() => {
+              document.body.classList.remove('dev1-highlighter-scrolling');
+            }, 150);
+
+            if (this._hasFixedOrStickyHighlights === null) {
+              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
+            }
+            if (!this._hasFixedOrStickyHighlights) {
+              return;
+            }
+            try { this.updateFrameOverlayLayerSize(); } catch (_) { }
+            try { this.groupFrameGeometries.clear(); } catch (_) { }
+            try { this.overlayUpdateSoon(); } catch (_) { }
+            return;
+          }
+          try { this.groupFrameGeometries.clear(); } catch (_) { }
+          try { this.overlayUpdateSoon(); } catch (_) { }
+        };
+        window.addEventListener('resize', this.overlayRefreshListener, { passive: true });
+        window.addEventListener('scroll', this.overlayRefreshListener, { passive: true });
+        document.addEventListener('scroll', this.overlayRefreshListener, true);
+      }
+      if (!this.visualViewportRefreshListener && window.visualViewport) {
+        this.visualViewportRefreshListener = (event) => {
+          if (event && event.type === 'scroll') {
+            if (this._scrollTimer) clearTimeout(this._scrollTimer);
+            document.body.classList.add('dev1-highlighter-scrolling');
+            this._scrollTimer = setTimeout(() => {
+              document.body.classList.remove('dev1-highlighter-scrolling');
+            }, 150);
+
+            if (this._hasFixedOrStickyHighlights === null) {
+              this._hasFixedOrStickyHighlights = this._checkFixedOrStickyHighlights();
+            }
+            if (!this._hasFixedOrStickyHighlights) {
+              return;
+            }
+            try { this.updateFrameOverlayLayerSize(); } catch (_) { }
+            try { this.groupFrameGeometries.clear(); } catch (_) { }
+            try { this.overlayUpdateSoon(); } catch (_) { }
+            return;
+          }
+          try { this.groupFrameGeometries.clear(); } catch (_) { }
+          try { this.overlayUpdateSoon(); } catch (_) { }
+        };
+        try {
+          window.visualViewport.addEventListener('resize', this.visualViewportRefreshListener, { passive: true });
+          window.visualViewport.addEventListener('scroll', this.visualViewportRefreshListener, { passive: true });
+        } catch (_) { }
+      }
+    }
+
+    unbindEvents() {
+      if (this.selectionListener) {
+        document.removeEventListener('mouseup', this.selectionListener, true);
+        this.selectionListener = null;
+      }
+      if (this.beforeUnloadListener) {
+        window.removeEventListener('beforeunload', this.beforeUnloadListener);
+        this.beforeUnloadListener = null;
+      }
+      if (this.documentClickListener) {
+        document.removeEventListener('mousedown', this.documentClickListener, true);
+        this.documentClickListener = null;
+      }
+      if (this.keydownListener) {
+        document.removeEventListener('keydown', this.keydownListener, true);
+        this.keydownListener = null;
+      }
+      if (this.cursorPointerListener) {
+        document.removeEventListener('pointermove', this.cursorPointerListener, true);
+        document.removeEventListener('pointerdown', this.cursorPointerListener, true);
+        this.cursorPointerListener = null;
+      }
+      if (this.presentationDownListener) {
+        document.removeEventListener('pointerdown', this.presentationDownListener, true);
+        this.presentationDownListener = null;
+      }
+      const pOverlay = document.getElementById('dev1-presentation-pen-overlay');
+      if (pOverlay) pOverlay.remove();
+      this._detachCursorWatchers();
+      if (this.externalColorListener) {
+        window.removeEventListener('dev1SnapshotHighlighterSetColor', this.externalColorListener);
+        this.externalColorListener = null;
+      }
+      if (this.highlightClickListener) {
+        document.removeEventListener('click', this.highlightClickListener, true);
+        this.highlightClickListener = null;
+      }
+      if (this.urlTimer) {
+        clearInterval(this.urlTimer);
+        this.urlTimer = null;
+      }
+      if (this.urlChangeListener) {
+        window.removeEventListener(URL_CHANGE_EVENT, this.urlChangeListener);
+        window.removeEventListener('popstate', this.urlChangeListener);
+        window.removeEventListener('hashchange', this.urlChangeListener);
+        this.urlChangeListener = null;
+      }
+      this.unbindLifecycleRestoreEvents();
+      if (this.overlayRefreshListener) {
+        window.removeEventListener('resize', this.overlayRefreshListener);
+        window.removeEventListener('scroll', this.overlayRefreshListener);
+        document.removeEventListener('scroll', this.overlayRefreshListener, true);
+        this.overlayRefreshListener = null;
+      }
+      if (this.visualViewportRefreshListener && window.visualViewport) {
+        try {
+          window.visualViewport.removeEventListener('resize', this.visualViewportRefreshListener);
+          window.visualViewport.removeEventListener('scroll', this.visualViewportRefreshListener);
+        } catch (_) { }
+        this.visualViewportRefreshListener = null;
+      }
+    }
+
+    bindLifecycleRestoreEvents() {
+      if (this.lifecycleRestoreListener) return;
+      this.lifecycleRestoreListener = (event) => {
+        const type = safeString(event && event.type) || 'lifecycle';
+        if (type === 'visibilitychange' && document.visibilityState === 'hidden') return;
+        this.scheduleLifecycleRestore(type);
+      };
+      try { document.addEventListener('visibilitychange', this.lifecycleRestoreListener, { passive: true }); } catch (_) { }
+      try { window.addEventListener('pageshow', this.lifecycleRestoreListener, false); } catch (_) { }
+      try { window.addEventListener('focus', this.lifecycleRestoreListener, false); } catch (_) { }
+    }
+
+    unbindLifecycleRestoreEvents() {
+      if (this.lifecycleRestoreListener) {
+        try { document.removeEventListener('visibilitychange', this.lifecycleRestoreListener); } catch (_) { }
+        try { window.removeEventListener('pageshow', this.lifecycleRestoreListener); } catch (_) { }
+        try { window.removeEventListener('focus', this.lifecycleRestoreListener); } catch (_) { }
+        this.lifecycleRestoreListener = null;
+      }
+      if (this._lifecycleRestoreTimer) {
+        clearTimeout(this._lifecycleRestoreTimer);
+        this._lifecycleRestoreTimer = null;
+      }
+    }
+
+    scheduleLifecycleRestore(reason = 'lifecycle', delay = 140) {
+      if (!this.visible) return;
+      if (document.visibilityState === 'hidden') return;
+      const elapsed = now() - this._lastLifecycleRestoreAt;
+      if (elapsed >= 0 && elapsed < 650) return;
+      if (this._lifecycleRestoreTimer) clearTimeout(this._lifecycleRestoreTimer);
+      this._lifecycleRestoreTimer = setTimeout(() => {
+        this._lifecycleRestoreTimer = null;
+        this.restoreVisibleHighlightsAfterLifecycle(reason).catch(() => { });
+      }, delay);
+    }
+
+    async restoreVisibleHighlightsAfterLifecycle(reason = 'lifecycle') {
+      if (!this.visible) return false;
+      if (document.visibilityState === 'hidden') return false;
+      if (this._lifecycleRestoreRunning) {
+        this.scheduleLifecycleRestore(reason, 260);
+        return false;
+      }
+      this._lifecycleRestoreRunning = true;
+      this._lastLifecycleRestoreAt = now();
+      try {
+        if (window.location.href !== this.currentUrl) {
+          await this.handleUrlChange(window.location.href);
+          return true;
+        }
+
+        const loaded = await this.loadState(this.currentUrl, { resetOnMissing: false });
+        const hasMemoryState = this.highlights.size > 0 || (Array.isArray(this.editFragments) && this.editFragments.length > 0);
+        if (!loaded && !hasMemoryState) return false;
+
+        this.cancelRestoreJob();
+        const entries = Array.from(this.highlights.values()).filter(Boolean);
+        const allHighlightsPresent = entries.every(entry => this.isHighlightEntryRestored(entry));
+        if (!allHighlightsPresent) {
+          this.removeAllGroupFrameOverlays();
+          this.clearDomHighlights();
+          this.clearHighlightNoteStaticLabels();
+        }
+        this.restoreHighlightsWithRetry();
+
+        if (this.restoreDisplayOnly) {
+          this.removeToolbar();
+          this.removeCursorStyle();
+        } else {
+          if (!this.toolbar || !document.body || !document.body.contains(this.toolbar)) {
+            this.createPermanentToolbar();
+          }
+          await this._refreshActiveTheme();
+          this.applyToolbarPosition();
+          this.updatePermanentToolbarIndicator();
+          this.updateCursorStyle();
+          if (loaded) await this.persistAutoRestoreMarker(this.currentUrl);
+        }
+        try { this.groupFrameGeometries.clear(); } catch (_) { }
+        try { this.overlayUpdateSoon(); } catch (_) { }
+        return true;
+      } finally {
+        this._lifecycleRestoreRunning = false;
+      }
+    }
+
+    installHistoryHooks() {
+      if (window[HISTORY_HOOK_KEY]) return;
+      try {
+        ['pushState', 'replaceState'].forEach(method => {
+          const original = history[method];
+          if (typeof original !== 'function') return;
+          history[method] = function patchedHistoryMethod(...args) {
+            const result = original.apply(this, args);
+            try {
+              window.dispatchEvent(new Event(URL_CHANGE_EVENT));
+            } catch (_) { }
+            return result;
+          };
+        });
+        window[HISTORY_HOOK_KEY] = true;
+      } catch (_) { }
+    }
+
+    checkUrlChange() {
+      if (window.location.href !== this.currentUrl) {
+        this.handleUrlChange(window.location.href).catch(() => { });
+      }
+    }
+
+    async handleUrlChange(nextUrl) {
+      const oldUrl = this.currentUrl;
+      this.exitMdEditMode({ keepTool: true, silent: true });
+      await this.saveState(oldUrl);
+      this.cancelRestoreJob();
+      this.restoreEditFragmentsDomOnly();
+      this.removeAllGroupFrameOverlays();
+      this.clearDomHighlights();
+      this.clearHighlightNoteStaticLabels();
+      this.highlights.clear();
+      this.editFragments = [];
+      this.currentUrl = nextUrl;
+      this.closePanels();
+      await this.loadState(nextUrl);
+      if (this.visible && !this.restoreDisplayOnly) await this.persistAutoRestoreMarker(nextUrl);
+      if (!this.restoreDisplayOnly) this.applyToolbarPosition();
+      this.restoreHighlightsWithRetry();
+      if (!this.restoreDisplayOnly) {
+        this.updatePermanentToolbarIndicator();
+        this.updateCursorStyle();
+      }
+    }
+
+    handleOutsideClick(event) {
+      const target = event.target;
+      if (!target) return;
+      if (elementFromNode(target)?.closest(UI_SELECTOR)) return;
+      if (elementFromNode(target)?.closest(HIGHLIGHT_ANY_SELECTOR)) return;
+      this.closeTransientPanels();
+    }
+
+    handleHighlightClick(event) {
+      const target = event.target;
+      const noteLabel = target && target.closest && target.closest(`.${NOTE_STATIC_CLASS}[data-highlight-id]`);
+      if (noteLabel && !this.isUiElement(noteLabel)) {
+        if (!this.visible) return;
+        const highlightId = noteLabel.dataset.highlightId || '';
+        const group = this.getGroupElements(highlightId);
+        const el = group[group.length - 1] || group[0] || null;
+        if (!el) return;
+        event.stopPropagation();
+        this.showHighlightActionPanel(el);
+        return;
+      }
+      const el = target && target.closest && target.closest(HIGHLIGHT_ANY_SELECTOR);
+      if (!el || this.isUiElement(el)) return;
+      if (!this.visible) return;
+      event.stopPropagation();
+      this.showHighlightActionPanel(el);
+    }
+
+    closeTransientPanels() {
+      ['activeColorPicker', 'activeToolPicker', 'activeOperationsPanel', 'activeHighlightPanel', 'indicatorPanel'].forEach(key => {
+        this.closeTransientPanelByKey(key);
+      });
+    }
+
+    closeTransientPanelByKey(key) {
+      const el = this[key];
+      if (el) this.untrackPanelPosition(el);
+      if (el && el.parentNode) {
+        el.dataset.open = 'false';
+        el.style.pointerEvents = 'none';
+        const targetEl = el;
+        setTimeout(() => {
+          try { targetEl.remove(); } catch (_) {}
+        }, 150);
+      }
+      this[key] = null;
+      this.releaseCursorForPanelKey(key);
+    }
+
+    releaseCursorForPanelKey(key) {
+      const reasons = {
+        activeColorPicker: ['colorPicker', 'hoverUI'],
+        activeToolPicker: ['toolPicker', 'hoverUI'],
+        activeOperationsPanel: ['operations', 'hoverUI'],
+        activeHighlightPanel: ['hoverUI'],
+        indicatorPanel: ['hoverUI']
+      }[key] || [];
+      reasons.forEach(reason => this._releaseCursor(reason));
+    }
+
+    closePanels() {
+      this.closeTransientPanels();
+      this.exitBatchDeleteMode();
+      if (this._restoreRetryTimer) {
+        clearTimeout(this._restoreRetryTimer);
+        this._restoreRetryTimer = null;
+      }
+      this.cancelRestoreJob();
+      this._panelPositioners.clear();
+      this.teardownPanelRepositionEventsIfIdle();
+      this.selectedHighlightIds.clear();
+      this.selectedEditFragmentIds.clear();
+    }
+
+// =================================================================================
+// III. PICKERS & OPERATIONS (选择器与操作面板)
+// =================================================================================
+
+
     createPanel(className, anchor) {
       try {
         const cleanClass = className.split(' ')[0];
@@ -3238,6 +3267,7 @@
       }
       this.selectTool(tool);
     }
+
 
     showColorPicker(anchor, options = {}) {
       if (this.activeColorPicker && this.activeColorPicker.parentNode) {
@@ -3976,6 +4006,7 @@
       });
       return colors;
     }
+
 
     showToolPicker(anchor, options = {}) {
       if (this.activeToolPicker && this.activeToolPicker.parentNode) {
@@ -4926,6 +4957,7 @@
       return null;
     }
 
+
     showOperationsPanel(anchor) {
       if (this.activeOperationsPanel && this.activeOperationsPanel.parentNode) {
         this.closeTransientPanelByKey('activeOperationsPanel');
@@ -5382,6 +5414,443 @@
       if (!id) return;
       this.selectEditFragment(id, !this.selectedEditFragmentIds.has(id));
     }
+
+// =================================================================================
+// IV. SELECTION, HIGHLIGHT CREATION & STYLES (选区、高亮创建与样式)
+// =================================================================================
+
+
+    isRainbowColor(color) {
+      return safeString(color).startsWith('special:rainbow');
+    }
+
+    getRainbowVariant(color) {
+      return /random/i.test(safeString(color)) ? 'random' : 'fixed';
+    }
+
+    getRainbowPalette(color = '', element = null) {
+      const palette = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#00c7ff', '#007aff', '#af52de'];
+      if (!this.isRainbowColor(color) || this.getRainbowVariant(color) !== 'random') return palette;
+      const seed = this.ensureRainbowSeed(element, color);
+      const offset = Math.abs(seed) % palette.length;
+      return palette.slice(offset).concat(palette.slice(0, offset));
+    }
+
+    ensureRainbowSeed(element, color = '') {
+      if (!this.isRainbowColor(color)) return 0;
+      const variant = this.getRainbowVariant(color);
+      if (!element || typeof element.getAttribute !== 'function') return variant === 'fixed' ? 0 : this._seedFromId(`${this.currentUrl}:${color}`);
+      if (variant === 'fixed') {
+        try { element.setAttribute('data-random-seed', '0'); } catch (_) { }
+        return 0;
+      }
+      const existing = Number(element.getAttribute('data-random-seed'));
+      if (Number.isFinite(existing) && existing > 0) return existing;
+      const id = safeString(element.getAttribute('data-highlight-id'));
+      const text = safeString(element.textContent).slice(0, 80);
+      const seed = this._seedFromId(id || `${this.currentUrl}:${text}:${color}`) || 137;
+      try { element.setAttribute('data-random-seed', String(seed)); } catch (_) { }
+      return seed;
+    }
+
+    seedFromString(value) {
+      const raw = hashUrl(safeString(value));
+      const seed = parseInt(raw.slice(0, 10), 36);
+      return Number.isFinite(seed) ? Math.abs(seed) : 0;
+    }
+
+    _seedFromId(id = '') {
+      try {
+        let s = 0;
+        const text = safeString(id);
+        for (let i = 0; i < text.length; i += 1) {
+          s = (s * 131 + text.charCodeAt(i)) | 0;
+        }
+        s = Math.abs(s % 360);
+        return s === 0 ? 137 : s;
+      } catch (_) {
+        return Math.floor(Math.random() * 359) + 1;
+      }
+    }
+
+    getRainbowRepresentativeColor(color, element = null) {
+      const palette = this.getRainbowPalette(color, element);
+      const seed = this.ensureRainbowSeed(element, color);
+      return palette[Math.abs(seed || 0) % palette.length] || palette[0];
+    }
+
+    buildRainbowStops(color = '', element = null, alpha = 1) {
+      const palette = this.getRainbowPalette(color, element);
+      const colors = palette.concat(palette[0]);
+      return colors.map(item => alpha >= 1 ? item : rgbaFromHex(item, alpha)).join(', ');
+    }
+
+    _buildRainbowGradient(element, seed = 0, bands = null, alphaOverride = null) {
+      const textLen = safeString(element && element.textContent).trim().length;
+      const steps = bands || Math.max(18, Math.min(36, Math.floor((textLen || 8) * 1.2)));
+      let s = (seed || 0) >>> 0;
+      const rnd = () => {
+        s ^= s << 13;
+        s ^= s >>> 17;
+        s ^= s << 5;
+        return ((s >>> 0) / 4294967296);
+      };
+      const phase = seed ? rnd() * 360 : 0;
+      const alpha = typeof alphaOverride === 'number'
+        ? Math.min(1, Math.max(0, alphaOverride))
+        : 0.98;
+      const alphaStr = alpha.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+      const ease = x => x * x * (3 - 2 * x);
+      const stops = [];
+      for (let i = 0; i < steps; i += 1) {
+        const t = steps <= 1 ? 0 : i / (steps - 1);
+        const jitter = seed ? (Math.sin(t * Math.PI * 1.5 + phase / 57.2958) * 8) : 0;
+        let hue = (t * 360 + phase + jitter) % 360;
+        if (hue < 0) hue += 360;
+        const sat = 72 + Math.round(12 * ease(0.5 + (Math.sin((t + 0.1) * Math.PI * 2) * 0.5)));
+        const lig = 64 + Math.round(6 * ease(0.5 + (Math.cos((t + 0.15) * Math.PI * 2) * 0.5)));
+        const pos = (t * 100).toFixed(2);
+        stops.push(`hsla(${Math.round(hue)}, ${sat}%, ${lig}%, ${alphaStr}) ${pos}%`);
+      }
+      const angleDeg = seed ? `${(Math.abs(seed) % 360) || 1}deg` : '90deg';
+      return `linear-gradient(${angleDeg}, ${stops.join(', ')})`;
+    }
+
+    _buildRainbowGradientPreview(seed = 0) {
+      return this._buildRainbowGradient({ textContent: 'preview' }, Math.floor(Number(seed) || 0), 5);
+    }
+
+    buildRainbowGradient(color = '', element = null, alpha = 1) {
+      const seed = this.ensureRainbowSeed(element, color);
+      const alphaOverride = typeof alpha === 'number' ? alpha : null;
+      return this._buildRainbowGradient(element || { textContent: '' }, seed, null, alphaOverride);
+    }
+
+    isTransparentColor(color) {
+      try {
+        const raw = safeString(color).trim().toLowerCase();
+        if (!raw) return false;
+        if (raw === 'transparent') return true;
+        const rgba = raw.match(/^rgba\s*\(([^)]+)\)$/);
+        if (!rgba) return false;
+        const parts = rgba[1].split(',').map(part => Number(part.trim()));
+        return parts.length >= 4 && Number.isFinite(parts[3]) && parts[3] <= 0;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    neutralColor(lightAlpha = 0.14, darkAlpha = 0.2) {
+      return this.darkModeEnabled
+        ? `rgba(226, 232, 240, ${darkAlpha})`
+        : `rgba(15, 23, 42, ${lightAlpha})`;
+    }
+
+    hexToRgba(color, alpha) {
+      const normalized = normalizeCssColor(color);
+      if (/^#[0-9a-f]{3}$/i.test(normalized)) {
+        const expanded = `#${normalized.slice(1).split('').map(ch => ch + ch).join('')}`;
+        return rgbaFromHex(expanded, alpha);
+      }
+      if (/^#[0-9a-f]{6}$/i.test(normalized)) return rgbaFromHex(normalized, alpha);
+      const [r, g, b] = parseCssColor(normalized || color);
+      return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha})`;
+    }
+
+    interpolateColor(colorA, colorB, progress = 0) {
+      const [r1, g1, b1] = parseCssColor(colorA);
+      const [r2, g2, b2] = parseCssColor(colorB);
+      const t = Math.max(0, Math.min(1, Number(progress) || 0));
+      const toHex = value => Math.round(Math.max(0, Math.min(255, value))).toString(16).padStart(2, '0');
+      return `#${toHex(r1 + (r2 - r1) * t)}${toHex(g1 + (g2 - g1) * t)}${toHex(b1 + (b2 - b1) * t)}`;
+    }
+
+
+    ensureGlobalDefs() {
+      if (this._globalDefsSvg && document.body.contains(this._globalDefsSvg)) return this._globalDefsSvg;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('id', 'dev1-global-rb-defs');
+      svg.setAttribute('width', '0');
+      svg.setAttribute('height', '0');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.style.position = 'absolute';
+      svg.style.width = '0';
+      svg.style.height = '0';
+      svg.style.overflow = 'hidden';
+      svg.style.pointerEvents = 'none';
+      svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'defs'));
+      document.body.appendChild(svg);
+      this._globalDefsSvg = svg;
+      return svg;
+    }
+
+    getRainbowGradientId(seedVal = 0) {
+      try {
+        const svg = this.ensureGlobalDefs();
+        const defs = svg.querySelector('defs');
+        const seed = Math.abs(Number(seedVal) || 0);
+        const id = `dev1RbGradSeed_${seed}`;
+        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
+        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+        gradient.setAttribute('id', id);
+        gradient.setAttribute('x1', '0%');
+        gradient.setAttribute('y1', '0%');
+        gradient.setAttribute('x2', '100%');
+        gradient.setAttribute('y2', '0%');
+        const steps = 18;
+        const phase = seed ? seed % 360 : 0;
+        for (let i = 0; i < steps; i += 1) {
+          const t = i / (steps - 1);
+          const hue = Math.round((phase + t * 360) % 360);
+          const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+          stop.setAttribute('offset', `${(t * 100).toFixed(2)}%`);
+          stop.setAttribute('stop-color', `hsl(${hue}, 82%, 64%)`);
+          gradient.appendChild(stop);
+        }
+        defs.appendChild(gradient);
+        return id;
+      } catch (_) {
+        return 'dev1RbGradSeed_0';
+      }
+    }
+
+    getMonoGradientId(color, isTransparent) {
+      try {
+        const svg = this.ensureGlobalDefs();
+        const defs = svg.querySelector('defs');
+        const cleanColor = color.replace(/[^a-zA-Z0-9]/g, '');
+        const id = `dev1MonoGrad_${cleanColor}_${isTransparent ? 't' : 'o'}`;
+        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
+        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+        gradient.setAttribute('id', id);
+        gradient.setAttribute('x1', '0%');
+        gradient.setAttribute('y1', '0%');
+        gradient.setAttribute('x2', '100%');
+        gradient.setAttribute('y2', '0%');
+        
+        const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop1.setAttribute('offset', '0%');
+        stop1.setAttribute('stop-color', color);
+        stop1.setAttribute('stop-opacity', '0.85');
+        
+        const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop2.setAttribute('offset', '100%');
+        stop2.setAttribute('stop-color', color);
+        stop2.setAttribute('stop-opacity', isTransparent ? '0.14' : '0.2');
+        
+        gradient.appendChild(stop1);
+        gradient.appendChild(stop2);
+        defs.appendChild(gradient);
+        return id;
+      } catch (_) {
+        return '';
+      }
+    }
+
+    getSpotlightGradientId(color, isTransparent) {
+      try {
+        const svg = this.ensureGlobalDefs();
+        const defs = svg.querySelector('defs');
+        const cleanColor = color.replace(/[^a-zA-Z0-9]/g, '');
+        const id = `dev1SpotGrad_${cleanColor}_${isTransparent ? 't' : 'o'}`;
+        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
+        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+        gradient.setAttribute('id', id);
+        gradient.setAttribute('cx', '50%');
+        gradient.setAttribute('cy', '50%');
+        gradient.setAttribute('r', '70%');
+        
+        const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop1.setAttribute('offset', '0%');
+        stop1.setAttribute('stop-color', color);
+        stop1.setAttribute('stop-opacity', isTransparent ? '0.18' : '0.35');
+        
+        const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop2.setAttribute('offset', '100%');
+        stop2.setAttribute('stop-color', color);
+        stop2.setAttribute('stop-opacity', '0');
+        
+        gradient.appendChild(stop1);
+        gradient.appendChild(stop2);
+        defs.appendChild(gradient);
+        return id;
+      } catch (_) {
+        return '';
+      }
+    }
+
+    getRainbowRadialGradientId(seedVal = 0) {
+      try {
+        const svg = this.ensureGlobalDefs();
+        const defs = svg.querySelector('defs');
+        const seed = Math.abs(Number(seedVal) || 0);
+        const id = `dev1RbRadialGradSeed_${seed}`;
+        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
+        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+        gradient.setAttribute('id', id);
+        gradient.setAttribute('cx', '50%');
+        gradient.setAttribute('cy', '50%');
+        gradient.setAttribute('r', '70%');
+        const steps = 18;
+        const phase = seed ? seed % 360 : 0;
+        for (let i = 0; i < steps; i += 1) {
+          const t = i / (steps - 1);
+          const hue = Math.round((phase + t * 360) % 360);
+          const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+          stop.setAttribute('offset', `${(t * 100).toFixed(2)}%`);
+          stop.setAttribute('stop-color', `hsl(${hue}, 82%, 64%)`);
+          stop.setAttribute('stop-opacity', String((1 - t) * 0.35));
+          gradient.appendChild(stop);
+        }
+        defs.appendChild(gradient);
+        return id;
+      } catch (_) {
+        return 'dev1RbRadialGradSeed_0';
+      }
+    }
+
+    ensureSharedResizeObserver() {
+      if (this._sharedRO) return this._sharedRO;
+      try {
+        this._sharedRO = new ResizeObserver(entries => {
+          entries.forEach(entry => {
+            const el = entry.target;
+            if (el && el._dev1RbLineMeta) this._pendingRainbowRenders.add(el);
+          });
+          if (this._rafRainbowScheduled) return;
+          this._rafRainbowScheduled = true;
+          requestAnimationFrame(() => {
+            this._rafRainbowScheduled = false;
+            const items = Array.from(this._pendingRainbowRenders);
+            this._pendingRainbowRenders.clear();
+            items.forEach(el => this._rerenderRainbowLineElement(el));
+          });
+        });
+      } catch (_) {
+        this._sharedRO = null;
+      }
+      return this._sharedRO;
+    }
+
+    renderRainbowLineAfterLayout(element, kind, seed = 0, opts = {}) {
+      if (!element) return;
+      try { element._dev1RbLineMeta = { kind, seed, opts }; } catch (_) { }
+      const ro = this.ensureSharedResizeObserver();
+      try { if (ro) ro.observe(element); } catch (_) { }
+      requestAnimationFrame(() => this._renderRainbowLine(element, kind, seed, opts));
+    }
+
+    _rerenderRainbowLineElement(element) {
+      try {
+        const meta = element && element._dev1RbLineMeta;
+        if (!meta) return;
+        this._renderRainbowLine(element, meta.kind, meta.seed, meta.opts || {});
+      } catch (_) { }
+    }
+
+    removeRainbowLine(element, clearMeta = true) {
+      if (!element) return;
+      try { element.querySelectorAll(':scope > .rb-line-ov').forEach(node => node.remove()); } catch (_) { }
+      if (clearMeta) {
+        try { delete element._dev1RbLineMeta; } catch (_) { }
+      }
+    }
+
+    _renderRainbowLine(element, kind, seed = 0, opts = {}) {
+      if (!element || !document.body.contains(element)) return;
+      this.removeRainbowLine(element, false);
+      const rect = element.getBoundingClientRect();
+      if (!rect || rect.width <= 1 || rect.height <= 1) return;
+      let rects = [];
+      try {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        rects = Array.from(range.getClientRects()).filter(r => r.width > 1 && r.height > 1);
+        range.detach();
+      } catch (_) { }
+      if (!rects.length) rects = [rect];
+      if (!element.style.position || element.style.position === 'static') element.style.position = 'relative';
+      try {
+        element.style.boxDecorationBreak = 'clone';
+        element.style.webkitBoxDecorationBreak = 'clone';
+      } catch (_) { }
+      const overlay = document.createElement('span');
+      overlay.className = 'rb-line-ov';
+      overlay.setAttribute('aria-hidden', 'true');
+      overlay.style.position = 'absolute';
+      overlay.style.left = '0';
+      overlay.style.top = '0';
+      overlay.style.width = `${Math.max(1, rect.width)}px`;
+      overlay.style.height = `${Math.max(1, rect.height)}px`;
+      overlay.style.pointerEvents = 'none';
+      overlay.style.overflow = 'visible';
+      overlay.style.zIndex = '2';
+      const gradientId = this.getRainbowGradientId(seed);
+      const thickness = Math.max(1, Number(opts.thickness || 2));
+      const gap = Math.max(1, Number(opts.gap || 3));
+      const amp = Math.max(1, Number(opts.amplitude || 2));
+      const period = Math.max(8, Number(opts.period || 12));
+      const offset = Number(opts.offset || 2);
+      const makeWavyPath = (width, y) => {
+        let d = `M 0 ${y}`;
+        for (let x = 0; x < width; x += period) {
+          const x1 = Math.min(width, x + period / 2);
+          const x2 = Math.min(width, x + period);
+          d += ` C ${x + period / 4} ${y - amp}, ${x1 - period / 4} ${y - amp}, ${x1} ${y}`;
+          d += ` S ${x2 - period / 4} ${y + amp}, ${x2} ${y}`;
+        }
+        return d;
+      };
+      rects.forEach(lineRect => {
+        const width = Math.max(1, lineRect.width);
+        const height = Math.max(1, lineRect.height + offset + thickness + gap + amp * 2);
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', String(width));
+        svg.setAttribute('height', String(height));
+        svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+        svg.style.position = 'absolute';
+        svg.style.left = `${lineRect.left - rect.left}px`;
+        svg.style.top = `${lineRect.top - rect.top}px`;
+        svg.style.overflow = 'visible';
+        const y = opts.position === 'middle'
+          ? Math.max(thickness, lineRect.height / 2)
+          : Math.max(thickness, lineRect.height + offset);
+        const stroke = `url(#${gradientId})`;
+        const drawLine = (yPos, dash = '') => {
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', '0');
+          line.setAttribute('x2', String(width));
+          line.setAttribute('y1', String(yPos));
+          line.setAttribute('y2', String(yPos));
+          line.setAttribute('stroke', stroke);
+          line.setAttribute('stroke-width', String(thickness));
+          line.setAttribute('stroke-linecap', 'round');
+          if (dash) line.setAttribute('stroke-dasharray', dash);
+          svg.appendChild(line);
+        };
+        if (kind === 'wavy') {
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', makeWavyPath(width, y));
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke', stroke);
+          path.setAttribute('stroke-width', String(thickness));
+          path.setAttribute('stroke-linecap', 'round');
+          svg.appendChild(path);
+        } else if (kind === 'double') {
+          drawLine(y, '');
+          drawLine(y + gap + thickness, '');
+        } else if (kind === 'dotted') {
+          drawLine(y, `0 ${Math.max(4, thickness * 3)}`);
+        } else if (kind === 'dashed') {
+          drawLine(y, `${Math.max(6, thickness * 4)} ${Math.max(4, thickness * 2)}`);
+        } else {
+          drawLine(y, '');
+        }
+        overlay.appendChild(svg);
+      });
+      element.appendChild(overlay);
+    }
+
 
     highlightSelectedText() {
       if (!this.visible || this.isPdfLikePage()) return;
@@ -6393,6 +6862,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       return temp.innerHTML;
     }
 
+
     createHighlight(selection, text) {
       let range = null;
       try { range = selection.getRangeAt(0).cloneRange(); } catch (_) { }
@@ -6547,6 +7017,7 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       this.scheduleElementEffectRefresh(span, toolStyle, color);
       return span;
     }
+
 
     applyHighlightStyles(element, color = this.currentColor, toolStyle = 'highlight', textColorOverride = '') {
       const tool = toolStyle || 'highlight';
@@ -7748,6 +8219,11 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       }
     }
 
+// =================================================================================
+// V. EFFECTS, CURSOR & OVERLAYS (效果、光标与覆盖层)
+// =================================================================================
+
+
     renderPresentationPenSettings(content, pickerContext = null) {
       const notice = document.createElement('div');
       notice.className = 'dev1-dynamic-mhtml-notice';
@@ -8397,150 +8873,6 @@ body[data-dev1-snapshot-md-editing="true"] [data-dev1-snapshot-highlighter-ui="t
       return null;
     }
 
-    isRainbowColor(color) {
-      return safeString(color).startsWith('special:rainbow');
-    }
-
-    getRainbowVariant(color) {
-      return /random/i.test(safeString(color)) ? 'random' : 'fixed';
-    }
-
-    getRainbowPalette(color = '', element = null) {
-      const palette = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#00c7ff', '#007aff', '#af52de'];
-      if (!this.isRainbowColor(color) || this.getRainbowVariant(color) !== 'random') return palette;
-      const seed = this.ensureRainbowSeed(element, color);
-      const offset = Math.abs(seed) % palette.length;
-      return palette.slice(offset).concat(palette.slice(0, offset));
-    }
-
-    ensureRainbowSeed(element, color = '') {
-      if (!this.isRainbowColor(color)) return 0;
-      const variant = this.getRainbowVariant(color);
-      if (!element || typeof element.getAttribute !== 'function') return variant === 'fixed' ? 0 : this._seedFromId(`${this.currentUrl}:${color}`);
-      if (variant === 'fixed') {
-        try { element.setAttribute('data-random-seed', '0'); } catch (_) { }
-        return 0;
-      }
-      const existing = Number(element.getAttribute('data-random-seed'));
-      if (Number.isFinite(existing) && existing > 0) return existing;
-      const id = safeString(element.getAttribute('data-highlight-id'));
-      const text = safeString(element.textContent).slice(0, 80);
-      const seed = this._seedFromId(id || `${this.currentUrl}:${text}:${color}`) || 137;
-      try { element.setAttribute('data-random-seed', String(seed)); } catch (_) { }
-      return seed;
-    }
-
-    seedFromString(value) {
-      const raw = hashUrl(safeString(value));
-      const seed = parseInt(raw.slice(0, 10), 36);
-      return Number.isFinite(seed) ? Math.abs(seed) : 0;
-    }
-
-    _seedFromId(id = '') {
-      try {
-        let s = 0;
-        const text = safeString(id);
-        for (let i = 0; i < text.length; i += 1) {
-          s = (s * 131 + text.charCodeAt(i)) | 0;
-        }
-        s = Math.abs(s % 360);
-        return s === 0 ? 137 : s;
-      } catch (_) {
-        return Math.floor(Math.random() * 359) + 1;
-      }
-    }
-
-    getRainbowRepresentativeColor(color, element = null) {
-      const palette = this.getRainbowPalette(color, element);
-      const seed = this.ensureRainbowSeed(element, color);
-      return palette[Math.abs(seed || 0) % palette.length] || palette[0];
-    }
-
-    buildRainbowStops(color = '', element = null, alpha = 1) {
-      const palette = this.getRainbowPalette(color, element);
-      const colors = palette.concat(palette[0]);
-      return colors.map(item => alpha >= 1 ? item : rgbaFromHex(item, alpha)).join(', ');
-    }
-
-    _buildRainbowGradient(element, seed = 0, bands = null, alphaOverride = null) {
-      const textLen = safeString(element && element.textContent).trim().length;
-      const steps = bands || Math.max(18, Math.min(36, Math.floor((textLen || 8) * 1.2)));
-      let s = (seed || 0) >>> 0;
-      const rnd = () => {
-        s ^= s << 13;
-        s ^= s >>> 17;
-        s ^= s << 5;
-        return ((s >>> 0) / 4294967296);
-      };
-      const phase = seed ? rnd() * 360 : 0;
-      const alpha = typeof alphaOverride === 'number'
-        ? Math.min(1, Math.max(0, alphaOverride))
-        : 0.98;
-      const alphaStr = alpha.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
-      const ease = x => x * x * (3 - 2 * x);
-      const stops = [];
-      for (let i = 0; i < steps; i += 1) {
-        const t = steps <= 1 ? 0 : i / (steps - 1);
-        const jitter = seed ? (Math.sin(t * Math.PI * 1.5 + phase / 57.2958) * 8) : 0;
-        let hue = (t * 360 + phase + jitter) % 360;
-        if (hue < 0) hue += 360;
-        const sat = 72 + Math.round(12 * ease(0.5 + (Math.sin((t + 0.1) * Math.PI * 2) * 0.5)));
-        const lig = 64 + Math.round(6 * ease(0.5 + (Math.cos((t + 0.15) * Math.PI * 2) * 0.5)));
-        const pos = (t * 100).toFixed(2);
-        stops.push(`hsla(${Math.round(hue)}, ${sat}%, ${lig}%, ${alphaStr}) ${pos}%`);
-      }
-      const angleDeg = seed ? `${(Math.abs(seed) % 360) || 1}deg` : '90deg';
-      return `linear-gradient(${angleDeg}, ${stops.join(', ')})`;
-    }
-
-    _buildRainbowGradientPreview(seed = 0) {
-      return this._buildRainbowGradient({ textContent: 'preview' }, Math.floor(Number(seed) || 0), 5);
-    }
-
-    buildRainbowGradient(color = '', element = null, alpha = 1) {
-      const seed = this.ensureRainbowSeed(element, color);
-      const alphaOverride = typeof alpha === 'number' ? alpha : null;
-      return this._buildRainbowGradient(element || { textContent: '' }, seed, null, alphaOverride);
-    }
-
-    isTransparentColor(color) {
-      try {
-        const raw = safeString(color).trim().toLowerCase();
-        if (!raw) return false;
-        if (raw === 'transparent') return true;
-        const rgba = raw.match(/^rgba\s*\(([^)]+)\)$/);
-        if (!rgba) return false;
-        const parts = rgba[1].split(',').map(part => Number(part.trim()));
-        return parts.length >= 4 && Number.isFinite(parts[3]) && parts[3] <= 0;
-      } catch (_) {
-        return false;
-      }
-    }
-
-    neutralColor(lightAlpha = 0.14, darkAlpha = 0.2) {
-      return this.darkModeEnabled
-        ? `rgba(226, 232, 240, ${darkAlpha})`
-        : `rgba(15, 23, 42, ${lightAlpha})`;
-    }
-
-    hexToRgba(color, alpha) {
-      const normalized = normalizeCssColor(color);
-      if (/^#[0-9a-f]{3}$/i.test(normalized)) {
-        const expanded = `#${normalized.slice(1).split('').map(ch => ch + ch).join('')}`;
-        return rgbaFromHex(expanded, alpha);
-      }
-      if (/^#[0-9a-f]{6}$/i.test(normalized)) return rgbaFromHex(normalized, alpha);
-      const [r, g, b] = parseCssColor(normalized || color);
-      return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha})`;
-    }
-
-    interpolateColor(colorA, colorB, progress = 0) {
-      const [r1, g1, b1] = parseCssColor(colorA);
-      const [r2, g2, b2] = parseCssColor(colorB);
-      const t = Math.max(0, Math.min(1, Number(progress) || 0));
-      const toHex = value => Math.round(Math.max(0, Math.min(255, value))).toString(16).padStart(2, '0');
-      return `#${toHex(r1 + (r2 - r1) * t)}${toHex(g1 + (g2 - g1) * t)}${toHex(b1 + (b2 - b1) * t)}`;
-    }
 
     updateCursorStyle() {
       try {
@@ -9018,290 +9350,6 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       return !!this.darkModeEnabled;
     }
 
-    ensureGlobalDefs() {
-      if (this._globalDefsSvg && document.body.contains(this._globalDefsSvg)) return this._globalDefsSvg;
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('id', 'dev1-global-rb-defs');
-      svg.setAttribute('width', '0');
-      svg.setAttribute('height', '0');
-      svg.setAttribute('aria-hidden', 'true');
-      svg.style.position = 'absolute';
-      svg.style.width = '0';
-      svg.style.height = '0';
-      svg.style.overflow = 'hidden';
-      svg.style.pointerEvents = 'none';
-      svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'defs'));
-      document.body.appendChild(svg);
-      this._globalDefsSvg = svg;
-      return svg;
-    }
-
-    getRainbowGradientId(seedVal = 0) {
-      try {
-        const svg = this.ensureGlobalDefs();
-        const defs = svg.querySelector('defs');
-        const seed = Math.abs(Number(seedVal) || 0);
-        const id = `dev1RbGradSeed_${seed}`;
-        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
-        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
-        gradient.setAttribute('id', id);
-        gradient.setAttribute('x1', '0%');
-        gradient.setAttribute('y1', '0%');
-        gradient.setAttribute('x2', '100%');
-        gradient.setAttribute('y2', '0%');
-        const steps = 18;
-        const phase = seed ? seed % 360 : 0;
-        for (let i = 0; i < steps; i += 1) {
-          const t = i / (steps - 1);
-          const hue = Math.round((phase + t * 360) % 360);
-          const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-          stop.setAttribute('offset', `${(t * 100).toFixed(2)}%`);
-          stop.setAttribute('stop-color', `hsl(${hue}, 82%, 64%)`);
-          gradient.appendChild(stop);
-        }
-        defs.appendChild(gradient);
-        return id;
-      } catch (_) {
-        return 'dev1RbGradSeed_0';
-      }
-    }
-
-    getMonoGradientId(color, isTransparent) {
-      try {
-        const svg = this.ensureGlobalDefs();
-        const defs = svg.querySelector('defs');
-        const cleanColor = color.replace(/[^a-zA-Z0-9]/g, '');
-        const id = `dev1MonoGrad_${cleanColor}_${isTransparent ? 't' : 'o'}`;
-        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
-        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
-        gradient.setAttribute('id', id);
-        gradient.setAttribute('x1', '0%');
-        gradient.setAttribute('y1', '0%');
-        gradient.setAttribute('x2', '100%');
-        gradient.setAttribute('y2', '0%');
-        
-        const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-        stop1.setAttribute('offset', '0%');
-        stop1.setAttribute('stop-color', color);
-        stop1.setAttribute('stop-opacity', '0.85');
-        
-        const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-        stop2.setAttribute('offset', '100%');
-        stop2.setAttribute('stop-color', color);
-        stop2.setAttribute('stop-opacity', isTransparent ? '0.14' : '0.2');
-        
-        gradient.appendChild(stop1);
-        gradient.appendChild(stop2);
-        defs.appendChild(gradient);
-        return id;
-      } catch (_) {
-        return '';
-      }
-    }
-
-    getSpotlightGradientId(color, isTransparent) {
-      try {
-        const svg = this.ensureGlobalDefs();
-        const defs = svg.querySelector('defs');
-        const cleanColor = color.replace(/[^a-zA-Z0-9]/g, '');
-        const id = `dev1SpotGrad_${cleanColor}_${isTransparent ? 't' : 'o'}`;
-        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
-        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
-        gradient.setAttribute('id', id);
-        gradient.setAttribute('cx', '50%');
-        gradient.setAttribute('cy', '50%');
-        gradient.setAttribute('r', '70%');
-        
-        const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-        stop1.setAttribute('offset', '0%');
-        stop1.setAttribute('stop-color', color);
-        stop1.setAttribute('stop-opacity', isTransparent ? '0.18' : '0.35');
-        
-        const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-        stop2.setAttribute('offset', '100%');
-        stop2.setAttribute('stop-color', color);
-        stop2.setAttribute('stop-opacity', '0');
-        
-        gradient.appendChild(stop1);
-        gradient.appendChild(stop2);
-        defs.appendChild(gradient);
-        return id;
-      } catch (_) {
-        return '';
-      }
-    }
-
-    getRainbowRadialGradientId(seedVal = 0) {
-      try {
-        const svg = this.ensureGlobalDefs();
-        const defs = svg.querySelector('defs');
-        const seed = Math.abs(Number(seedVal) || 0);
-        const id = `dev1RbRadialGradSeed_${seed}`;
-        if (defs.querySelector(`#${CSS.escape(id)}`)) return id;
-        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
-        gradient.setAttribute('id', id);
-        gradient.setAttribute('cx', '50%');
-        gradient.setAttribute('cy', '50%');
-        gradient.setAttribute('r', '70%');
-        const steps = 18;
-        const phase = seed ? seed % 360 : 0;
-        for (let i = 0; i < steps; i += 1) {
-          const t = i / (steps - 1);
-          const hue = Math.round((phase + t * 360) % 360);
-          const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-          stop.setAttribute('offset', `${(t * 100).toFixed(2)}%`);
-          stop.setAttribute('stop-color', `hsl(${hue}, 82%, 64%)`);
-          stop.setAttribute('stop-opacity', String((1 - t) * 0.35));
-          gradient.appendChild(stop);
-        }
-        defs.appendChild(gradient);
-        return id;
-      } catch (_) {
-        return 'dev1RbRadialGradSeed_0';
-      }
-    }
-
-    ensureSharedResizeObserver() {
-      if (this._sharedRO) return this._sharedRO;
-      try {
-        this._sharedRO = new ResizeObserver(entries => {
-          entries.forEach(entry => {
-            const el = entry.target;
-            if (el && el._dev1RbLineMeta) this._pendingRainbowRenders.add(el);
-          });
-          if (this._rafRainbowScheduled) return;
-          this._rafRainbowScheduled = true;
-          requestAnimationFrame(() => {
-            this._rafRainbowScheduled = false;
-            const items = Array.from(this._pendingRainbowRenders);
-            this._pendingRainbowRenders.clear();
-            items.forEach(el => this._rerenderRainbowLineElement(el));
-          });
-        });
-      } catch (_) {
-        this._sharedRO = null;
-      }
-      return this._sharedRO;
-    }
-
-    renderRainbowLineAfterLayout(element, kind, seed = 0, opts = {}) {
-      if (!element) return;
-      try { element._dev1RbLineMeta = { kind, seed, opts }; } catch (_) { }
-      const ro = this.ensureSharedResizeObserver();
-      try { if (ro) ro.observe(element); } catch (_) { }
-      requestAnimationFrame(() => this._renderRainbowLine(element, kind, seed, opts));
-    }
-
-    _rerenderRainbowLineElement(element) {
-      try {
-        const meta = element && element._dev1RbLineMeta;
-        if (!meta) return;
-        this._renderRainbowLine(element, meta.kind, meta.seed, meta.opts || {});
-      } catch (_) { }
-    }
-
-    removeRainbowLine(element, clearMeta = true) {
-      if (!element) return;
-      try { element.querySelectorAll(':scope > .rb-line-ov').forEach(node => node.remove()); } catch (_) { }
-      if (clearMeta) {
-        try { delete element._dev1RbLineMeta; } catch (_) { }
-      }
-    }
-
-    _renderRainbowLine(element, kind, seed = 0, opts = {}) {
-      if (!element || !document.body.contains(element)) return;
-      this.removeRainbowLine(element, false);
-      const rect = element.getBoundingClientRect();
-      if (!rect || rect.width <= 1 || rect.height <= 1) return;
-      let rects = [];
-      try {
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        rects = Array.from(range.getClientRects()).filter(r => r.width > 1 && r.height > 1);
-        range.detach();
-      } catch (_) { }
-      if (!rects.length) rects = [rect];
-      if (!element.style.position || element.style.position === 'static') element.style.position = 'relative';
-      try {
-        element.style.boxDecorationBreak = 'clone';
-        element.style.webkitBoxDecorationBreak = 'clone';
-      } catch (_) { }
-      const overlay = document.createElement('span');
-      overlay.className = 'rb-line-ov';
-      overlay.setAttribute('aria-hidden', 'true');
-      overlay.style.position = 'absolute';
-      overlay.style.left = '0';
-      overlay.style.top = '0';
-      overlay.style.width = `${Math.max(1, rect.width)}px`;
-      overlay.style.height = `${Math.max(1, rect.height)}px`;
-      overlay.style.pointerEvents = 'none';
-      overlay.style.overflow = 'visible';
-      overlay.style.zIndex = '2';
-      const gradientId = this.getRainbowGradientId(seed);
-      const thickness = Math.max(1, Number(opts.thickness || 2));
-      const gap = Math.max(1, Number(opts.gap || 3));
-      const amp = Math.max(1, Number(opts.amplitude || 2));
-      const period = Math.max(8, Number(opts.period || 12));
-      const offset = Number(opts.offset || 2);
-      const makeWavyPath = (width, y) => {
-        let d = `M 0 ${y}`;
-        for (let x = 0; x < width; x += period) {
-          const x1 = Math.min(width, x + period / 2);
-          const x2 = Math.min(width, x + period);
-          d += ` C ${x + period / 4} ${y - amp}, ${x1 - period / 4} ${y - amp}, ${x1} ${y}`;
-          d += ` S ${x2 - period / 4} ${y + amp}, ${x2} ${y}`;
-        }
-        return d;
-      };
-      rects.forEach(lineRect => {
-        const width = Math.max(1, lineRect.width);
-        const height = Math.max(1, lineRect.height + offset + thickness + gap + amp * 2);
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', String(width));
-        svg.setAttribute('height', String(height));
-        svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-        svg.style.position = 'absolute';
-        svg.style.left = `${lineRect.left - rect.left}px`;
-        svg.style.top = `${lineRect.top - rect.top}px`;
-        svg.style.overflow = 'visible';
-        const y = opts.position === 'middle'
-          ? Math.max(thickness, lineRect.height / 2)
-          : Math.max(thickness, lineRect.height + offset);
-        const stroke = `url(#${gradientId})`;
-        const drawLine = (yPos, dash = '') => {
-          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-          line.setAttribute('x1', '0');
-          line.setAttribute('x2', String(width));
-          line.setAttribute('y1', String(yPos));
-          line.setAttribute('y2', String(yPos));
-          line.setAttribute('stroke', stroke);
-          line.setAttribute('stroke-width', String(thickness));
-          line.setAttribute('stroke-linecap', 'round');
-          if (dash) line.setAttribute('stroke-dasharray', dash);
-          svg.appendChild(line);
-        };
-        if (kind === 'wavy') {
-          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-          path.setAttribute('d', makeWavyPath(width, y));
-          path.setAttribute('fill', 'none');
-          path.setAttribute('stroke', stroke);
-          path.setAttribute('stroke-width', String(thickness));
-          path.setAttribute('stroke-linecap', 'round');
-          svg.appendChild(path);
-        } else if (kind === 'double') {
-          drawLine(y, '');
-          drawLine(y + gap + thickness, '');
-        } else if (kind === 'dotted') {
-          drawLine(y, `0 ${Math.max(4, thickness * 3)}`);
-        } else if (kind === 'dashed') {
-          drawLine(y, `${Math.max(6, thickness * 4)} ${Math.max(4, thickness * 2)}`);
-        } else {
-          drawLine(y, '');
-        }
-        overlay.appendChild(svg);
-      });
-      element.appendChild(overlay);
-    }
 
     ensureFrameOverlayLayer() {
       if (this.frameOverlayLayer && document.body.contains(this.frameOverlayLayer)) return this.frameOverlayLayer;
@@ -10302,6 +10350,11 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       });
     }
 
+// =================================================================================
+// VI. RESTORE, CLEANUP & API EXPORT (恢复、清理与 API 导出)
+// =================================================================================
+
+
     cancelRestoreJob() {
       if (this._restoreJob) this._restoreJob.cancelled = true;
       this._restoreJob = null;
@@ -10757,6 +10810,7 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
       } catch (_) { }
     }
 
+
     collectHighlightIdsFromHtml(html) {
       const ids = new Set();
       if (html == null || html === '') return [];
@@ -11132,6 +11186,7 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
     }
   }
 
+
   const highlighter = new SnapshotHighlighter();
   window[API_KEY] = {
     loaded: true,
@@ -11144,3 +11199,4 @@ body.highlighter-cursor:not(.suppress-cursor) #dev1-snapshot-highlighter-toolbar
     _instance: highlighter
   };
 })();
+

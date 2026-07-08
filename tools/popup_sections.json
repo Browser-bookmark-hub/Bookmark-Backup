@@ -1,0 +1,129 @@
+{
+  "source_file": "Bookmark-Backup-main/popup.js",
+  "table_of_contents_title": "TABLE OF CONTENTS (目录索引)",
+  "check_command": "node --check",
+  "markers": [
+    {
+      "name": "imports",
+      "exact": "import {"
+    },
+    {
+      "name": "globals",
+      "exact": "// 全局状态变量和常量 (Global State Variables and Constants)"
+    },
+    {
+      "name": "helpers",
+      "exact": "// 辅助函数 (Helper Functions)"
+    },
+    {
+      "name": "communication",
+      "exact": "// 核心通信函数 (Core Communication Functions)"
+    },
+    {
+      "name": "ui_init",
+      "exact": "// UI 初始化函数 (UI Initialization Functions)"
+    },
+    {
+      "name": "data_render",
+      "exact": "// 数据加载与显示函数 (Data Loading and Display Functions)"
+    },
+    {
+      "name": "actions",
+      "exact": "// 动作处理函数 (Action Handlers)"
+    },
+    {
+      "name": "reminder_settings",
+      "exact": "// 提醒设置相关函数 (Reminder Settings Functions)"
+    },
+    {
+      "name": "i18n",
+      "exact": "// 国际化 (Internationalization)"
+    },
+    {
+      "name": "backup_settings",
+      "exact": "// 备份设置初始化 (Backup Settings Initialization)"
+    },
+    {
+      "name": "restore_entry",
+      "exact": "const localRestoreFileMap = new Map();"
+    },
+    {
+      "name": "restore_modal",
+      "exact": "// [New] 显示恢复模态框"
+    },
+    {
+      "name": "restore_preview_helpers",
+      "exact": "// Restore Patch Preview helpers (ported from history_html/history.js)"
+    },
+    {
+      "name": "favicon_cache",
+      "exact": "// Fallback favicon - star icon (same as history.html)"
+    },
+    {
+      "name": "history_tree_render",
+      "exact": "function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, options = {}, lang = 'zh_CN') {"
+    },
+    {
+      "name": "main_dom_ready",
+      "exact": "// DOMContentLoaded 事件监听器 (Main Entry Point)"
+    },
+    {
+      "name": "notes",
+      "exact": "// 添加备注对话框函数"
+    },
+    {
+      "name": "pre_backup_remark",
+      "exact": "// 预备份备注相关功能 (Pre-backup Remark)"
+    }
+  ],
+  "sections": [
+    {
+      "id": "I",
+      "title": "IMPORTS, GLOBAL STATE & HELPERS (导入、全局状态与辅助函数)",
+      "chunks": [
+        "imports",
+        "globals",
+        "helpers"
+      ]
+    },
+    {
+      "id": "II",
+      "title": "CORE POPUP UI & SETTINGS (弹窗核心 UI 与设置)",
+      "chunks": [
+        "communication",
+        "ui_init",
+        "data_render",
+        "actions",
+        "reminder_settings",
+        "i18n",
+        "backup_settings"
+      ]
+    },
+    {
+      "id": "III",
+      "title": "RESTORE WORKFLOW & PREVIEW RENDERING (恢复流程与预览渲染)",
+      "chunks": [
+        "restore_entry",
+        "restore_modal",
+        "restore_preview_helpers",
+        "favicon_cache",
+        "history_tree_render"
+      ]
+    },
+    {
+      "id": "IV",
+      "title": "HISTORY REMARKS (历史备注)",
+      "chunks": [
+        "notes",
+        "pre_backup_remark"
+      ]
+    },
+    {
+      "id": "V",
+      "title": "MAIN ENTRY POINT (主入口初始化)",
+      "chunks": [
+        "main_dom_ready"
+      ]
+    }
+  ]
+}

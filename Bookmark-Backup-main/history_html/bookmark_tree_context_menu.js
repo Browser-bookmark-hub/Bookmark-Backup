@@ -1,3 +1,17 @@
+// =================================================================================
+// TABLE OF CONTENTS (目录索引)
+// =================================================================================
+// I.     GLOBAL STATE & OPEN MODE SETUP (全局状态与打开模式)
+// II.    SCOPE REGISTRY, SELECTION & PANEL LAYOUT (作用域登记、多选与面板布局)
+// III.   CONTEXT MENUS & BOOKMARK ACTIONS (右键菜单与书签操作)
+// IV.    MULTI SELECT & BATCH OPERATIONS (多选与批量操作)
+// V.     BLANK AREA, HYPERLINKS & MANUAL TARGETS (空白区、超链接与手动目标)
+// =================================================================================
+
+// =================================================================================
+// I. GLOBAL STATE & OPEN MODE SETUP (全局状态与打开模式)
+// =================================================================================
+
 // 书签树右键菜单功能
 // 提供类似Chrome原生书签管理器的功能
 
@@ -46,6 +60,7 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 }
+
 
 // 全局：默认打开方式与特定窗口/分组ID
 let defaultOpenMode = 'specific-window'; // 默认：'specific-window'（in Same Window）。可选：'new-tab' | 'new-window' | 'incognito' | 'specific-window' | 'specific-group' | 'scoped-window' | 'scoped-group' | 'same-window-specific-group'
@@ -209,6 +224,7 @@ try {
     }
 })();
 
+
 async function setDefaultOpenMode(mode) {
     defaultOpenMode = mode;
     try { window.defaultOpenMode = mode; } catch (_) { }
@@ -324,6 +340,11 @@ async function resetHyperlinkSpecificGroupInfo() {
         }
     } catch (_) { }
 }
+
+// =================================================================================
+// II. SCOPE REGISTRY, SELECTION & PANEL LAYOUT (作用域登记、多选与面板布局)
+// =================================================================================
+
 
 
 const CTXMENU_PERMANENT_SECTION_COPIES_STORAGE_KEY = 'permanent-section-copies';
@@ -1085,6 +1106,7 @@ async function registerPluginGroup(groupId, windowId, number) {
     await writePluginGroupRegistry(reg);
     invalidateLiveGroupSeeds();
 }
+
 let clipboardOperation = null; // 'cut' | 'copy'
 let selectedNodes = new Set(); // 多选节点集合
 let selectedNodeMeta = new Map(); // 节点元信息：nodeId -> { treeType, sectionId }
@@ -1242,6 +1264,7 @@ function unbindSelectModeGlobalHandlers() {
     }
     selectModeJustDraggedUntil = 0;
 }
+
 
 const BATCH_PANEL_STATE_MAP_KEY = 'batchPanelStateMap';
 const BATCH_PANEL_LEGACY_KEY = 'batchPanelState';
@@ -1839,6 +1862,11 @@ function attachHyperlinkContextMenu() {
     
 }
 
+// =================================================================================
+// III. CONTEXT MENUS & BOOKMARK ACTIONS (右键菜单与书签操作)
+// =================================================================================
+
+
 // 初始化右键菜单
 function initContextMenu() {
     // 创建菜单容器
@@ -1943,6 +1971,7 @@ function getNodeContext(node) {
 
     return ctx;
 }
+
 
 // 显示超链接右键菜单（用于描述中的链接）
 async function showHyperlinkContextMenu(e, linkElement) {
@@ -2326,6 +2355,7 @@ async function openHyperlinkWithDefaultMode(url, options = {}) {
 try {
     window.openHyperlinkWithDefaultMode = openHyperlinkWithDefaultMode;
 } catch (_) { }
+
 
 // 显示右键菜单
 async function showContextMenu(e, node) {
@@ -3087,6 +3117,7 @@ async function handleMenuAction(action, context) {
     }
 }
 
+
 // 打开书签（根据defaultOpenMode决定打开方式）
 async function openBookmark(url) {
     if (!url) return;
@@ -3601,6 +3632,7 @@ try {
     window.openInScopedWindow = openInScopedWindow;
     window.openInSameWindowSpecificGroup = openInSameWindowSpecificGroup;
 } catch (_) { }
+
 
 // 打开文件夹中所有书签
 async function openAllBookmarks(folderId, newWindow = false, incognito = false) {
@@ -4276,6 +4308,11 @@ async function getAllUrlsFromFolder(folderId) {
     return urls;
 }
 
+// =================================================================================
+// IV. MULTI SELECT & BATCH OPERATIONS (多选与批量操作)
+// =================================================================================
+
+
 // ==================== 多选功能 ====================
 
 // 切换节点选中状态
@@ -4531,6 +4568,7 @@ async function refreshBookmarkTree() {
         
     }
 }
+
 
 // ==================== Select模式 ====================
 
@@ -4917,6 +4955,7 @@ function showBatchContextMenu(e) {
     // 恢复保存的位置和大小，或设置初始定位
     restoreBatchPanelState(batchPanel, anchorInfo);
 }
+
 
 // ==================== 批量操作功能 ====================
 
@@ -6332,6 +6371,7 @@ async function batchMergeFolder() {
     }
 }
 
+
 // ==================== 顶部批量操作工具栏 ====================
 
 // 初始化批量操作工具栏
@@ -7337,104 +7377,10 @@ function restoreContextMenuLayout() {
     }
 }
 
-// 显示空白区域右键菜单
-function showBlankAreaContextMenu(e) {
-    e.preventDefault();
-    e.stopPropagation();
+// =================================================================================
+// V. BLANK AREA, HYPERLINKS & MANUAL TARGETS (空白区、超链接与手动目标)
+// =================================================================================
 
-    const lang = currentLang || 'zh_CN';
-    const menuItems = [];
-
-    // 粘贴选项（如果剪贴板有内容）
-    if (hasClipboard()) {
-        menuItems.push({
-            action: 'paste-blank',
-            label: lang === 'zh_CN' ? '粘贴' : 'Paste',
-            icon: 'paste'
-        });
-    }
-
-    if (menuItems.length === 0) {
-        return; // 没有可用的菜单项
-    }
-
-    // 渲染菜单
-    const contextMenu = document.getElementById('bookmark-context-menu');
-    if (!contextMenu) return;
-
-    const menuHTML = menuItems.map(item => {
-        const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
-        return `
-            <div class="context-menu-item" data-action="${item.action}">
-                ${icon}
-                <span>${item.label}</span>
-            </div>
-        `;
-    }).join('');
-
-    contextMenu.innerHTML = menuHTML;
-
-    // 绑定点击事件
-    contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
-        item.addEventListener('click', async (clickEvent) => {
-            clickEvent.stopPropagation();
-            const action = item.dataset.action;
-            hideContextMenu();
-
-            if (action === 'paste-blank') {
-                // 粘贴到书签栏根目录
-                if (chrome && chrome.bookmarks) {
-                    const tree = await chrome.bookmarks.getTree();
-                    const bookmarkBar = tree[0].children.find(child => child.title === '书签栏' || child.id === '1');
-                    if (bookmarkBar) {
-                        await pasteBookmark(bookmarkBar.id, true); // true 表示是文件夹
-                    }
-                }
-            }
-        });
-    });
-
-    // 使用固定定位显示菜单（不嵌入DOM）
-    contextMenu.style.position = 'fixed';
-    contextMenu.style.left = e.clientX + 'px';
-    contextMenu.style.top = e.clientY + 'px';
-    contextMenu.style.display = 'block';
-
-    // 移除之前的嵌入样式
-    contextMenu.style.position = 'fixed';
-    if (contextMenu.parentElement && contextMenu.parentElement !== document.body) {
-        document.body.appendChild(contextMenu);
-    }
-}
-
-// 导出函数
-if (typeof window !== 'undefined') {
-    window.initContextMenu = initContextMenu;
-    window.showContextMenu = showContextMenu;
-    window.showBlankAreaContextMenu = showBlankAreaContextMenu;
-    window.hideContextMenu = hideContextMenu;
-    window.toggleNodeSelection = toggleNodeSelection;
-    window.selectRange = selectRange;
-    window.selectAll = selectAll;
-    window.deselectAll = deselectAll;
-    window.initBatchToolbar = initBatchToolbar;
-    window.updateBatchToolbar = updateBatchToolbar;
-    window.showBatchPanel = showBatchPanel;
-    window.hideBatchPanel = hideBatchPanel;
-    window.initKeyboardShortcuts = initKeyboardShortcuts;
-    window.initClickSelect = initClickSelect;
-    window.enterSelectMode = enterSelectMode;
-    window.exitSelectMode = exitSelectMode;
-    window.toggleContextMenuLayout = toggleContextMenuLayout;
-    window.restoreContextMenuLayout = restoreContextMenuLayout;
-
-    // 页面加载时恢复布局
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', restoreContextMenuLayout);
-    } else {
-        restoreContextMenuLayout();
-    }
-}
 
 // ========== 超链接系统：独立的打开函数（不与书签共享状态） ==========
 
@@ -7846,6 +7792,107 @@ async function openHyperlinkInSameWindowSpecificGroup(url) {
         window.open(url, '_blank');
     }
 }
+
+
+// 显示空白区域右键菜单
+function showBlankAreaContextMenu(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const lang = currentLang || 'zh_CN';
+    const menuItems = [];
+
+    // 粘贴选项（如果剪贴板有内容）
+    if (hasClipboard()) {
+        menuItems.push({
+            action: 'paste-blank',
+            label: lang === 'zh_CN' ? '粘贴' : 'Paste',
+            icon: 'paste'
+        });
+    }
+
+    if (menuItems.length === 0) {
+        return; // 没有可用的菜单项
+    }
+
+    // 渲染菜单
+    const contextMenu = document.getElementById('bookmark-context-menu');
+    if (!contextMenu) return;
+
+    const menuHTML = menuItems.map(item => {
+        const icon = item.icon ? `<i class="fas fa-${item.icon}"></i>` : '';
+        return `
+            <div class="context-menu-item" data-action="${item.action}">
+                ${icon}
+                <span>${item.label}</span>
+            </div>
+        `;
+    }).join('');
+
+    contextMenu.innerHTML = menuHTML;
+
+    // 绑定点击事件
+    contextMenu.querySelectorAll('.context-menu-item').forEach(item => {
+        item.addEventListener('click', async (clickEvent) => {
+            clickEvent.stopPropagation();
+            const action = item.dataset.action;
+            hideContextMenu();
+
+            if (action === 'paste-blank') {
+                // 粘贴到书签栏根目录
+                if (chrome && chrome.bookmarks) {
+                    const tree = await chrome.bookmarks.getTree();
+                    const bookmarkBar = tree[0].children.find(child => child.title === '书签栏' || child.id === '1');
+                    if (bookmarkBar) {
+                        await pasteBookmark(bookmarkBar.id, true); // true 表示是文件夹
+                    }
+                }
+            }
+        });
+    });
+
+    // 使用固定定位显示菜单（不嵌入DOM）
+    contextMenu.style.position = 'fixed';
+    contextMenu.style.left = e.clientX + 'px';
+    contextMenu.style.top = e.clientY + 'px';
+    contextMenu.style.display = 'block';
+
+    // 移除之前的嵌入样式
+    contextMenu.style.position = 'fixed';
+    if (contextMenu.parentElement && contextMenu.parentElement !== document.body) {
+        document.body.appendChild(contextMenu);
+    }
+}
+
+// 导出函数
+if (typeof window !== 'undefined') {
+    window.initContextMenu = initContextMenu;
+    window.showContextMenu = showContextMenu;
+    window.showBlankAreaContextMenu = showBlankAreaContextMenu;
+    window.hideContextMenu = hideContextMenu;
+    window.toggleNodeSelection = toggleNodeSelection;
+    window.selectRange = selectRange;
+    window.selectAll = selectAll;
+    window.deselectAll = deselectAll;
+    window.initBatchToolbar = initBatchToolbar;
+    window.updateBatchToolbar = updateBatchToolbar;
+    window.showBatchPanel = showBatchPanel;
+    window.hideBatchPanel = hideBatchPanel;
+    window.initKeyboardShortcuts = initKeyboardShortcuts;
+    window.initClickSelect = initClickSelect;
+    window.enterSelectMode = enterSelectMode;
+    window.exitSelectMode = exitSelectMode;
+    window.toggleContextMenuLayout = toggleContextMenuLayout;
+    window.restoreContextMenuLayout = restoreContextMenuLayout;
+
+    // 页面加载时恢复布局
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', restoreContextMenuLayout);
+    } else {
+        restoreContextMenuLayout();
+    }
+}
+
 
 // =====================================================================
 // 手动选择窗口+组功能
@@ -8575,3 +8622,4 @@ try {
     window.reportExtensionBookmarkOpen = reportExtensionBookmarkOpen;
     window.openBookmarkWithManualSelection = openBookmarkWithManualSelection;
 } catch (_) { }
+

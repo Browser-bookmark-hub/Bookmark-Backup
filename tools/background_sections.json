@@ -1,0 +1,168 @@
+{
+  "source_file": "Bookmark-Backup-main/background.js",
+  "table_of_contents_title": "TABLE OF CONTENTS (目录索引)",
+  "check_command": "node --check",
+  "markers": [
+    {
+      "name": "error_guard",
+      "exact": "// 在文件顶部添加全局错误处理，捕获并忽略特定的连接错误"
+    },
+    {
+      "name": "imports_globals",
+      "exact": "// I. IMPORTS, GLOBAL DEFINITIONS & INITIALIZATIONS (导入、全局定义和初始化)"
+    },
+    {
+      "name": "runtime_state",
+      "exact": "// Global Variables"
+    },
+    {
+      "name": "commands",
+      "exact": "// Keyboard commands for opening history views"
+    },
+    {
+      "name": "operation_tracking",
+      "exact": "// 初始化操作状态跟踪 - 实现「书签Git」风格的变化检测"
+    },
+    {
+      "name": "migrations",
+      "exact": "// 迁移到分离存储架构（Index vs Data）"
+    },
+    {
+      "name": "event_listeners",
+      "exact": "// II. CORE EVENT LISTENERS (核心事件监听器)"
+    },
+    {
+      "name": "snapshot_cache",
+      "exact": "// 书签快照缓存（供 UI 读取，减少重复 getTree）"
+    },
+    {
+      "name": "current_changes_cache",
+      "exact": "// “当前变化”持久缓存：增量更新（避免每次小改动全量重算）"
+    },
+    {
+      "name": "bulk_mode",
+      "exact": "// 大量变化防护（Bulk Mode）"
+    },
+    {
+      "name": "restore_backup_record",
+      "exact": "async function handleTriggerRestoreBackupMessage(message = {}) {"
+    },
+    {
+      "name": "restore_recovery_guards",
+      "exact": "const RESTORE_RECOVERY_LOCKED_MESSAGE_ACTIONS = new Set(["
+    },
+    {
+      "name": "dev1_backend",
+      "exact": "const DEV1_CAPTURE_RUN_STATE_KEY = 'dev1CaptureRunStateV1';"
+    },
+    {
+      "name": "message_router",
+      "exact": "browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {"
+    },
+    {
+      "name": "alarm_bookmark_events",
+      "exact": "// 监听计时器警报"
+    },
+    {
+      "name": "cloud_functions",
+      "exact": "// III. CLOUD FUNCTIONS (云端功能)"
+    },
+    {
+      "name": "local_functions",
+      "exact": "// IV. LOCAL FUNCTIONS (本地功能)"
+    },
+    {
+      "name": "legacy_placeholders",
+      "exact": "// V. AUTOMATIC FUNCTIONS (自动功能)"
+    },
+    {
+      "name": "core_sync",
+      "exact": "// VIII. CORE SYNC LOGIC (核心同步逻辑)"
+    },
+    {
+      "name": "utilities",
+      "exact": "// IX. OTHER FUNCTIONS / UTILITIES (其他功能 / 工具函数)"
+    },
+    {
+      "name": "diff_badge_stats",
+      "exact": "// --- Bookmark Counting/Diffing Helpers (Original Versions) ---"
+    },
+    {
+      "name": "late_init",
+      "exact": "// X. LATE INITIALIZATIONS / FINAL SETUP (后续初始化/最终设置) - IF ANY"
+    },
+    {
+      "name": "tab_favicon",
+      "exact": "// VII. TAB FAVICON UPDATE SYSTEM (Tab Favicon 更新系统)"
+    },
+    {
+      "name": "restore_backend",
+      "exact": "// Restore (Sync & Restore) - Backend"
+    },
+    {
+      "name": "restore_source_caches",
+      "exact": "// Restore source caches"
+    },
+    {
+      "name": "init_tail",
+      "exact": "// VIII. INITIALIZATION (初始化)"
+    },
+    {
+      "name": "top_level_tail",
+      "exact": "// IX. 顶层初始化：活跃时间追踪/点击记录已剔除"
+    }
+  ],
+  "sections": [
+    {
+      "id": "I",
+      "title": "BOOTSTRAP, GLOBALS & MIGRATIONS (启动、全局状态与迁移)",
+      "chunks": [
+        "error_guard",
+        "imports_globals",
+        "runtime_state",
+        "commands",
+        "operation_tracking",
+        "migrations"
+      ]
+    },
+    {
+      "id": "II",
+      "title": "EVENTS, CACHES & MESSAGE ROUTER (事件、缓存与消息路由)",
+      "chunks": [
+        "event_listeners",
+        "snapshot_cache",
+        "current_changes_cache",
+        "bulk_mode",
+        "restore_backup_record",
+        "restore_recovery_guards",
+        "dev1_backend",
+        "message_router",
+        "alarm_bookmark_events"
+      ]
+    },
+    {
+      "id": "III",
+      "title": "BACKUP, SYNC & SHARED UTILITIES (备份、同步与共享工具)",
+      "chunks": [
+        "cloud_functions",
+        "local_functions",
+        "legacy_placeholders",
+        "core_sync",
+        "utilities",
+        "diff_badge_stats"
+      ]
+    },
+    {
+      "id": "IV",
+      "title": "LATE SYSTEMS, RESTORE BACKEND & FINAL INIT (后置系统、恢复后端与最终初始化)",
+      "chunks": [
+        "restore_backend",
+        "restore_source_caches",
+        "tab_favicon",
+        "late_init",
+        "init_tail",
+        "top_level_tail"
+      ]
+    }
+  ]
+}

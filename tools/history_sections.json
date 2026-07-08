@@ -1,0 +1,163 @@
+{
+  "source_file": "Bookmark-Backup-main/history_html/history.js",
+  "table_of_contents_title": "TABLE OF CONTENTS (目录索引)",
+  "check_command": "node --check",
+  "markers": [
+    {
+      "name": "globals",
+      "exact": "// 全局变量和常量"
+    },
+    {
+      "name": "realtime_boot_state",
+      "exact": "// 实时更新状态控制"
+    },
+    {
+      "name": "dom_bootstrap",
+      "exact": "document.addEventListener('DOMContentLoaded', async () => {"
+    },
+    {
+      "name": "user_settings",
+      "exact": "// 用户设置"
+    },
+    {
+      "name": "ui_init",
+      "exact": "// UI 初始化"
+    },
+    {
+      "name": "data_loading",
+      "exact": "// 数据加载"
+    },
+    {
+      "name": "diff_stats",
+      "exact": "// 差异计算辅助函数（与主 UI 一致）"
+    },
+    {
+      "name": "navigation",
+      "exact": "// 侧边栏收起功能"
+    },
+    {
+      "name": "current_changes",
+      "exact": "// 当前变化视图"
+    },
+    {
+      "name": "backup_history",
+      "exact": "// 备份历史视图"
+    },
+    {
+      "name": "restore_flow",
+      "exact": "async function handleRestoreRecord(record, displayTitle) {"
+    },
+    {
+      "name": "tree_view",
+      "exact": "// 书签树视图"
+    },
+    {
+      "name": "detail_modal",
+      "exact": "// 详情弹窗"
+    },
+    {
+      "name": "search_bridge",
+      "exact": "// 搜索功能（核心逻辑已移动到 search/search.js）"
+    },
+    {
+      "name": "theme_language",
+      "exact": "// 主题和语言切换"
+    },
+    {
+      "name": "realtime_events",
+      "exact": "// 实时更新"
+    },
+    {
+      "name": "shared_utils",
+      "exact": "// 工具函数"
+    },
+    {
+      "name": "export_changes",
+      "exact": "function initExportChangesModal() {"
+    },
+    {
+      "name": "global_export",
+      "exact": "function initGlobalExport() {"
+    },
+    {
+      "name": "global_export_generation",
+      "exact": "async function prepareDataForExport(record) {"
+    }
+  ],
+  "sections": [
+    {
+      "id": "I",
+      "title": "GLOBAL STATE & BOOTSTRAP (全局状态与启动变量)",
+      "chunks": [
+        "globals",
+        "realtime_boot_state"
+      ]
+    },
+    {
+      "id": "II",
+      "title": "USER SETTINGS & UI SETUP (用户设置与 UI 初始化)",
+      "chunks": [
+        "user_settings",
+        "ui_init"
+      ]
+    },
+    {
+      "id": "III",
+      "title": "DATA LOADING & DIFF HELPERS (数据加载与差异辅助)",
+      "chunks": [
+        "data_loading",
+        "diff_stats"
+      ]
+    },
+    {
+      "id": "IV",
+      "title": "NAVIGATION & CURRENT CHANGES VIEW (导航与当前变化视图)",
+      "chunks": [
+        "navigation",
+        "current_changes"
+      ]
+    },
+    {
+      "id": "V",
+      "title": "BACKUP HISTORY & RESTORE FLOW (备份历史与恢复流程)",
+      "chunks": [
+        "backup_history",
+        "restore_flow"
+      ]
+    },
+    {
+      "id": "VI",
+      "title": "BOOKMARK TREE & DETAIL VIEW (书签树与详情视图)",
+      "chunks": [
+        "tree_view",
+        "detail_modal"
+      ]
+    },
+    {
+      "id": "VII",
+      "title": "SEARCH, THEME & REALTIME EVENTS (搜索、主题与实时事件)",
+      "chunks": [
+        "search_bridge",
+        "theme_language",
+        "realtime_events"
+      ]
+    },
+    {
+      "id": "VIII",
+      "title": "SHARED UTILITIES & EXPORTS (共享工具与导出)",
+      "chunks": [
+        "shared_utils",
+        "export_changes",
+        "global_export",
+        "global_export_generation"
+      ]
+    },
+    {
+      "id": "IX",
+      "title": "MAIN ENTRY POINT (主入口初始化)",
+      "chunks": [
+        "dom_bootstrap"
+      ]
+    }
+  ]
+}

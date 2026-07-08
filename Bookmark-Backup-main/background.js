@@ -1,3 +1,16 @@
+// =================================================================================
+// TABLE OF CONTENTS (目录索引)
+// =================================================================================
+// I.     BOOTSTRAP, GLOBALS & MIGRATIONS (启动、全局状态与迁移)
+// II.    EVENTS, CACHES & MESSAGE ROUTER (事件、缓存与消息路由)
+// III.   BACKUP, SYNC & SHARED UTILITIES (备份、同步与共享工具)
+// IV.    LATE SYSTEMS, RESTORE BACKEND & FINAL INIT (后置系统、恢复后端与最终初始化)
+// =================================================================================
+
+// =================================================================================
+// I. BOOTSTRAP, GLOBALS & MIGRATIONS (启动、全局状态与迁移)
+// =================================================================================
+
 // 在文件顶部添加全局错误处理，捕获并忽略特定的连接错误
 self.addEventListener('unhandledrejection', function (event) {
     // 检查错误消息是否是想要抑制的连接错误
@@ -14,6 +27,7 @@ self.addEventListener('unhandledrejection', function (event) {
         return false; // 阻止错误传播
     }
 });
+
 
 // =================================================================================
 // I. IMPORTS, GLOBAL DEFINITIONS & INITIALIZATIONS (导入、全局定义和初始化)
@@ -1052,6 +1066,7 @@ function resolveExportSubFolderByKey(folderKey, lang) {
     }
 }
 
+
 // Global Variables
 // 添加文件锁定状态追踪
 let lastLockTime = null;
@@ -1954,6 +1969,7 @@ function resetOperationStatus() {
 }
 
 
+
 // =================================================================================
 // Keyboard commands for opening history views
 // =================================================================================
@@ -2171,6 +2187,7 @@ if (browserAPI.commands && browserAPI.commands.onCommand) {
         }
     });
 }
+
 
 // 初始化操作状态跟踪 - 实现「书签Git」风格的变化检测
 // 核心原则：与上次备份进行对比，而不是累计操作次数
@@ -2515,6 +2532,7 @@ if (!hasInitializedBackupReminder) {
     });
 }
 
+
 // 迁移到分离存储架构（Index vs Data）
 async function migrateToSplitStorage() {
     try {
@@ -2664,6 +2682,11 @@ async function removeBackupDataByTimes(times) {
         await browserAPI.storage.local.remove(keys);
     }
 }
+
+// =================================================================================
+// II. EVENTS, CACHES & MESSAGE ROUTER (事件、缓存与消息路由)
+// =================================================================================
+
 
 
 // =================================================================================
@@ -2924,6 +2947,7 @@ browserAPI.downloads.onChanged.addListener((downloadDelta) => {
     }
 });
 
+
 // =============================================================================
 // 书签快照缓存（供 UI 读取，减少重复 getTree）
 // =============================================================================
@@ -3043,6 +3067,7 @@ async function setCanvasMarkerBulkMode(active, options = {}) {
     } catch (_) { }
     return nextState;
 }
+
 
 // =============================================================================
 // “当前变化”持久缓存：增量更新（避免每次小改动全量重算）
@@ -3426,6 +3451,7 @@ const BookmarkSnapshotCache = {
     }
 };
 
+
 // =============================================================================
 // 大量变化防护（Bulk Mode）
 // - 用于“批量导入/批量删除/大范围移动/恢复”等场景
@@ -3796,6 +3822,7 @@ async function syncHistoryOverwriteRevertMarkerWithHistory(syncHistory = []) {
         return '';
     }
 }
+
 
 async function handleTriggerRestoreBackupMessage(message = {}) {
     let overwriteBoundaryApplied = false;
@@ -4466,6 +4493,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
     }
 }
 
+
 const RESTORE_RECOVERY_LOCKED_MESSAGE_ACTIONS = new Set([
     'revertAllToLastBackup',
     'restoreToHistoryRecord',
@@ -4758,6 +4786,7 @@ function resolveMergeImportTreeFromMessage(message = {}) {
 
     return null;
 }
+
 
 const DEV1_CAPTURE_RUN_STATE_KEY = 'dev1CaptureRunStateV1';
 const DEV1_CAPTURE_RUN_STATE_VERSION = 1;
@@ -8898,6 +8927,7 @@ if (browserAPI?.runtime?.onSuspend && typeof browserAPI.runtime.onSuspend.addLis
     });
 }
 
+
 // 监听来自popup的消息
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 基础校验
@@ -12428,6 +12458,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
 });
 
+
 // 监听计时器警报
 browserAPI.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === DOWNLOAD_UI_TEMP_HIDE_ALARM_NAME) {
@@ -12746,6 +12777,11 @@ async function handleBookmarkChange() {
         }
     }, 250); // 延迟250毫秒，合并短时间内的多次变化（降低角标反馈延迟）
 }
+
+// =================================================================================
+// III. BACKUP, SYNC & SHARED UTILITIES (备份、同步与共享工具)
+// =================================================================================
+
 
 
 // =================================================================================
@@ -16112,6 +16148,7 @@ async function updateBookmarksFromNutstore() {
 }
 
 
+
 // =================================================================================
 // IV. LOCAL FUNCTIONS (本地功能)
 // =================================================================================
@@ -18169,6 +18206,7 @@ async function downloadHistoryLocal(content, fileName, rootFolder, subFolder, ov
 }
 
 
+
 // =================================================================================
 // V. AUTOMATIC FUNCTIONS (自动功能)
 // =================================================================================
@@ -18192,6 +18230,7 @@ async function downloadHistoryLocal(content, fileName, rootFolder, subFolder, ov
 if (browserAPI.alarms) {
     browserAPI.alarms.onAlarm.addListener(handleAlarm); // This is the imported handleAlarm
 }
+
 
 
 // =================================================================================
@@ -18623,6 +18662,7 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         await releaseSyncLock();
     }
 }
+
 
 
 // =================================================================================
@@ -23886,6 +23926,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
     }
 }
 
+
 // --- Bookmark Counting/Diffing Helpers (Original Versions) ---
 // 获取所有书签的辅助函数
 function getAllBookmarks(bookmarks) {
@@ -25041,307 +25082,9 @@ async function getCurrentBookmarkCountsInternal() {
 }
 
 // =================================================================================
-// X. LATE INITIALIZATIONS / FINAL SETUP (后续初始化/最终设置) - IF ANY
-// =================================================================================
-// (Most initializations are now grouped at the top or with their respective systems)
-
-/**
- * 为书签和文件夹生成唯一的、基于路径的指纹。
- * @param {Array} bookmarkNodes - 浏览器书签树的根节点。
- * @returns {{bookmarks: Array<string>, folders: Array<string>}} 包含书签和文件夹指纹数组的对象。
- */
-function generateFingerprints(bookmarkNodes) {
-    const bookmarkPrints = new Set();
-    const folderPrints = new Set();
-
-    /**
-     * 递归遍历书签树，为每个项目生成指纹。
-     * @param {Array} nodes - 当前要遍历的节点数组。
-     * @param {string} path - 父文件夹的完整路径。
-     */
-    function traverse(nodes, path) {
-        for (const node of nodes) {
-            if (node.url) {
-                // 书签的身份 = 它所在的完整路径 + 它的名称 + 它的URL
-                const bookmarkFingerprint = `B:${path}|${node.title}|${node.url}`;
-                bookmarkPrints.add(bookmarkFingerprint);
-            } else if (node.children) {
-                // 文件夹的完整路径
-                const currentPath = path ? `${path}/${node.title}` : node.title;
-
-                // 计算其直接包含的内容数量
-                let directBookmarkCount = 0;
-                let directFolderCount = 0;
-                for (const child of node.children) {
-                    if (child.url) {
-                        directBookmarkCount++;
-                    } else if (child.children) {
-                        directFolderCount++;
-                    }
-                }
-
-                // 文件夹的身份 = 它的完整路径 + 它的名称 + 它包含的内容（数量限定）
-                const contentQuantitySignature = `c:${directBookmarkCount},${directFolderCount}`;
-                const folderFingerprint = `F:${currentPath}|${contentQuantitySignature}`;
-                folderPrints.add(folderFingerprint);
-
-                // 递归进入子文件夹
-                traverse(node.children, currentPath);
-            }
-        }
-    }
-
-    // 从根目录的子节点开始遍历，初始路径为空
-    if (bookmarkNodes && bookmarkNodes.length > 0 && bookmarkNodes[0].children) {
-        traverse(bookmarkNodes[0].children, '');
-    }
-
-    return {
-        bookmarks: [...bookmarkPrints],
-        folders: [...folderPrints]
-    };
-}
-
-/**
- * 比较两个Set对象的内容是否完全相等。
- * @param {Set<any>} setA - 第一个Set。
- * @param {Set<any>} setB - 第二个Set。
- * @returns {boolean} 如果两个Set内容相同则返回true。
- */
-function areSetsEqual(setA, setB) {
-    if (setA.size !== setB.size) {
-        return false;
-    }
-    for (const item of setA) {
-        if (!setB.has(item)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-/**
- * [新] 核心分析函数，执行一次遍历，完成所有计算，并更新缓存。
- * 这是所有状态获取的权威来源。
- */
-async function updateAndCacheAnalysis() {
-    try {
-        const preAnalysisStore = await browserAPI.storage.local.get([
-            'lastBookmarkData',
-            'lastBookmarkChangeTime'
-        ]);
-        const expectedBaselineTs = preAnalysisStore?.lastBookmarkData?.timestamp || null;
-        const expectedLastChangeTime = typeof preAnalysisStore?.lastBookmarkChangeTime === 'number'
-            ? preAnalysisStore.lastBookmarkChangeTime
-            : 0;
-        const analysis = await analyzeBookmarkChanges();
-        cachedBookmarkAnalysis = analysis;
-
-        // 将摘要快照持久化到 storage（供提醒系统/页面在缓存未命中时兜底使用）
-        try {
-            const snapshotMetaStore = await browserAPI.storage.local.get([
-                'lastBookmarkData',
-                'lastBookmarkChangeTime'
-            ]);
-            const snapshotMeta = {
-                lastBookmarkDataTimestamp: snapshotMetaStore?.lastBookmarkData?.timestamp || null,
-                lastBookmarkChangeTime: typeof snapshotMetaStore?.lastBookmarkChangeTime === 'number'
-                    ? snapshotMetaStore.lastBookmarkChangeTime
-                    : 0
-            };
-            await browserAPI.storage.local.set({
-                cachedBookmarkAnalysisSnapshot: analysis,
-                cachedBookmarkAnalysisSnapshotTime: Date.now(),
-                cachedBookmarkAnalysisSnapshotMeta: snapshotMeta
-            });
-        } catch (_) { }
-
-        try {
-            await clearDirtyStateIfAnalysisIsClean(analysis, {
-                expectedLastBookmarkChangeTime: expectedLastChangeTime,
-                expectedLastBookmarkDataTimestamp: expectedBaselineTs
-            });
-        } catch (_) { }
-        try {
-            await syncDirtyStateIfAnalysisHasChanges(analysis, {
-                expectedLastBookmarkChangeTime: expectedLastChangeTime,
-                expectedLastBookmarkDataTimestamp: expectedBaselineTs
-            });
-        } catch (_) { }
-
-        // 分析完成后，向前端发送消息（analysis + 最近移动兜底）
-        browserAPI.runtime.sendMessage({ action: "analysisUpdated", ...analysis }).catch(() => {
-            // 忽略错误，因为popup可能未打开
-        });
-
-        // 同步广播最近移动ID，增加前端打标稳定性
-        try {
-            const { recentMovedIds = [] } = await browserAPI.storage.local.get(['recentMovedIds']);
-            const now = Date.now();
-            const fresh = recentMovedIds.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
-            for (const r of fresh) {
-                browserAPI.runtime.sendMessage({ action: 'recentMovedBroadcast', id: r.id }).catch(() => { });
-            }
-        } catch (_) { }
-
-        return cachedBookmarkAnalysis;
-    } catch (error) {
-        console.error('[updateAndCacheAnalysis] 分析失败:', error);
-        // 出错时清除缓存，以防数据不一致
-        cachedBookmarkAnalysis = null;
-        throw error; // 重新抛出错误
-    }
-}
-
-/**
- * 新增：初始化语言偏好函数
- * 在扩展首次启动时检测浏览器语言并存储。
- */
-async function initializeLanguagePreference() {
-    try {
-        const result = await browserAPI.storage.local.get('languageAutoDetected');
-        if (!result.languageAutoDetected) {
-            const browserLang = browserAPI.i18n.getUILanguage().toLowerCase();
-            let preferredLang;
-
-            // 判断是否为中文，并设置对应语言
-            if (browserLang.startsWith('zh')) {
-                // 浏览器语言是中文
-                preferredLang = 'zh_CN';
-            } else {
-                // 浏览器语言为任何非中文语言
-                preferredLang = 'en';
-            }
-
-            await browserAPI.storage.local.set({
-                preferredLang: preferredLang,
-                languageAutoDetected: true
-            });
-        }
-    } catch (e) {
-    }
-}
-
-// 全局变量
-// ... existing code ...
-// 浏览器启动、安装或更新时执行的初始化
-browserAPI.runtime.onStartup.addListener(async () => {
-    await initializeLanguagePreference(); // 新增：初始化语言偏好
-    await initializeBadge();
-    await initializeAutoSync();
-    initializeOperationTracking();
-
-    // 活跃时间追踪已剔除
-});
-
-// =================================================================================
-// VII. TAB FAVICON UPDATE SYSTEM (Tab Favicon 更新系统)
+// IV. LATE SYSTEMS, RESTORE BACKEND & FINAL INIT (后置系统、恢复后端与最终初始化)
 // =================================================================================
 
-// 防抖：记录已处理的 URL，避免重复更新
-const processedFavicons = new Map(); // url -> timestamp
-const FAVICON_UPDATE_COOLDOWN = 5000; // 5秒内同一URL不重复更新
-
-/**
- * 监听 tab 更新，当书签被打开时获取最新的 favicon 并更新缓存
- */
-browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-    // 只处理 favIconUrl 变化的情况（最精确的触发条件）
-    if (changeInfo.favIconUrl && tab.url) {
-        // 防抖检查：如果最近处理过这个URL，跳过
-        const now = Date.now();
-        const lastProcessed = processedFavicons.get(tab.url);
-        if (lastProcessed && (now - lastProcessed) < FAVICON_UPDATE_COOLDOWN) {
-            return; // 5秒内已处理过，跳过
-        }
-        // 过滤掉扩展页面、chrome:// 等
-        if (!tab.url.startsWith('http://') && !tab.url.startsWith('https://')) {
-            return;
-        }
-
-        // 检查是否是本地/内网地址（静默）
-        try {
-            const urlObj = new URL(tab.url);
-            const hostname = urlObj.hostname.toLowerCase();
-
-            // 本地地址
-            if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
-                return;
-            }
-
-            // 内网地址
-            if (hostname.match(/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/)) {
-                return;
-            }
-
-            // .local 域名
-            if (hostname.endsWith('.local')) {
-                return;
-            }
-        } catch (e) {
-            return;
-        }
-
-        // 记录处理时间
-        processedFavicons.set(tab.url, now);
-
-        // 定期清理旧记录（避免内存泄漏）
-        if (processedFavicons.size > 1000) {
-            const entries = Array.from(processedFavicons.entries());
-            entries.sort((a, b) => a[1] - b[1]); // 按时间排序
-            entries.slice(0, 500).forEach(([url]) => processedFavicons.delete(url)); // 删除一半旧记录
-        }
-
-        // 将 favicon URL 转换为 Base64（先使用 tab.favIconUrl，失败再回退 _favicon）
-        try {
-            const primaryFaviconUrl = tab.favIconUrl || changeInfo.favIconUrl;
-            let primaryStatus = 'non_fetchable';
-            const primaryDataUrl = await convertFaviconToBase64(primaryFaviconUrl, {
-                minDimensionPx: 16,
-                maxBytes: 512 * 1024,
-                timeoutMs: 4000,
-                onResult: (result) => {
-                    primaryStatus = String(result?.status || '').trim() || 'hard_failure';
-                }
-            });
-
-            let finalStatus = primaryStatus;
-            let finalDataUrl = primaryDataUrl;
-            if (finalStatus !== 'success') {
-                const fallbackPath = `/_favicon?pageUrl=${encodeURIComponent(tab.url)}&size=32`;
-                const fallbackFaviconUrl = browserAPI?.runtime?.getURL
-                    ? browserAPI.runtime.getURL(fallbackPath)
-                    : fallbackPath;
-                let fallbackStatus = 'non_fetchable';
-                finalDataUrl = await convertFaviconToBase64(fallbackFaviconUrl, {
-                    minDimensionPx: 16,
-                    maxBytes: 512 * 1024,
-                    timeoutMs: 4000,
-                    onResult: (result) => {
-                        fallbackStatus = String(result?.status || '').trim() || 'hard_failure';
-                    }
-                });
-                finalStatus = fallbackStatus;
-            }
-
-            if (finalStatus === 'success' && typeof finalDataUrl === 'string' && finalDataUrl.startsWith('data:image/')) {
-                // 发送消息给 history.js 更新缓存
-                browserAPI.runtime.sendMessage({
-                    action: 'updateFaviconFromTab',
-                    url: tab.url,
-                    favIconUrl: finalDataUrl
-                }).catch(() => {
-                    // 忽略错误，history.js 可能未打开
-                });
-            }
-
-            // 简洁日志：只显示域名
-            // 静默更新缓存
-        } catch (error) {
-            // 静默处理
-        }
-    }
-});
 
 // =============================================================================
 // Restore (Sync & Restore) - Backend
@@ -32895,6 +32638,7 @@ function parseNetscapeBookmarkHtmlToTree(htmlText) {
     return normalizedRoot;
 }
 
+
 // Restore source caches
 const RESTORE_SOURCE_CACHE_TTL_MS = 5 * 60 * 1000;
 const RESTORE_SOURCE_CACHE_MAX = 8;
@@ -34580,6 +34324,312 @@ async function convertFaviconToBase64(faviconUrl, options = {}) {
     }
 }
 
+
+// =================================================================================
+// VII. TAB FAVICON UPDATE SYSTEM (Tab Favicon 更新系统)
+// =================================================================================
+
+// 防抖：记录已处理的 URL，避免重复更新
+const processedFavicons = new Map(); // url -> timestamp
+const FAVICON_UPDATE_COOLDOWN = 5000; // 5秒内同一URL不重复更新
+
+/**
+ * 监听 tab 更新，当书签被打开时获取最新的 favicon 并更新缓存
+ */
+browserAPI.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    // 只处理 favIconUrl 变化的情况（最精确的触发条件）
+    if (changeInfo.favIconUrl && tab.url) {
+        // 防抖检查：如果最近处理过这个URL，跳过
+        const now = Date.now();
+        const lastProcessed = processedFavicons.get(tab.url);
+        if (lastProcessed && (now - lastProcessed) < FAVICON_UPDATE_COOLDOWN) {
+            return; // 5秒内已处理过，跳过
+        }
+        // 过滤掉扩展页面、chrome:// 等
+        if (!tab.url.startsWith('http://') && !tab.url.startsWith('https://')) {
+            return;
+        }
+
+        // 检查是否是本地/内网地址（静默）
+        try {
+            const urlObj = new URL(tab.url);
+            const hostname = urlObj.hostname.toLowerCase();
+
+            // 本地地址
+            if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+                return;
+            }
+
+            // 内网地址
+            if (hostname.match(/^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/)) {
+                return;
+            }
+
+            // .local 域名
+            if (hostname.endsWith('.local')) {
+                return;
+            }
+        } catch (e) {
+            return;
+        }
+
+        // 记录处理时间
+        processedFavicons.set(tab.url, now);
+
+        // 定期清理旧记录（避免内存泄漏）
+        if (processedFavicons.size > 1000) {
+            const entries = Array.from(processedFavicons.entries());
+            entries.sort((a, b) => a[1] - b[1]); // 按时间排序
+            entries.slice(0, 500).forEach(([url]) => processedFavicons.delete(url)); // 删除一半旧记录
+        }
+
+        // 将 favicon URL 转换为 Base64（先使用 tab.favIconUrl，失败再回退 _favicon）
+        try {
+            const primaryFaviconUrl = tab.favIconUrl || changeInfo.favIconUrl;
+            let primaryStatus = 'non_fetchable';
+            const primaryDataUrl = await convertFaviconToBase64(primaryFaviconUrl, {
+                minDimensionPx: 16,
+                maxBytes: 512 * 1024,
+                timeoutMs: 4000,
+                onResult: (result) => {
+                    primaryStatus = String(result?.status || '').trim() || 'hard_failure';
+                }
+            });
+
+            let finalStatus = primaryStatus;
+            let finalDataUrl = primaryDataUrl;
+            if (finalStatus !== 'success') {
+                const fallbackPath = `/_favicon?pageUrl=${encodeURIComponent(tab.url)}&size=32`;
+                const fallbackFaviconUrl = browserAPI?.runtime?.getURL
+                    ? browserAPI.runtime.getURL(fallbackPath)
+                    : fallbackPath;
+                let fallbackStatus = 'non_fetchable';
+                finalDataUrl = await convertFaviconToBase64(fallbackFaviconUrl, {
+                    minDimensionPx: 16,
+                    maxBytes: 512 * 1024,
+                    timeoutMs: 4000,
+                    onResult: (result) => {
+                        fallbackStatus = String(result?.status || '').trim() || 'hard_failure';
+                    }
+                });
+                finalStatus = fallbackStatus;
+            }
+
+            if (finalStatus === 'success' && typeof finalDataUrl === 'string' && finalDataUrl.startsWith('data:image/')) {
+                // 发送消息给 history.js 更新缓存
+                browserAPI.runtime.sendMessage({
+                    action: 'updateFaviconFromTab',
+                    url: tab.url,
+                    favIconUrl: finalDataUrl
+                }).catch(() => {
+                    // 忽略错误，history.js 可能未打开
+                });
+            }
+
+            // 简洁日志：只显示域名
+            // 静默更新缓存
+        } catch (error) {
+            // 静默处理
+        }
+    }
+});
+
+
+// =================================================================================
+// X. LATE INITIALIZATIONS / FINAL SETUP (后续初始化/最终设置) - IF ANY
+// =================================================================================
+// (Most initializations are now grouped at the top or with their respective systems)
+
+/**
+ * 为书签和文件夹生成唯一的、基于路径的指纹。
+ * @param {Array} bookmarkNodes - 浏览器书签树的根节点。
+ * @returns {{bookmarks: Array<string>, folders: Array<string>}} 包含书签和文件夹指纹数组的对象。
+ */
+function generateFingerprints(bookmarkNodes) {
+    const bookmarkPrints = new Set();
+    const folderPrints = new Set();
+
+    /**
+     * 递归遍历书签树，为每个项目生成指纹。
+     * @param {Array} nodes - 当前要遍历的节点数组。
+     * @param {string} path - 父文件夹的完整路径。
+     */
+    function traverse(nodes, path) {
+        for (const node of nodes) {
+            if (node.url) {
+                // 书签的身份 = 它所在的完整路径 + 它的名称 + 它的URL
+                const bookmarkFingerprint = `B:${path}|${node.title}|${node.url}`;
+                bookmarkPrints.add(bookmarkFingerprint);
+            } else if (node.children) {
+                // 文件夹的完整路径
+                const currentPath = path ? `${path}/${node.title}` : node.title;
+
+                // 计算其直接包含的内容数量
+                let directBookmarkCount = 0;
+                let directFolderCount = 0;
+                for (const child of node.children) {
+                    if (child.url) {
+                        directBookmarkCount++;
+                    } else if (child.children) {
+                        directFolderCount++;
+                    }
+                }
+
+                // 文件夹的身份 = 它的完整路径 + 它的名称 + 它包含的内容（数量限定）
+                const contentQuantitySignature = `c:${directBookmarkCount},${directFolderCount}`;
+                const folderFingerprint = `F:${currentPath}|${contentQuantitySignature}`;
+                folderPrints.add(folderFingerprint);
+
+                // 递归进入子文件夹
+                traverse(node.children, currentPath);
+            }
+        }
+    }
+
+    // 从根目录的子节点开始遍历，初始路径为空
+    if (bookmarkNodes && bookmarkNodes.length > 0 && bookmarkNodes[0].children) {
+        traverse(bookmarkNodes[0].children, '');
+    }
+
+    return {
+        bookmarks: [...bookmarkPrints],
+        folders: [...folderPrints]
+    };
+}
+
+/**
+ * 比较两个Set对象的内容是否完全相等。
+ * @param {Set<any>} setA - 第一个Set。
+ * @param {Set<any>} setB - 第二个Set。
+ * @returns {boolean} 如果两个Set内容相同则返回true。
+ */
+function areSetsEqual(setA, setB) {
+    if (setA.size !== setB.size) {
+        return false;
+    }
+    for (const item of setA) {
+        if (!setB.has(item)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * [新] 核心分析函数，执行一次遍历，完成所有计算，并更新缓存。
+ * 这是所有状态获取的权威来源。
+ */
+async function updateAndCacheAnalysis() {
+    try {
+        const preAnalysisStore = await browserAPI.storage.local.get([
+            'lastBookmarkData',
+            'lastBookmarkChangeTime'
+        ]);
+        const expectedBaselineTs = preAnalysisStore?.lastBookmarkData?.timestamp || null;
+        const expectedLastChangeTime = typeof preAnalysisStore?.lastBookmarkChangeTime === 'number'
+            ? preAnalysisStore.lastBookmarkChangeTime
+            : 0;
+        const analysis = await analyzeBookmarkChanges();
+        cachedBookmarkAnalysis = analysis;
+
+        // 将摘要快照持久化到 storage（供提醒系统/页面在缓存未命中时兜底使用）
+        try {
+            const snapshotMetaStore = await browserAPI.storage.local.get([
+                'lastBookmarkData',
+                'lastBookmarkChangeTime'
+            ]);
+            const snapshotMeta = {
+                lastBookmarkDataTimestamp: snapshotMetaStore?.lastBookmarkData?.timestamp || null,
+                lastBookmarkChangeTime: typeof snapshotMetaStore?.lastBookmarkChangeTime === 'number'
+                    ? snapshotMetaStore.lastBookmarkChangeTime
+                    : 0
+            };
+            await browserAPI.storage.local.set({
+                cachedBookmarkAnalysisSnapshot: analysis,
+                cachedBookmarkAnalysisSnapshotTime: Date.now(),
+                cachedBookmarkAnalysisSnapshotMeta: snapshotMeta
+            });
+        } catch (_) { }
+
+        try {
+            await clearDirtyStateIfAnalysisIsClean(analysis, {
+                expectedLastBookmarkChangeTime: expectedLastChangeTime,
+                expectedLastBookmarkDataTimestamp: expectedBaselineTs
+            });
+        } catch (_) { }
+        try {
+            await syncDirtyStateIfAnalysisHasChanges(analysis, {
+                expectedLastBookmarkChangeTime: expectedLastChangeTime,
+                expectedLastBookmarkDataTimestamp: expectedBaselineTs
+            });
+        } catch (_) { }
+
+        // 分析完成后，向前端发送消息（analysis + 最近移动兜底）
+        browserAPI.runtime.sendMessage({ action: "analysisUpdated", ...analysis }).catch(() => {
+            // 忽略错误，因为popup可能未打开
+        });
+
+        // 同步广播最近移动ID，增加前端打标稳定性
+        try {
+            const { recentMovedIds = [] } = await browserAPI.storage.local.get(['recentMovedIds']);
+            const now = Date.now();
+            const fresh = recentMovedIds.filter(r => (now - (r.time || 0)) < RECENT_MOVED_TTL_MS);
+            for (const r of fresh) {
+                browserAPI.runtime.sendMessage({ action: 'recentMovedBroadcast', id: r.id }).catch(() => { });
+            }
+        } catch (_) { }
+
+        return cachedBookmarkAnalysis;
+    } catch (error) {
+        console.error('[updateAndCacheAnalysis] 分析失败:', error);
+        // 出错时清除缓存，以防数据不一致
+        cachedBookmarkAnalysis = null;
+        throw error; // 重新抛出错误
+    }
+}
+
+/**
+ * 新增：初始化语言偏好函数
+ * 在扩展首次启动时检测浏览器语言并存储。
+ */
+async function initializeLanguagePreference() {
+    try {
+        const result = await browserAPI.storage.local.get('languageAutoDetected');
+        if (!result.languageAutoDetected) {
+            const browserLang = browserAPI.i18n.getUILanguage().toLowerCase();
+            let preferredLang;
+
+            // 判断是否为中文，并设置对应语言
+            if (browserLang.startsWith('zh')) {
+                // 浏览器语言是中文
+                preferredLang = 'zh_CN';
+            } else {
+                // 浏览器语言为任何非中文语言
+                preferredLang = 'en';
+            }
+
+            await browserAPI.storage.local.set({
+                preferredLang: preferredLang,
+                languageAutoDetected: true
+            });
+        }
+    } catch (e) {
+    }
+}
+
+// 全局变量
+// ... existing code ...
+// 浏览器启动、安装或更新时执行的初始化
+browserAPI.runtime.onStartup.addListener(async () => {
+    await initializeLanguagePreference(); // 新增：初始化语言偏好
+    await initializeBadge();
+    await initializeAutoSync();
+    initializeOperationTracking();
+
+    // 活跃时间追踪已剔除
+});
+
+
 // =================================================================================
 // VIII. INITIALIZATION (初始化)
 // =================================================================================
@@ -34599,6 +34649,8 @@ browserAPI.runtime.onInstalled.addListener(async (details) => {
     }
 });
 
+
 // =================================================================================
 // IX. 顶层初始化：活跃时间追踪/点击记录已剔除
 // =================================================================================
+

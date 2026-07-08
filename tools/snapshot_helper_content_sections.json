@@ -1,0 +1,119 @@
+{
+  "source_file": "Bookmark-Backup-main/dev_1/snapshot_helper_content.js",
+  "table_of_contents_title": "TABLE OF CONTENTS (目录索引)",
+  "check_command": "node --check",
+  "markers": [
+    {
+      "name": "prelude_runtime_i18n",
+      "exact": "(function () {"
+    },
+    {
+      "name": "class_core_host_theme",
+      "exact": "class Dev1SnapshotHelper {"
+    },
+    {
+      "name": "main_panel_render",
+      "exact": "_renderPanel() {"
+    },
+    {
+      "name": "highlighter_launch_actions",
+      "exact": "_setHeaderFeedback(message = '', timeoutMs = 2400) {"
+    },
+    {
+      "name": "capture_public_lifecycle",
+      "exact": "async _captureVisibleTab() {"
+    },
+    {
+      "name": "zoom_stability_storage_url",
+      "exact": "_getZoomInvariantContainer() {"
+    },
+    {
+      "name": "markdown_source_lookup",
+      "exact": "_isMarkdownSourceCandidateVisible(element, options = {}) {"
+    },
+    {
+      "name": "markdown_image_convert",
+      "exact": "_getMarkdownImageFileMime(file) {"
+    },
+    {
+      "name": "markdown_settings_panel",
+      "exact": "_repositionMdSettingsPanel() {"
+    },
+    {
+      "name": "recording_settings_panel",
+      "exact": "async _showRecordingSettings(anchor) {"
+    },
+    {
+      "name": "screenshot_recording_entrypoints",
+      "exact": "startAreaScreenshot(options = {}) {"
+    },
+    {
+      "name": "area_recording_core",
+      "exact": "async _startAreaRecording(rect, isDarkPage) {"
+    },
+    {
+      "name": "recording_result_dialog",
+      "exact": "_showRecordingResult(blob, mimeType = 'video/webm') {"
+    },
+    {
+      "name": "manual_scroll_long_screenshot",
+      "exact": "async _startManualScrollSession(rect) {"
+    },
+    {
+      "name": "screenshot_process_editor_terminal",
+      "exact": "_processScreenshot(dataUrl, rect) {"
+    },
+    {
+      "name": "api_export",
+      "exact": "const helper = new Dev1SnapshotHelper();"
+    }
+  ],
+  "sections": [
+    {
+      "id": "I",
+      "title": "RUNTIME, CLASS CORE & PANEL (运行时、类核心与主面板)",
+      "chunks": [
+        "prelude_runtime_i18n",
+        "class_core_host_theme",
+        "main_panel_render"
+      ]
+    },
+    {
+      "id": "II",
+      "title": "HIGHLIGHTER LAUNCH & LIFECYCLE (高亮器启动与生命周期)",
+      "chunks": [
+        "highlighter_launch_actions",
+        "capture_public_lifecycle",
+        "zoom_stability_storage_url"
+      ]
+    },
+    {
+      "id": "III",
+      "title": "SCREENSHOT & RECORDING CONTROLS (截图与录屏控制)",
+      "chunks": [
+        "recording_settings_panel",
+        "screenshot_recording_entrypoints",
+        "area_recording_core",
+        "recording_result_dialog",
+        "manual_scroll_long_screenshot"
+      ]
+    },
+    {
+      "id": "IV",
+      "title": "MARKDOWN SOURCE, IMAGE & SETTINGS (Markdown 来源、图片与设置)",
+      "chunks": [
+        "markdown_source_lookup",
+        "markdown_image_convert",
+        "markdown_settings_panel"
+      ]
+    },
+    {
+      "id": "V",
+      "title": "SCREENSHOT PROCESSING & API EXPORT (截图处理与 API 导出)",
+      "chunks": [
+        "screenshot_process_editor_terminal",
+        "api_export"
+      ]
+    }
+  ]
+}

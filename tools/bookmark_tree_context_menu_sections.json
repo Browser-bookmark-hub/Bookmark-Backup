@@ -1,0 +1,129 @@
+{
+  "source_file": "Bookmark-Backup-main/history_html/bookmark_tree_context_menu.js",
+  "table_of_contents_title": "TABLE OF CONTENTS (目录索引)",
+  "check_command": "node --check",
+  "markers": [
+    {
+      "name": "module_header_globals",
+      "exact": "// 书签树右键菜单功能"
+    },
+    {
+      "name": "open_mode_state_init",
+      "exact": "// 全局：默认打开方式与特定窗口/分组ID"
+    },
+    {
+      "name": "open_mode_persistence",
+      "exact": "async function setDefaultOpenMode(mode) {"
+    },
+    {
+      "name": "scope_registry",
+      "exact": "const CTXMENU_PERMANENT_SECTION_COPIES_STORAGE_KEY = 'permanent-section-copies';"
+    },
+    {
+      "name": "selection_state",
+      "exact": "let clipboardOperation = null; // 'cut' | 'copy'"
+    },
+    {
+      "name": "batch_panel_layout_core",
+      "exact": "const BATCH_PANEL_STATE_MAP_KEY = 'batchPanelStateMap';"
+    },
+    {
+      "name": "context_menu_core",
+      "exact": "// 初始化右键菜单"
+    },
+    {
+      "name": "hyperlink_menu_actions",
+      "exact": "// 显示超链接右键菜单（用于描述中的链接）"
+    },
+    {
+      "name": "bookmark_menu_actions",
+      "exact": "// 显示右键菜单"
+    },
+    {
+      "name": "bookmark_opening",
+      "exact": "// 打开书签（根据defaultOpenMode决定打开方式）"
+    },
+    {
+      "name": "bookmark_crud_clipboard",
+      "exact": "// 打开文件夹中所有书签"
+    },
+    {
+      "name": "multi_select",
+      "exact": "// ==================== 多选功能 ===================="
+    },
+    {
+      "name": "select_mode_panel",
+      "exact": "// ==================== Select模式 ===================="
+    },
+    {
+      "name": "batch_actions",
+      "exact": "// ==================== 批量操作功能 ===================="
+    },
+    {
+      "name": "batch_toolbar_keyboard_layout",
+      "exact": "// ==================== 顶部批量操作工具栏 ===================="
+    },
+    {
+      "name": "blank_area_exports",
+      "exact": "// 显示空白区域右键菜单"
+    },
+    {
+      "name": "standalone_hyperlink_openers",
+      "exact": "// ========== 超链接系统：独立的打开函数（不与书签共享状态） =========="
+    },
+    {
+      "name": "manual_window_group_selector",
+      "exact": "// 手动选择窗口+组功能"
+    }
+  ],
+  "sections": [
+    {
+      "id": "I",
+      "title": "GLOBAL STATE & OPEN MODE SETUP (全局状态与打开模式)",
+      "chunks": [
+        "module_header_globals",
+        "open_mode_state_init",
+        "open_mode_persistence"
+      ]
+    },
+    {
+      "id": "II",
+      "title": "SCOPE REGISTRY, SELECTION & PANEL LAYOUT (作用域登记、多选与面板布局)",
+      "chunks": [
+        "scope_registry",
+        "selection_state",
+        "batch_panel_layout_core"
+      ]
+    },
+    {
+      "id": "III",
+      "title": "CONTEXT MENUS & BOOKMARK ACTIONS (右键菜单与书签操作)",
+      "chunks": [
+        "context_menu_core",
+        "hyperlink_menu_actions",
+        "bookmark_menu_actions",
+        "bookmark_opening",
+        "bookmark_crud_clipboard"
+      ]
+    },
+    {
+      "id": "IV",
+      "title": "MULTI SELECT & BATCH OPERATIONS (多选与批量操作)",
+      "chunks": [
+        "multi_select",
+        "select_mode_panel",
+        "batch_actions",
+        "batch_toolbar_keyboard_layout"
+      ]
+    },
+    {
+      "id": "V",
+      "title": "BLANK AREA, HYPERLINKS & MANUAL TARGETS (空白区、超链接与手动目标)",
+      "chunks": [
+        "standalone_hyperlink_openers",
+        "blank_area_exports",
+        "manual_window_group_selector"
+      ]
+    }
+  ]
+}

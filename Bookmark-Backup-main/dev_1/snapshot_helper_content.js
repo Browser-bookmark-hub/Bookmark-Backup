@@ -1,3 +1,17 @@
+// =================================================================================
+// TABLE OF CONTENTS (目录索引)
+// =================================================================================
+// I.     RUNTIME, CLASS CORE & PANEL (运行时、类核心与主面板)
+// II.    HIGHLIGHTER LAUNCH & LIFECYCLE (高亮器启动与生命周期)
+// III.   SCREENSHOT & RECORDING CONTROLS (截图与录屏控制)
+// IV.    MARKDOWN SOURCE, IMAGE & SETTINGS (Markdown 来源、图片与设置)
+// V.     SCREENSHOT PROCESSING & API EXPORT (截图处理与 API 导出)
+// =================================================================================
+
+// =================================================================================
+// I. RUNTIME, CLASS CORE & PANEL (运行时、类核心与主面板)
+// =================================================================================
+
 (function () {
     'use strict';
 
@@ -272,6 +286,7 @@
         }
       });
     }
+
 
     class Dev1SnapshotHelper {
       constructor() {
@@ -693,6 +708,7 @@
         
         root.className = `dev1-helper-root pos-${isTop ? 'top' : 'bottom'}-${isLeft ? 'left' : 'right'}`;
       }
+
 
       _renderPanel() {
         const host = this._ensureHost();
@@ -1489,6 +1505,11 @@
         requestAnimationFrame(() => this._updateQuadrant(true));
       }
 
+// =================================================================================
+// II. HIGHLIGHTER LAUNCH & LIFECYCLE (高亮器启动与生命周期)
+// =================================================================================
+
+
       _setHeaderFeedback(message = '', timeoutMs = 2400) {
         const feedback = this.shadow && this.shadow.querySelector('.dev1-helper-feedback');
         if (!feedback) return;
@@ -1903,6 +1924,7 @@
         };
       }
 
+
       async _captureVisibleTab() {
         if (this.host) this.host.style.visibility = 'hidden';
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -2035,6 +2057,7 @@
           this._removeRecordingSettingsPanel();
         }
       }
+
 
     // ===== Zoom-Invariant Fixed Layer for Screenshot/Recording UI =====
     // Creates and returns a container that floats above the page, unaffected by page zoom
@@ -2450,6 +2473,2982 @@
         this._urlChangeListener = null;
       }
     }
+
+// =================================================================================
+// III. SCREENSHOT & RECORDING CONTROLS (截图与录屏控制)
+// =================================================================================
+
+
+    // 显示录屏设置面板
+    async _showRecordingSettings(anchor) {
+      console.log('_showRecordingSettings called');
+
+      if (!this._codecCheckPromise) {
+        this._codecCheckPromise = this._checkAllCodecsSupport();
+      }
+
+      // 移除已存在的设置面板
+      const existing = this._getRecordingSettingsPanel();
+      if (existing) { existing.remove(); return; }
+
+      const t = (key, fallback) => (this.t && this.t(key)) || fallback;
+      const isDark = this.darkModeEnabled;
+
+      const root = this.shadow && this.shadow.querySelector('.dev1-helper-root');
+      let positionStyle = 'bottom: 64px; right: 0;';
+      if (root) {
+        if (root.classList.contains('pos-bottom-left')) {
+          positionStyle = 'bottom: 64px; left: 0;';
+        } else if (root.classList.contains('pos-top-right')) {
+          positionStyle = 'top: 64px; right: 0;';
+        } else if (root.classList.contains('pos-top-left')) {
+          positionStyle = 'top: 64px; left: 0;';
+        }
+      }
+
+      const panel = document.createElement('div');
+      panel.id = 'recording-settings-panel';
+      if (!root) {
+        const rect = anchor.getBoundingClientRect();
+        const PANEL_WIDTH = 280;
+        const PANEL_HEIGHT = 370;
+        let left = rect.left - (PANEL_WIDTH / 2) + (rect.width / 2);
+        if (left + PANEL_WIDTH > window.innerWidth) left = window.innerWidth - PANEL_WIDTH - 10;
+        if (left < 10) left = 10;
+        let top = rect.bottom + 10;
+        if (top + PANEL_HEIGHT > window.innerHeight) {
+          top = rect.top - PANEL_HEIGHT - 10;
+          if (top < 10) top = Math.max(10, window.innerHeight - PANEL_HEIGHT - 10);
+        }
+        panel.style.cssText = `
+          position: fixed;
+          top: ${top}px;
+          left: ${left}px;
+          width: 280px;
+          padding: 16px;
+          background: ${isDark ? 'var(--panel-bg, #1f1f1f)' : 'var(--panel-bg, #f0f4f8)'};
+          border: 1px solid var(--panel-border, ${isDark ? '#3b3b3b' : '#cbd5e1'});
+          border-radius: 20px;
+          box-shadow: var(--panel-shadow, 0 10px 40px rgba(0,0,0,0.3));
+          z-index: 2147483648;
+          font-size: 13px;
+          color: var(--text-main, ${isDark ? '#e2e8f0' : '#1e293b'});
+          pointer-events: auto !important;
+          backdrop-filter: var(--backdrop-filter);
+          -webkit-backdrop-filter: var(--backdrop-filter);
+        `;
+      }
+
+      let closeHandler = null;
+      const closePanel = () => {
+        panel.remove();
+        if (closeHandler) document.removeEventListener('click', closeHandler);
+      };
+
+      // 标题
+      const title = document.createElement('div');
+      title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; position: relative;';
+      
+      const titleLabel = document.createElement('div');
+      titleLabel.style.cssText = 'display: flex; align-items: center; gap: 8px; flex: 1;';
+      
+      const iconSpan = document.createElement('span');
+      iconSpan.style.display = 'flex';
+      iconSpan.style.alignItems = 'center';
+      iconSpan.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
+      titleLabel.appendChild(iconSpan);
+
+      const titleText = document.createElement('span');
+      titleText.textContent = t('recording_settings', '录制设置');
+      titleLabel.appendChild(titleText);
+
+      // 提示说明按钮
+      const infoBtn = document.createElement('button');
+      infoBtn.type = 'button';
+      infoBtn.textContent = '?';
+      infoBtn.title = t('recording_settings_info_title', '录制说明');
+      infoBtn.setAttribute('aria-label', t('recording_settings_info_title', '录制说明'));
+      infoBtn.style.cssText = `
+        box-sizing: border-box !important;
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        outline: none !important;
+        border: 1px solid ${isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.18)'} !important;
+        border-radius: 999px !important;
+        background: ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'} !important;
+        color: ${isDark ? '#e2e8f0' : '#475569'} !important;
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+        padding: 0 !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        font-family: inherit !important;
+        cursor: pointer !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        pointer-events: auto !important;
+        transition: all 0.2s ease !important;
+        margin-left: 6px !important;
+        line-height: 1 !important;
+      `;
+      
+      infoBtn.addEventListener('mouseenter', () => {
+        infoBtn.style.setProperty('background', isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.12)', 'important');
+        infoBtn.style.setProperty('color', '#3b82f6', 'important');
+        infoBtn.style.setProperty('border-color', '#3b82f6', 'important');
+      });
+      infoBtn.addEventListener('mouseleave', () => {
+        infoBtn.style.setProperty('background', isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', 'important');
+        infoBtn.style.setProperty('color', isDark ? '#e2e8f0' : '#475569', 'important');
+        infoBtn.style.setProperty('border-color', isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.18)', 'important');
+      });
+      
+      const isChinese = (this.config && this.config.lang) !== 'en';
+      infoBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const helpPanelId = 'recording-settings-help-panel';
+        let helpPanel = panel.querySelector('#' + helpPanelId);
+        if (helpPanel) {
+          helpPanel.remove();
+        } else {
+          helpPanel = document.createElement('div');
+          helpPanel.id = helpPanelId;
+          helpPanel.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: ${isDark ? 'var(--panel-bg, #1f1f1f)' : 'var(--panel-bg, #f0f4f8)'};
+            border: 1px solid var(--panel-border, ${isDark ? '#3b3b3b' : '#cbd5e1'});
+            border-radius: 19px;
+            padding: 12px 10px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            color: var(--text-main, ${isDark ? '#e2e8f0' : '#1e293b'});
+            box-sizing: border-box;
+            pointer-events: auto !important;
+          `;
+
+          const scrollbarStyle = document.createElement('style');
+          scrollbarStyle.textContent = `
+            #${helpPanelId} ul::-webkit-scrollbar {
+              width: 5px !important;
+              height: 5px !important;
+            }
+            #${helpPanelId} ul::-webkit-scrollbar-track {
+              background: transparent !important;
+            }
+            #${helpPanelId} ul::-webkit-scrollbar-thumb {
+              background: ${isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.2)'} !important;
+              border-radius: 10px !important;
+            }
+            #${helpPanelId} ul::-webkit-scrollbar-thumb:hover {
+              background: ${isDark ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.35)'} !important;
+            }
+          `;
+          helpPanel.appendChild(scrollbarStyle);
+          
+          const helpTitle = document.createElement('div');
+          helpTitle.style.cssText = 'font-weight: 750 !important; font-size: 14px !important; margin-bottom: 12px !important; text-align: left !important;';
+          helpTitle.textContent = t('recording_settings_info_title', '录制说明');
+          
+          const list = document.createElement('ul');
+          list.style.cssText = 'margin: 0 0 12px 14px !important; padding: 0 6px 0 0 !important; font-size: 12px !important; line-height: 1.5 !important; flex: 1 !important; overflow-y: auto !important;';
+          
+          const items = isChinese ? [
+            '<strong style="color: #f97316;">不要改变窗口大小</strong>：录屏中途调整窗口会导致裁剪偏移、边缘露出红线。',
+            '<strong>视频缓存自动释放</strong>：录制完点击“保存并删除缓存”或“取消”都会瞬间彻底清空内存。',
+            '<strong>日常网页与办公</strong>：推荐使用 <strong>MP4 (H.264) + 60 FPS + 10M/20Mbps</strong>（兼容性最好，文件小）。',
+            '<strong>高刷新率 (120/240fps)</strong>：必须搭配 <strong>50M/100Mbps</strong> 码率（码率太低会导致运动画面变糊）。',
+            '<strong>网页视频 / 3D / 复杂动效</strong>：推荐 <strong>MP4 + 50M/100Mbps</strong>（防止剧烈运动时画面出现马赛克）。',
+            '<strong style="color: #f97316;">动态高亮 (流动线框/波纹)</strong>：推荐使用 <strong>60 FPS + 20M/50Mbps</strong>（保证高亮动画流动丝滑、无毛刺）。',
+            '<strong style="color: #f97316;">页面高亮过多导致卡顿</strong>：限制在 <strong>60 FPS</strong>，码率选 <strong>20Mbps</strong>（降低 CPU/GPU 负荷，防止掉帧）。',
+            '<strong>播放黑屏或打不开</strong>：首选 <strong>MP4</strong> 格式；遇到旧设备兼容问题可切换 <strong>WebM</strong> 备用。'
+          ] : [
+            '<strong style="color: #f97316;">Do not resize window</strong>: Resizing during recording causes crop shifts and exposes the red border.',
+            '<strong>Auto memory release</strong>: Canceling or saving will instantly clear all RAM video caches.',
+            '<strong>General Web Recording</strong>: Recommended <strong>MP4 (H.264) + 60 FPS + 10M/20Mbps</strong> (Best compatibility & size).',
+            '<strong>High FPS (120/240fps)</strong>: Must use <strong>50M/100Mbps</strong> (Low bitrates will cause blurry frames).',
+            '<strong>Videos / 3D / Complex Animations</strong>: Recommended <strong>MP4 + 50M/100Mbps</strong> (Prevents pixelation during fast motions).',
+            '<strong style="color: #f97316;">Dynamic Highlights (Running Line/Ripple)</strong>: Use <strong>60 FPS + 20M/50Mbps</strong> (Keeps border animation sharp & smooth).',
+            '<strong style="color: #f97316;">Stuttering due to too many highlights</strong>: Limit to <strong>60 FPS</strong>, select <strong>20Mbps</strong> (Reduces CPU/GPU load).',
+            '<strong>Player issues / Black screen</strong>: Use <strong>MP4</strong> (Best player compatibility). Use <strong>WebM</strong> as a fallback on old devices.'
+          ];
+          
+          items.forEach(text => {
+            const li = document.createElement('li');
+            li.style.cssText = 'margin: 8px 0 !important; text-align: left !important; list-style-type: disc !important;';
+            li.innerHTML = text;
+            list.appendChild(li);
+          });
+          
+          const closeHelpBtn = document.createElement('button');
+          closeHelpBtn.type = 'button';
+          closeHelpBtn.textContent = t('got_it', isChinese ? '知道了' : 'Got it');
+          closeHelpBtn.style.cssText = `
+            width: 100% !important;
+            height: 32px !important;
+            background: linear-gradient(135deg, #1976d2, #42a5f5) !important;
+            color: #fff !important;
+            border: 0 !important;
+            border-radius: 8px !important;
+            cursor: pointer !important;
+            font-weight: 600 !important;
+            font-size: 13px !important;
+            transition: opacity 0.2s !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            pointer-events: auto !important;
+            outline: none !important;
+            box-shadow: 0 2px 6px rgba(25, 118, 210, 0.2) !important;
+          `;
+          closeHelpBtn.addEventListener('mouseenter', () => closeHelpBtn.style.setProperty('opacity', '0.9', 'important'));
+          closeHelpBtn.addEventListener('mouseleave', () => closeHelpBtn.style.setProperty('opacity', '1', 'important'));
+          closeHelpBtn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            helpPanel.remove();
+          });
+          
+          helpPanel.appendChild(helpTitle);
+          helpPanel.appendChild(list);
+          helpPanel.appendChild(closeHelpBtn);
+          panel.appendChild(helpPanel);
+        }
+      });
+      titleLabel.appendChild(infoBtn);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.textContent = '×';
+      closeBtn.title = t('recording_settings_close', '关闭录制设置');
+      closeBtn.setAttribute('aria-label', t('recording_settings_close', '关闭录制设置'));
+      closeBtn.style.cssText = `
+        width: 24px;
+        height: 24px;
+        border: 0;
+        border-radius: 7px;
+        background: var(--btn-min-hover, ${isDark ? '#374151' : '#e2e8f0'});
+        color: var(--text-muted, ${isDark ? '#e2e8f0' : '#475569'});
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
+      closeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closePanel();
+      });
+      title.appendChild(titleLabel);
+      title.appendChild(closeBtn);
+      panel.appendChild(title);
+
+      // 创建设置项
+      const createSettingRow = (labelText, options, storageKey, defaultValue) => {
+        const row = document.createElement('div');
+        row.className = 'settings-row-' + storageKey;
+        row.style.cssText = 'margin-bottom: 14px;';
+
+        const label = document.createElement('div');
+        label.textContent = labelText;
+        label.style.cssText = 'font-size: 12px; color: var(--row-label-color, ' + (isDark ? '#9ca3af' : '#64748b') + '); margin-bottom: 8px;';
+        row.appendChild(label);
+
+        const btnGroup = document.createElement('div');
+        btnGroup.style.cssText = 'display: flex; gap: 6px; flex-wrap: wrap;';
+
+        let saved = defaultValue;
+        try { saved = localStorage.getItem(storageKey) || defaultValue; } catch (_) { }
+
+        options.forEach(opt => {
+          const btn = document.createElement('button');
+          btn.textContent = opt.label;
+          btn.dataset.value = opt.value;
+          const isActive = saved === opt.value;
+          const isDisabled = opt.disabled;
+
+          btn.style.cssText = `
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid ${isActive ? '#3b82f6' : `var(--btn-border, ${isDark ? '#3b3b3b' : '#e2e8f0'})`};
+            background: ${isActive ? `var(--btn-active-bg, ${isDark ? '#1e3a5f' : '#dbeafe'})` : `var(--btn-bg, ${isDark ? '#2d2d2d' : '#f8fafc'})`};
+            color: ${isActive ? '#3b82f6' : `var(--btn-color, ${isDark ? '#e2e8f0' : '#475569'})`};
+            cursor: ${isDisabled ? 'not-allowed' : 'pointer'};
+            font-size: 12px;
+            opacity: ${isDisabled ? '0.4' : '1'};
+            transition: all 0.15s ease;
+            display: ${isDisabled ? 'none' : ''};
+          `;
+
+          if (isActive) {
+            btn.classList.add('active');
+          }
+
+          if (!isDisabled) {
+            btn.addEventListener('click', () => {
+              btnGroup.querySelectorAll('button').forEach(b => {
+                b.style.border = `1px solid var(--btn-border, ${isDark ? '#3b3b3b' : '#e2e8f0'})`;
+                b.style.background = `var(--btn-bg, ${isDark ? '#2d2d2d' : '#f8fafc'})`;
+                b.style.color = `var(--btn-color, ${isDark ? '#e2e8f0' : '#475569'})`;
+                b.classList.remove('active');
+              });
+              btn.style.border = '1px solid #3b82f6';
+              btn.style.background = `var(--btn-active-bg, ${isDark ? '#1e3a5f' : '#dbeafe'})`;
+              btn.style.color = '#3b82f6';
+              btn.classList.add('active');
+              try { localStorage.setItem(storageKey, opt.value); } catch (_) { }
+
+              if (storageKey === 'record_format') {
+                updateSettingPanelState();
+              }
+            });
+          }
+
+          btnGroup.appendChild(btn);
+        });
+
+        row.appendChild(btnGroup);
+        return row;
+      };
+
+      // 动态更新面板禁用状态
+      const updateSettingPanelState = () => {
+        let format = 'mp4';
+        try { format = localStorage.getItem('record_format') || (webCodecsSupported ? 'mp4' : 'webm'); } catch (_) {}
+
+        const codecRow = panel.querySelector('.settings-row-record_codec');
+        const qualityRow = panel.querySelector('.settings-row-record_quality');
+        const fpsRow = panel.querySelector('.settings-row-record_fps');
+
+        if (!codecRow || !qualityRow || !fpsRow) return;
+
+        const setButtonEnabled = (btn, enabled) => {
+          if (enabled) {
+            btn.style.opacity = '1';
+            btn.style.pointerEvents = 'auto';
+            btn.style.cursor = 'pointer';
+            btn.disabled = false;
+            btn.style.display = '';
+          } else {
+            btn.style.opacity = '0.4';
+            btn.style.pointerEvents = 'none';
+            btn.style.cursor = 'not-allowed';
+            btn.disabled = true;
+            btn.style.border = `1px solid var(--btn-border, ${isDark ? '#3b3b3b' : '#e2e8f0'})`;
+            btn.style.background = `var(--btn-bg, ${isDark ? '#2d2d2d' : '#f8fafc'})`;
+            btn.style.color = `var(--btn-color, ${isDark ? '#e2e8f0' : '#475569'})`;
+            btn.classList.remove('active');
+            btn.style.display = 'none';
+          }
+        };
+
+        const setButtonActive = (btn) => {
+          btn.style.border = '1px solid #3b82f6';
+          btn.style.background = `var(--btn-active-bg, ${isDark ? '#1e3a5f' : '#dbeafe'})`;
+          btn.style.color = '#3b82f6';
+          btn.classList.add('active');
+          try {
+            const key = btn.parentElement.parentElement.className.replace('settings-row-', '');
+            localStorage.setItem(key, btn.dataset.value);
+          } catch (_) {}
+        };
+
+        if (format === 'mp4') {
+          // MP4: H.264, HEVC, AV1 Enabled; VP9, VP8 Disabled
+          codecRow.querySelectorAll('button').forEach(btn => {
+            const val = btn.dataset.value;
+            const isMp4Codec = val.startsWith('avc1') || val.startsWith('av01') || val.startsWith('hvc1');
+            setButtonEnabled(btn, isMp4Codec);
+          });
+
+          // Quality: All enabled
+          qualityRow.querySelectorAll('button').forEach(btn => {
+            setButtonEnabled(btn, true);
+          });
+
+          // FPS: All enabled
+          fpsRow.querySelectorAll('button').forEach(btn => {
+            setButtonEnabled(btn, true);
+          });
+        } else {
+          // WebM: VP9, VP8 Enabled; Others Disabled
+          codecRow.querySelectorAll('button').forEach(btn => {
+            const val = btn.dataset.value;
+            const isWebmCodec = val.includes('webm');
+            setButtonEnabled(btn, isWebmCodec);
+          });
+
+          // Quality: 100M/50M Disabled; 20M/10M/5M Enabled
+          qualityRow.querySelectorAll('button').forEach(btn => {
+            const val = parseInt(btn.dataset.value);
+            const isWebmQuality = val <= 20000000;
+            setButtonEnabled(btn, isWebmQuality);
+          });
+
+          // FPS: 240/120 Disabled; 60/30 Enabled
+          fpsRow.querySelectorAll('button').forEach(btn => {
+            const val = parseInt(btn.dataset.value);
+            const isWebmFps = val <= 60;
+            setButtonEnabled(btn, isWebmFps);
+          });
+        }
+
+        // Auto-select first enabled option if active button is disabled
+        [codecRow, qualityRow, fpsRow].forEach(row => {
+          const activeBtn = row.querySelector('button.active');
+          if (!activeBtn || activeBtn.disabled) {
+            if (activeBtn) activeBtn.classList.remove('active');
+            const firstEnabled = Array.from(row.querySelectorAll('button')).find(btn => !btn.disabled);
+            if (firstEnabled) {
+              setButtonActive(firstEnabled);
+            }
+          }
+        });
+      };
+
+      // 确保已经完成编解码器支持检测
+      if (this._codecCheckPromise) {
+        await this._codecCheckPromise;
+      }
+
+      const codecs = this._supportedCodecsCache || [
+        { value: 'avc1.640033', label: isChinese ? 'H.264 High 5.1 (推荐)' : 'H.264 High 5.1 (Recommended)' },
+        { value: 'avc1.42001f', label: isChinese ? 'H.264 Baseline (兼容)' : 'H.264 Baseline (Compatible)' }
+      ];
+
+      const webCodecsSupported = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined' && typeof Mp4Muxer.Muxer === 'function';
+      const defaultCodec = codecs[0] ? codecs[0].value : (webCodecsSupported ? 'avc1.640033' : 'video/webm;codecs=vp9');
+      panel.appendChild(createSettingRow(t('codec', '编码器'), codecs, 'record_codec', defaultCodec));
+
+      // 画质选择（码率） - WebCodecs 支持更高码率
+      const qualities = webCodecsSupported ? [
+        { value: '100000000', label: t('quality_max', '无损') + ' 100Mbps' },
+        { value: '50000000', label: t('quality_ultra', '极清') + ' 50Mbps' },
+        { value: '20000000', label: t('quality_high', '超清') + ' 20Mbps' },
+        { value: '10000000', label: t('quality_medium', '高清') + ' 10Mbps' },
+        { value: '5000000', label: t('quality_low', '标清') + ' 5Mbps' }
+      ] : [
+        { value: '40000000', label: t('quality_ultra', '极清') + ' 40Mbps' },
+        { value: '20000000', label: t('quality_high', '超清') + ' 20Mbps' },
+        { value: '10000000', label: t('quality_medium', '高清') + ' 10Mbps' },
+        { value: '5000000', label: t('quality_low', '标清') + ' 5Mbps' }
+      ];
+      const defaultQuality = webCodecsSupported ? '50000000' : '20000000';
+      panel.appendChild(createSettingRow(t('quality', '画质'), qualities, 'record_quality', defaultQuality));
+
+      // 帧率选择
+      const frameRates = [
+        { value: '240', label: '240 FPS' },
+        { value: '120', label: '120 FPS' },
+        { value: '60', label: '60 FPS' },
+        { value: '30', label: '30 FPS' }
+      ];
+      panel.appendChild(createSettingRow(t('frame_rate', '帧率'), frameRates, 'record_fps', '60'));
+
+      // 格式选择
+      const formats = [
+        { value: 'mp4', label: 'MP4', disabled: !webCodecsSupported },
+        { value: 'webm', label: 'WebM' }
+      ];
+      const defaultFormat = webCodecsSupported ? 'mp4' : 'webm';
+      panel.appendChild(createSettingRow(t('format', '格式'), formats, 'record_format', defaultFormat));
+
+      // 触发初始状态匹配更新
+      updateSettingPanelState();
+
+
+
+      // 点击外部关闭
+      closeHandler = (e) => {
+        const target = (e.composedPath && e.composedPath()[0]) || e.target;
+        if (!panel.contains(target) && (!anchor || !anchor.contains(target))) {
+          closePanel();
+        }
+      };
+      setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
+
+      if (root) {
+        root.appendChild(panel);
+      } else {
+        (this.shadow || document.body).appendChild(panel);
+      }
+      console.log('Settings panel appended', panel);
+    }
+
+
+    startAreaScreenshot(options = {}) {
+      try {
+        if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+            window.__dev1SnapshotHighlighter._instance && 
+            typeof window.__dev1SnapshotHighlighter._instance._suppressCursor === 'function') {
+          window.__dev1SnapshotHighlighter._instance._suppressCursor('screenshot');
+        }
+      } catch (_) {}
+
+      // 截图开始前缓存当前主题，避免截图期间主题检测被覆盖层干扰
+      this._cachedTheme = this.detectPageTheme();
+      this._isScreenshotting = true;
+
+      // Close settings panel
+      this._removeRecordingSettingsPanel();
+
+      // Get zoom-invariant container to prevent position drift during PDF zoom/resize
+      const fixedLayer = this._getZoomInvariantContainer();
+
+      // Create overlay
+      const overlay = document.createElement('div');
+      overlay.id = 'screenshot-overlay';
+      overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2147483647; cursor: crosshair; background: rgba(0,0,0,0.3); pointer-events: auto;';
+
+      // Add instruction text
+      const hint = document.createElement('div');
+      hint.textContent = options.mode === 'manual_scroll'
+        ? ((this.t && this.t('screenshot_manual_instruction')) || 'Drag to select area for scrolling capture')
+        : ((this.t && this.t('screenshot_instruction_area')) || 'Drag to select area');
+      // 根据页面主题调整提示文字颜色：深色页面用白字深底，浅色页面用深字浅底
+      const isDarkPage = this._cachedTheme === true;
+      const hintBg = isDarkPage ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.9)';
+      const hintColor = isDarkPage ? '#ffffff' : '#1e293b';
+      hint.style.cssText = `position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: ${hintBg}; color: ${hintColor}; padding: 8px 16px; border-radius: 20px; font-size: 14px; pointer-events: none; font-weight: 500; box-shadow: 0 2px 8px rgba(0,0,0,0.15);`;
+      overlay.appendChild(hint);
+
+      const selection = document.createElement('div');
+      selection.style.cssText = 'position: absolute; border: 2px solid #3b82f6; background: rgba(59, 130, 246, 0.1); display: none; pointer-events: none;';
+      overlay.appendChild(selection);
+      fixedLayer.appendChild(overlay);
+
+      let startX, startY;
+      let isDragging = false;
+
+      const onDown = (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        selection.style.left = startX + 'px';
+        selection.style.top = startY + 'px';
+        selection.style.width = '0px';
+        selection.style.height = '0px';
+        selection.style.display = 'block';
+        e.preventDefault();
+      };
+
+      const onMove = (e) => {
+        if (!isDragging) return;
+        const currentX = e.clientX;
+        const currentY = e.clientY;
+
+        const left = Math.min(startX, currentX);
+        const top = Math.min(startY, currentY);
+        const width = Math.abs(currentX - startX);
+        const height = Math.abs(currentY - startY);
+
+        selection.style.left = left + 'px';
+        selection.style.top = top + 'px';
+        selection.style.width = width + 'px';
+        selection.style.height = height + 'px';
+        e.preventDefault();
+      };
+
+      const onUp = async (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+
+        const rect = selection.getBoundingClientRect();
+        overlay.remove();
+        this.activeSessionCleanup = null;
+        document.removeEventListener('keydown', onKey);
+        document.removeEventListener('contextmenu', onContextMenu);
+        this._removeZoomInvariantContainer();
+
+        if (rect.width < 5 || rect.height < 5) {
+          try {
+            if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+                window.__dev1SnapshotHighlighter._instance && 
+                typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+              window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+            }
+          } catch (_) {}
+          // 选择太小，清除截图状态
+          this._isScreenshotting = false;
+          return;
+        }
+
+        // If callback provided (e.g. for manual scroll), use it
+        // 注意：长截图模式下，标志由 _startManualScrollSession 的 cleanup 清除
+        if (options.onSelect) {
+          options.onSelect(rect);
+          return;
+        }
+
+        try {
+          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+              window.__dev1SnapshotHighlighter._instance && 
+              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+          }
+        } catch (_) {}
+
+        // Default: Capture immediate area
+        try {
+          const response = await this._captureVisibleTab();
+          if (response && response.success && response.dataUrl) {
+            this._processScreenshot(response.dataUrl, rect);
+          } else {
+            const msg = (this.t && this.t('screenshot_failed')) || 'Screenshot failed';
+            alert(`${msg}\n${response?.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          console.error(err);
+          const msg = (this.t && this.t('screenshot_failed')) || 'Screenshot failed';
+          alert(`${msg}\n${err.message || err}`);
+        } finally {
+          // 区域截图完成，清除截图状态
+          this._isScreenshotting = false;
+        }
+      };
+
+      overlay.addEventListener('mousedown', onDown);
+      overlay.addEventListener('mousemove', onMove);
+      overlay.addEventListener('mouseup', onUp);
+
+      // 取消选区的清理函数
+      const cancelSelection = () => {
+        overlay.remove();
+        this._removeZoomInvariantContainer();
+        document.removeEventListener('keydown', onKey);
+        document.removeEventListener('contextmenu', onContextMenu);
+        this.activeSessionCleanup = null;
+        this._isScreenshotting = false;
+
+        try {
+          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+              window.__dev1SnapshotHighlighter._instance && 
+              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+          }
+        } catch (_) {}
+      };
+
+      this.activeSessionCleanup = cancelSelection;
+
+      // ESC 取消
+      const onKey = (e) => {
+        if (e.key === 'Escape') {
+          cancelSelection();
+        }
+      };
+      document.addEventListener('keydown', onKey);
+
+      // 右键取消
+      const onContextMenu = (e) => {
+        e.preventDefault();
+        cancelSelection();
+      };
+      document.addEventListener('contextmenu', onContextMenu);
+    }
+
+    startLongScreenshot() {
+      // Close settings panel
+      this._removeRecordingSettingsPanel();
+
+      // Reuse area selection to define the viewport
+      this.startAreaScreenshot({
+        mode: 'manual_scroll',
+        onSelect: (rect) => this._startManualScrollSession(rect)
+      });
+    }
+
+    // 屏幕录制功能 - 先选择区域再录制
+    startScreenRecording() {
+      if (!this._codecCheckPromise) {
+        this._codecCheckPromise = this._checkAllCodecsSupport();
+      }
+
+      try {
+        if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+            window.__dev1SnapshotHighlighter._instance && 
+            typeof window.__dev1SnapshotHighlighter._instance._suppressCursor === 'function') {
+          window.__dev1SnapshotHighlighter._instance._suppressCursor('screenshot');
+        }
+      } catch (_) {}
+
+      // Close settings panel
+      this._removeRecordingSettingsPanel();
+
+      // 缓存主题
+      this._cachedTheme = this.detectPageTheme();
+      this._isScreenshotting = true;
+
+      const isDarkPage = this._cachedTheme === true;
+      const t = (key, fallback) => (this.t && this.t(key)) || fallback;
+
+      // Get zoom-invariant container to prevent position drift during PDF zoom/resize
+      const fixedLayer = this._getZoomInvariantContainer();
+
+      // 创建区域选择覆盖层
+      const overlay = document.createElement('div');
+      overlay.id = 'screen-record-overlay';
+      overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2147483647; cursor: crosshair; background: rgba(0,0,0,0.3); user-select: none; pointer-events: auto;';
+
+      // 阻止事件冒泡到页面
+      overlay.addEventListener('click', e => e.stopPropagation());
+      overlay.addEventListener('contextmenu', e => e.preventDefault());
+      overlay.addEventListener('pointerdown', e => e.stopPropagation());
+
+      // 提示文字
+      const hint = document.createElement('div');
+      hint.textContent = t('screen_record_select_area', '拖拽选择录制区域');
+      const hintBg = isDarkPage ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.9)';
+      const hintColor = isDarkPage ? '#ffffff' : '#1e293b';
+      hint.style.cssText = `position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: ${hintBg}; color: ${hintColor}; padding: 8px 16px; border-radius: 20px; font-size: 14px; pointer-events: none; font-weight: 500; box-shadow: 0 2px 8px rgba(0,0,0,0.15);`;
+      overlay.appendChild(hint);
+
+      const selection = document.createElement('div');
+      selection.style.cssText = 'position: absolute; border: 2px solid #ef4444; background: rgba(239, 68, 68, 0.1); display: none; pointer-events: none;';
+      overlay.appendChild(selection);
+      fixedLayer.appendChild(overlay);
+
+      console.log('Screen record overlay created');
+
+      let startX, startY;
+      let isDragging = false;
+
+      const onDown = (e) => {
+        console.log('Screen record: mousedown');
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        selection.style.left = startX + 'px';
+        selection.style.top = startY + 'px';
+        selection.style.width = '0px';
+        selection.style.height = '0px';
+        selection.style.display = 'block';
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      const onMove = (e) => {
+        if (!isDragging) return;
+        const currentX = e.clientX;
+        const currentY = e.clientY;
+        const left = Math.min(startX, currentX);
+        const top = Math.min(startY, currentY);
+        const width = Math.abs(currentX - startX);
+        const height = Math.abs(currentY - startY);
+        selection.style.left = left + 'px';
+        selection.style.top = top + 'px';
+        selection.style.width = width + 'px';
+        selection.style.height = height + 'px';
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      const onUp = async (e) => {
+        console.log('Screen record: mouseup, isDragging:', isDragging);
+        if (!isDragging) return;
+        isDragging = false;
+        e.stopPropagation();
+
+        const rect = selection.getBoundingClientRect();
+        console.log('Screen record: selection rect', rect.width, rect.height);
+
+        overlay.remove();
+        this.activeSessionCleanup = null;
+        document.removeEventListener('keydown', onKey);
+        document.removeEventListener('contextmenu', onContextMenu);
+        this._removeZoomInvariantContainer();
+
+        try {
+          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+              window.__dev1SnapshotHighlighter._instance && 
+              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+          }
+        } catch (_) {}
+
+        if (rect.width < 50 || rect.height < 50) {
+          this._isScreenshotting = false;
+          return;
+        }
+
+        // 开始区域录制
+        await this._startAreaRecording(rect, isDarkPage);
+      };
+
+      overlay.addEventListener('mousedown', onDown, true);
+      overlay.addEventListener('mousemove', onMove, true);
+      overlay.addEventListener('mouseup', onUp, true);
+
+      // 取消选区的清理函数
+      const cancelSelection = () => {
+        overlay.remove();
+        this._removeZoomInvariantContainer();
+        document.removeEventListener('keydown', onKey);
+        document.removeEventListener('contextmenu', onContextMenu);
+        this.activeSessionCleanup = null;
+        this._isScreenshotting = false;
+
+        try {
+          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+              window.__dev1SnapshotHighlighter._instance && 
+              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+          }
+        } catch (_) {}
+      };
+
+      this.activeSessionCleanup = cancelSelection;
+
+      // ESC 取消
+      const onKey = (e) => {
+        if (e.key === 'Escape') {
+          cancelSelection();
+        }
+      };
+      document.addEventListener('keydown', onKey);
+
+      // 右键取消
+      const onContextMenu = (e) => {
+        e.preventDefault();
+        cancelSelection();
+      };
+      document.addEventListener('contextmenu', onContextMenu);
+    }
+
+
+    // 区域录制核心逻辑 - 使用 WebCodecs + mp4-muxer 实现高清录制
+    async _startAreaRecording(rect, isDarkPage) {
+      const t = (key, fallback) => (this.t && this.t(key)) || fallback;
+      const dpr = window.devicePixelRatio || 1;
+      let discardRecording = false;
+      let worker = null;
+      this.activeSessionCleanup = () => {
+        discardRecording = true;
+        this._isScreenshotting = false;
+      };
+
+      // 检查 WebCodecs 支持
+      console.log('VideoEncoder:', typeof VideoEncoder);
+      console.log('Mp4Muxer:', typeof Mp4Muxer, typeof Mp4Muxer !== 'undefined' ? Mp4Muxer : null);
+      if (typeof Mp4Muxer !== 'undefined') {
+        console.log('Mp4Muxer.Muxer:', typeof Mp4Muxer.Muxer);
+        console.log('Mp4Muxer keys:', Object.keys(Mp4Muxer));
+      }
+      const webCodecsSupported = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined' && typeof Mp4Muxer.Muxer === 'function';
+      let recordFormat = 'mp4';
+      try {
+        recordFormat = localStorage.getItem('record_format') || (webCodecsSupported ? 'mp4' : 'webm');
+      } catch (_) {}
+      const useWebCodecs = recordFormat === 'mp4' && webCodecsSupported;
+      console.log('Recording format:', recordFormat, 'useWebCodecs:', useWebCodecs);
+
+      try {
+        // 读取用户设置（先读取，用于配置 getDisplayMedia）
+        let codecProfile = 'avc1.640033'; // H.264 High Profile Level 5.1
+        let bitrate = 50000000; // 50 Mbps 默认
+        let frameRate = 60;
+
+        try {
+          const savedCodec = localStorage.getItem('record_codec');
+          if (savedCodec) codecProfile = savedCodec;
+
+          const savedQuality = localStorage.getItem('record_quality');
+          if (savedQuality) bitrate = parseInt(savedQuality);
+
+          const savedFps = localStorage.getItem('record_fps');
+          if (savedFps) frameRate = parseInt(savedFps);
+        } catch (_) { }
+
+        // 请求屏幕共享（当前标签页）- 配置高分辨率捕获
+        const displayStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            cursor: 'always',
+            displaySurface: 'browser',
+            // 请求最高分辨率 - 4K 或更高
+            width: { ideal: 3840, max: 7680 },
+            height: { ideal: 2160, max: 4320 },
+            frameRate: { ideal: frameRate, max: Math.max(frameRate, 240) }
+          },
+          audio: false,
+          preferCurrentTab: true
+        });
+
+        if (discardRecording) {
+          displayStream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        // 创建视频元素来接收屏幕流
+        const videoEl = document.createElement('video');
+        videoEl.srcObject = displayStream;
+        videoEl.muted = true;
+        await videoEl.play();
+
+        // 等待视频尺寸确定
+        await new Promise(resolve => {
+          if (videoEl.videoWidth > 0) resolve();
+          else videoEl.onloadedmetadata = resolve;
+        });
+
+        // 进一步等待分辨率在高帧率（如 120fps/240fps）或 Retina 屏幕下稳定下来（最多 500ms）
+        let lastWidth = videoEl.videoWidth;
+        let lastHeight = videoEl.videoHeight;
+        let stableCount = 0;
+        for (let i = 0; i < 10; i++) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+          const currentWidth = videoEl.videoWidth;
+          const currentHeight = videoEl.videoHeight;
+          if (currentWidth === lastWidth && currentHeight === lastHeight) {
+            stableCount++;
+            if (stableCount >= 2 && currentWidth > 0) {
+              break;
+            }
+          } else {
+            stableCount = 0;
+            lastWidth = currentWidth;
+            lastHeight = currentHeight;
+          }
+        }
+
+        // 获取视频流 of 实际分辨率
+        const videoWidth = videoEl.videoWidth;
+        const videoHeight = videoEl.videoHeight;
+
+        // 获取视频轨道的设置，了解实际捕获的尺寸
+        const videoTrack = displayStream.getVideoTracks()[0];
+        const trackSettings = videoTrack.getSettings();
+        console.log('Video track settings:', trackSettings);
+
+        // 为了能够精准裁剪录像区域，必须要求用户分享浏览器标签页而非整个屏幕/窗口
+        if (trackSettings.displaySurface && trackSettings.displaySurface !== 'browser') {
+          displayStream.getTracks().forEach(track => track.stop());
+          alert(t('screen_record_tab_only', '为了精准录制框选区域，请在弹出的共享窗口中选择「Chrome 标签页」（或「当前标签页」）进行录制！'));
+          this.activeSessionCleanup = null;
+          this._removeZoomInvariantContainer();
+          this._isScreenshotting = false;
+          return;
+        }
+
+        // 缓存视口大小以防止高频读取触发 Layout Thrashing
+        let cachedInnerWidth = window.innerWidth;
+        let cachedInnerHeight = window.innerHeight;
+        const handleViewportResize = () => {
+          cachedInnerWidth = window.innerWidth;
+          cachedInnerHeight = window.innerHeight;
+        };
+        window.addEventListener('resize', handleViewportResize);
+
+        // 计算缩放比例
+        // getDisplayMedia 捕获的是整个视口内容，需要正确映射坐标
+        // 使用设备像素比来计算真实的缩放
+        const dpr = window.devicePixelRatio || 1;
+
+        // 计算视频分辨率与视口的比例
+        // 注意：getDisplayMedia 可能捕获的分辨率与视口不同
+        const scaleX = videoWidth / cachedInnerWidth;
+        const scaleY = videoHeight / cachedInnerHeight;
+
+        console.log('Scale calculation:', {
+          videoSize: `${videoWidth}x${videoHeight}`,
+          windowSize: `${cachedInnerWidth}x${cachedInnerHeight}`,
+          dpr,
+          scaleX: scaleX.toFixed(3),
+          scaleY: scaleY.toFixed(3),
+          rectPos: `(${rect.left}, ${rect.top}) ${rect.width}x${rect.height}`
+        });
+
+        // 计算源视频中对应的裁剪区域
+        const srcX = Math.round(rect.left * scaleX);
+        const srcY = Math.round(rect.top * scaleY);
+        const srcW = Math.round(rect.width * scaleX);
+        const srcH = Math.round(rect.height * scaleY);
+
+        // 输出尺寸 = 裁剪区域的实际像素尺寸（保持原始清晰度，不缩放）
+        // 确保是偶数（视频编码要求）
+        let width = Math.round(srcW / 2) * 2;
+        let height = Math.round(srcH / 2) * 2;
+
+        // 确保最小尺寸
+        width = Math.max(width, 2);
+        height = Math.max(height, 2);
+
+        console.log('Recording area:', {
+          src: `(${srcX}, ${srcY}) ${srcW}x${srcH}`,
+          output: `${width}x${height}`,
+          codecProfile,
+          bitrate: (bitrate / 1000000).toFixed(1) + ' Mbps',
+          frameRate
+        });
+
+        // 创建用于裁剪的 canvas - 使用高质量绘制设置
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', {
+          alpha: false,
+          desynchronized: true  // 提高性能
+        });
+        // 高质量缩放设置
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        const calculateCropCoords = (frameW, frameH) => {
+          const currentScaleX = frameW / cachedInnerWidth;
+          const currentScaleY = frameH / cachedInnerHeight;
+          
+          let currentSrcX = Math.round(rect.left * currentScaleX);
+          let currentSrcY = Math.round(rect.top * currentScaleY);
+          let currentSrcW = Math.round(rect.width * currentScaleX);
+          let currentSrcH = Math.round(rect.height * currentScaleY);
+          
+          // Align to 2-pixel boundaries (even numbers) for WebCodecs YUV 4:2:0 format compatibility
+          currentSrcX = Math.floor(currentSrcX / 2) * 2;
+          currentSrcY = Math.floor(currentSrcY / 2) * 2;
+          currentSrcW = Math.floor(currentSrcW / 2) * 2;
+          currentSrcH = Math.floor(currentSrcH / 2) * 2;
+          
+          // Ensure they don't exceed frame dimensions
+          currentSrcX = Math.max(0, Math.min(currentSrcX, frameW - 2));
+          currentSrcY = Math.max(0, Math.min(currentSrcY, frameH - 2));
+          if (currentSrcX + currentSrcW > frameW) {
+            currentSrcW = Math.max(2, Math.floor((frameW - currentSrcX) / 2) * 2);
+          }
+          if (currentSrcY + currentSrcH > frameH) {
+            currentSrcH = Math.max(2, Math.floor((frameH - currentSrcY) / 2) * 2);
+          }
+
+          // Safety clamp
+          currentSrcW = Math.max(2, currentSrcW);
+          currentSrcH = Math.max(2, currentSrcH);
+
+          return { x: currentSrcX, y: currentSrcY, w: currentSrcW, h: currentSrcH };
+        };
+
+        const getCropCoords = () => calculateCropCoords(videoEl.videoWidth, videoEl.videoHeight);
+
+        // Get zoom-invariant container to prevent position drift during PDF zoom/resize
+        const fixedLayer = this._getZoomInvariantContainer();
+
+        // 录制区域指示器 - 红框完全在录制区域外部
+        // 录制区域 = rect，红框要包围它但不能进入
+        const borderWidth = 3;
+        const gap = 4; // 红框内边缘与录制区域的间隙，增加到4px以防小数DPR像素下边缘渗入
+        const indicator = document.createElement('div');
+        indicator.id = 'screen-record-area-indicator';
+        indicator.style.cssText = `
+          position: fixed;
+          left: ${rect.left - borderWidth - gap}px;
+          top: ${rect.top - borderWidth - gap}px;
+          width: ${rect.width + (borderWidth + gap) * 2}px;
+          height: ${rect.height + (borderWidth + gap) * 2}px;
+          border: ${borderWidth}px solid #ef4444;
+          border-radius: 4px;
+          pointer-events: none;
+          z-index: 2147483646;
+          box-sizing: border-box;
+        `;
+        fixedLayer.appendChild(indicator);
+
+        const masks = [];
+
+        // 创建录制控制 UI - 放在录制区域下方
+        const controlPanel = document.createElement('div');
+        controlPanel.id = 'screen-record-controls';
+        controlPanel.style.cssText = `
+          position: fixed;
+          top: ${rect.top + rect.height + 15}px;
+          left: ${rect.left + rect.width / 2}px;
+          transform: translateX(-50%);
+          background: ${isDarkPage ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.95)'};
+          color: ${isDarkPage ? '#ffffff' : '#1e293b'};
+          padding: 10px 16px;
+          border-radius: 20px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+          z-index: 2147483647;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          font-size: 13px;
+          pointer-events: auto;
+        `;
+
+        // 录制红点
+        const dot = document.createElement('div');
+        dot.style.cssText = `
+          width: 10px;
+          height: 10px;
+          background: #ef4444;
+          border-radius: 50%;
+          animation: pulse 1s ease-in-out infinite;
+        `;
+
+        // 添加脉冲动画样式
+        if (!document.getElementById('record-pulse-style')) {
+          const style = document.createElement('style');
+          style.id = 'record-pulse-style';
+          style.textContent = `
+            @keyframes pulse {
+              0%, 100% { opacity: 1; transform: scale(1); }
+              50% { opacity: 0.5; transform: scale(0.85); }
+            }
+          `;
+          document.head.appendChild(style);
+        }
+
+        // 计时器
+        const timer = document.createElement('span');
+        timer.textContent = '00:00';
+        timer.style.fontWeight = '600';
+        timer.style.minWidth = '45px';
+
+        // 格式标识
+        const formatBadge = document.createElement('span');
+        formatBadge.textContent = useWebCodecs ? 'MP4' : 'WebM';
+        formatBadge.style.cssText = `
+          padding: 2px 6px;
+          border-radius: 4px;
+          background: ${useWebCodecs ? '#22c55e' : '#3b82f6'};
+          color: white;
+          font-size: 10px;
+          font-weight: 600;
+        `;
+
+        // 停止按钮
+        const stopBtn = document.createElement('button');
+        stopBtn.textContent = t('screen_record_stop', '停止');
+        stopBtn.style.cssText = `
+          padding: 6px 14px;
+          border-radius: 14px;
+          border: none;
+          background: #ef4444;
+          color: white;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        `;
+
+        controlPanel.appendChild(dot);
+        controlPanel.appendChild(timer);
+        controlPanel.appendChild(formatBadge);
+        controlPanel.appendChild(stopBtn);
+        fixedLayer.appendChild(controlPanel);
+
+        // 计时器
+        let seconds = 0;
+        const timerInterval = setInterval(() => {
+          seconds++;
+          const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+          const secs = (seconds % 60).toString().padStart(2, '0');
+          timer.textContent = `${mins}:${secs}`;
+        }, 1000);
+
+        let isRecording = true;
+        let animationId;
+
+        // 清理函数
+        let cleanup = (discard = false) => {
+          if (discard) discardRecording = true;
+          this.activeSessionCleanup = null;
+          isRecording = false;
+          cancelAnimationFrame(animationId);
+          window.removeEventListener('resize', handleViewportResize);
+          if (worker) {
+            try { worker.terminate(); } catch (_) {}
+            worker = null;
+          }
+          displayStream.getTracks().forEach(track => {
+            try { track.stop(); } catch (_) {}
+          });
+          videoEl.pause();
+          videoEl.srcObject = null;
+          controlPanel.remove();
+          indicator.remove();
+          masks.forEach(m => m.remove());
+          this._removeZoomInvariantContainer();
+          clearInterval(timerInterval);
+          this._isScreenshotting = false;
+        };
+
+        this.activeSessionCleanup = () => cleanup(true);
+
+        let runWebCodecs = useWebCodecs;
+        let mainEncoder = null;
+        let mainMuxer = null;
+        let mainReader = null;
+
+        const runMediaRecorderFallback = () => {
+          console.log('Falling back to MediaRecorder');
+          formatBadge.textContent = 'WebM';
+          formatBadge.style.background = '#3b82f6';
+
+          const drawFrame = () => {
+            if (!isRecording) return;
+            // 每次绘制时动态获取最新坐标以应对高帧率下的分辨率变动或延迟稳定
+            const currentCoords = getCropCoords();
+            ctx.drawImage(videoEl, currentCoords.x, currentCoords.y, currentCoords.w, currentCoords.h, 0, 0, width, height);
+            animationId = requestAnimationFrame(drawFrame);
+          };
+          drawFrame();
+
+          const croppedStream = canvas.captureStream(frameRate);
+          let mimeType = 'video/webm';
+          if (codecProfile && codecProfile.startsWith('video/webm')) {
+            if (MediaRecorder.isTypeSupported(codecProfile)) {
+              mimeType = codecProfile;
+            } else if (codecProfile.includes('vp9') && MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+              mimeType = 'video/webm;codecs=vp9';
+            } else if (codecProfile.includes('vp8') && MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+              mimeType = 'video/webm;codecs=vp8';
+            }
+          } else {
+            mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+              ? 'video/webm;codecs=vp9' : 'video/webm';
+          }
+
+          const chunks = [];
+          const recorder = new MediaRecorder(croppedStream, {
+            mimeType,
+            videoBitsPerSecond: bitrate
+          });
+
+          recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) chunks.push(e.data);
+          };
+
+          recorder.onstop = () => {
+            cleanup();
+            croppedStream.getTracks().forEach(track => track.stop());
+            if (chunks.length > 0 && !discardRecording) {
+              const blob = new Blob(chunks, { type: mimeType });
+              this._showRecordingResult(blob, mimeType);
+            }
+          };
+
+          this.activeSessionCleanup = () => {
+            discardRecording = true;
+            if (recorder.state !== 'inactive') {
+              recorder.stop();
+            } else {
+              cleanup(true);
+            }
+          };
+
+          stopBtn.onclick = () => {
+            if (recorder.state !== 'inactive') recorder.stop();
+          };
+
+          const onKeyDown = (e) => {
+            if (e.key === 'Escape') {
+              if (recorder.state !== 'inactive') recorder.stop();
+              document.removeEventListener('keydown', onKeyDown);
+              document.removeEventListener('contextmenu', onContextMenu);
+            }
+          };
+          document.addEventListener('keydown', onKeyDown);
+
+          // 右键停止
+          const onContextMenu = (e) => {
+            e.preventDefault();
+            if (recorder.state !== 'inactive') recorder.stop();
+            document.removeEventListener('keydown', onKeyDown);
+            document.removeEventListener('contextmenu', onContextMenu);
+          };
+          document.addEventListener('contextmenu', onContextMenu);
+
+          displayStream.getVideoTracks()[0].onended = () => {
+            if (recorder.state !== 'inactive') recorder.stop();
+          };
+
+          recorder.start(100);
+        };
+
+        if (runWebCodecs) {
+          stopBtn.disabled = false;
+
+          // Function to get H.264 level string based on pixel count
+          const getRequiredAvcLevel = (w, h) => {
+            const pixels = w * h;
+            if (pixels <= 921600) return '1f'; // Level 3.1
+            if (pixels <= 2097152) return '29'; // Level 4.1
+            return '33'; // Level 5.1
+          };
+
+          const adjustAvcLevel = (codecStr, w, h) => {
+            if (codecStr.startsWith('avc1.')) {
+              const req = getRequiredAvcLevel(w, h);
+              const cur = codecStr.slice(-2);
+              if (parseInt(req, 16) > parseInt(cur, 16)) {
+                return codecStr.slice(0, -2) + req;
+              }
+            }
+            return codecStr;
+          };
+
+          // 确定 finalCodec
+          let finalCodec = codecProfile;
+          if (finalCodec.startsWith('avc1.')) {
+            finalCodec = adjustAvcLevel(finalCodec, width, height);
+          }
+
+          const codecConfig = {
+            codec: finalCodec,
+            width: width,
+            height: height,
+            bitrate: bitrate,
+            framerate: frameRate
+          };
+
+          try {
+            try {
+              const support = await VideoEncoder.isConfigSupported(codecConfig);
+              if (!support.supported) {
+                console.warn(`Codec ${finalCodec} not supported, trying fallback codecs...`);
+                const fallbacks = [
+                  'avc1.640033', // H.264 High 5.1
+                  'avc1.420033', // H.264 Baseline 5.1
+                  'avc1.42001f'  // H.264 Baseline 3.1
+                ];
+                let foundFallback = false;
+                for (let cand of fallbacks) {
+                  cand = adjustAvcLevel(cand, width, height);
+                  const candConfig = { ...codecConfig, codec: cand };
+                  try {
+                    const candSupport = await VideoEncoder.isConfigSupported(candConfig);
+                    if (candSupport.supported) {
+                      console.warn(`Falling back to supported codec: ${cand}`);
+                      finalCodec = cand;
+                      foundFallback = true;
+                      break;
+                    }
+                  } catch (_) {}
+                }
+                if (!foundFallback) {
+                  console.warn(`No fallback candidates supported, defaulting to avc1.640033`);
+                  finalCodec = 'avc1.640033';
+                }
+              }
+            } catch (e) {
+              console.warn('Could not check codec support:', e);
+              finalCodec = adjustAvcLevel('avc1.640033', width, height);
+            }
+
+            // 1. Initialize MP4 Muxer on main thread
+            const isAV1 = finalCodec.startsWith('av01');
+            const isHEVC = finalCodec.startsWith('hvc1');
+            let muxerCodec = 'avc';
+            if (isAV1) {
+              muxerCodec = 'av1';
+            } else if (isHEVC) {
+              muxerCodec = 'hevc';
+            }
+
+            mainMuxer = new Mp4Muxer.Muxer({
+              target: new Mp4Muxer.ArrayBufferTarget(),
+              video: {
+                codec: muxerCodec,
+                width: width,
+                height: height
+              },
+              firstTimestampBehavior: 'offset',
+              fastStart: 'in-memory'
+            });
+
+            // 2. Initialize VideoEncoder on main thread
+            mainEncoder = new VideoEncoder({
+              output: (chunk, meta) => {
+                if (mainMuxer) {
+                  mainMuxer.addVideoChunk(chunk, meta);
+                }
+              },
+              error: (e) => {
+                console.error('VideoEncoder on main thread error:', e);
+                alert(t('screen_record_error', '录屏失败') + ': ' + (e.message || String(e)));
+                stopRecording();
+              }
+            });
+
+            const encoderConfig = {
+              codec: finalCodec,
+              width: width,
+              height: height,
+              bitrate: bitrate,
+              framerate: frameRate,
+              latencyMode: 'quality',
+              hardwareAcceleration: 'no-preference'
+            };
+            if (finalCodec.startsWith('avc1')) {
+              encoderConfig.avc = { format: 'avc' };
+            }
+            mainEncoder.configure(encoderConfig);
+
+            const videoTrack = displayStream.getVideoTracks()[0];
+            const processor = new MediaStreamTrackProcessor({ track: videoTrack });
+            mainReader = processor.readable.getReader();
+
+            // 停止录制函数
+            const stopRecording = async () => {
+              if (!isRecording) return;
+              isRecording = false;
+
+              stopBtn.textContent = t('processing', '处理中...');
+              stopBtn.disabled = true;
+
+              try {
+                if (mainReader) {
+                  try {
+                    await mainReader.cancel();
+                  } catch (_) {}
+                }
+                if (mainEncoder) {
+                  try {
+                    await mainEncoder.flush();
+                  } catch (_) {}
+                }
+                if (mainMuxer) {
+                  try {
+                    mainMuxer.finalize();
+                    const { buffer } = mainMuxer.target;
+                    const blob = new Blob([buffer], { type: 'video/mp4' });
+                    cleanup();
+                    this._showRecordingResult(blob, 'video/mp4');
+                  } catch (e) {
+                    console.error('Muxer finalization failed:', e);
+                    cleanup();
+                    alert(t('screen_record_error', '录屏失败') + ': ' + e.message);
+                  }
+                }
+              } catch (err) {
+                console.error('Stop recording error:', err);
+                cleanup();
+                alert(t('screen_record_error', '录屏失败') + ': ' + (err.message || String(err)));
+              }
+            };
+
+            stopBtn.onclick = stopRecording;
+
+            // ESC 停止
+            const onKeyDown = (e) => {
+              if (e.key === 'Escape') {
+                stopRecording();
+                document.removeEventListener('keydown', onKeyDown);
+                document.removeEventListener('contextmenu', onContextMenu);
+              }
+            };
+            document.addEventListener('keydown', onKeyDown);
+
+            // 右键停止
+            const onContextMenu = (e) => {
+              e.preventDefault();
+              stopRecording();
+              document.removeEventListener('keydown', onKeyDown);
+              document.removeEventListener('contextmenu', onContextMenu);
+            };
+            document.addEventListener('contextmenu', onContextMenu);
+
+            // 监听流结束
+            videoTrack.addEventListener('ended', stopRecording);
+
+            // Override original cleanup to clean up main thread references
+            const originalCleanup = cleanup;
+            cleanup = (discard = false) => {
+              isRecording = false;
+              mainEncoder = null;
+              mainMuxer = null;
+              mainReader = null;
+              originalCleanup(discard);
+            };
+
+            // 启动帧读取与编码循环
+            let frameCount = 0;
+            (async () => {
+              try {
+                while (isRecording) {
+                  const { done, value: frame } = await mainReader.read();
+                  if (done) {
+                    break;
+                  }
+                  if (!isRecording) {
+                    if (frame) frame.close();
+                    break;
+                  }
+
+                  let croppedFrame;
+                  try {
+                    const frameW = frame.codedWidth || frame.displayWidth;
+                    const frameH = frame.codedHeight || frame.displayHeight;
+
+                    // 根据当前 VideoFrame 真实物理分辨率，动态计算该帧的最优裁剪坐标
+                    const frameCoords = calculateCropCoords(frameW, frameH);
+
+                    croppedFrame = new VideoFrame(frame, {
+                      visibleRect: {
+                        x: frameCoords.x,
+                        y: frameCoords.y,
+                        width: frameCoords.w,
+                        height: frameCoords.h
+                      }
+                    });
+                  } catch (err) {
+                    console.error('VideoFrame cropping error:', err);
+                    if (frame) frame.close();
+                    throw err;
+                  }
+                  frame.close(); // 关闭输入帧
+
+                  if (mainEncoder) {
+                    const keyFrame = frameCount % (frameRate * 2) === 0; // 每两秒一个关键帧
+                    mainEncoder.encode(croppedFrame, { keyFrame });
+                  }
+                  croppedFrame.close(); // 关闭裁剪帧
+
+                  frameCount++;
+                }
+
+                if (isRecording) {
+                  await stopRecording();
+                }
+              } catch (loopErr) {
+                console.error('Main thread recording loop error:', loopErr);
+                cleanup();
+                alert(t('screen_record_error', '录屏失败') + ': ' + (loopErr.message || String(loopErr)));
+              }
+            })();
+
+          } catch (err) {
+            console.error('Failed to run WebCodecs on main thread, falling back to MediaRecorder:', err);
+            runWebCodecs = false;
+            cleanup(true);
+            runMediaRecorderFallback();
+          }
+        } else {
+          runMediaRecorderFallback();
+        }
+
+      } catch (err) {
+        const errName = err && err.name ? err.name : '';
+        const errMessage = err && err.message ? err.message : String(err || '');
+        console.error('Area recording error:', {
+          name: errName,
+          message: errMessage,
+          error: err
+        });
+        this._isScreenshotting = false;
+        if (errName !== 'NotAllowedError') {
+          alert(`${t('screen_record_error', '录屏失败')}: ${errMessage}`);
+        }
+      }
+    }
+
+
+    // 显示录制结果
+    _showRecordingResult(blob, mimeType = 'video/webm') {
+      // 屏蔽主题检测矩阵采样，避免检测到对话框
+      this._cachedTheme = this._cachedTheme !== null ? this._cachedTheme : this.detectPageTheme();
+      this._isScreenshotting = true;
+
+      const useDarkStyle = this.darkModeEnabled;
+      const t = (key, fallback) => (this.t && this.t(key)) || fallback;
+
+      // 检测是否在扩展页面中（扩展页面没有 CSP 限制）
+      const isExtensionPage = window.location.protocol === 'chrome-extension:';
+
+      console.log('Recording result:', { size: blob.size, type: blob.type, mimeType, isExtensionPage });
+
+      // 创建 blob URL 并保存引用以便清理
+      const blobUrl = URL.createObjectURL(blob);
+
+      // Get zoom-invariant container to prevent position drift during PDF zoom/resize
+      const fixedLayer = this._getZoomInvariantContainer();
+
+      const dialog = document.createElement('div');
+      dialog.id = 'screen-record-result-dialog';
+      const dialogBg = useDarkStyle ? '#252525' : '#f0f4f8';
+      const dialogColor = useDarkStyle ? '#f0f4f8' : '#1e293b';
+      const dialogBorder = useDarkStyle ? '1px solid #3b3b3b' : '1px solid #cbd5e1';
+      dialog.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: ${dialogBg};
+        color: ${dialogColor};
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        z-index: 2147483647;
+        max-width: 90vw;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        min-width: 400px;
+        border: ${dialogBorder};
+        pointer-events: auto;
+      `;
+
+      const title = document.createElement('h3');
+      title.textContent = t('screen_record', '屏幕录制');
+      title.style.cssText = `margin: 0; font-size: 18px; color: ${dialogColor};`;
+      dialog.appendChild(title);
+
+      // 视频预览
+      const videoContainer = document.createElement('div');
+      videoContainer.style.cssText = `
+        position: relative;
+        overflow: hidden;
+        border-radius: 8px;
+        background: #000;
+        max-height: 60vh;
+        min-height: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
+
+      const video = document.createElement('video');
+      video.controls = true;
+      video.playsInline = true;
+      video.muted = true;
+      video.style.cssText = 'max-width: 100%; max-height: 60vh; display: block; width: 100%;';
+
+      // 先添加到 DOM
+      videoContainer.appendChild(video);
+      dialog.appendChild(videoContainer);
+
+      // 加载提示
+      const loadingText = document.createElement('div');
+      loadingText.textContent = t('loading', '加载中...');
+      loadingText.style.cssText = 'position: absolute; color: #888; font-size: 14px;';
+      videoContainer.appendChild(loadingText);
+
+      // 显示备用下载界面（当预览不可用时）
+      const showFallback = () => {
+        loadingText.innerHTML = '';
+        loadingText.style.cssText = `
+          position: absolute; 
+          color: ${useDarkStyle ? '#9ca3af' : '#6b7280'}; 
+          font-size: 13px; 
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+          padding: 20px;
+        `;
+
+        // 成功图标（绿色勾）
+        const iconDiv = document.createElement('div');
+        iconDiv.innerHTML = `<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#22c55e" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M8 12l2.5 2.5L16 9"></path>
+        </svg>`;
+
+        const infoMsg = document.createElement('div');
+        infoMsg.textContent = t('video_record_success', '录制完成');
+        infoMsg.style.cssText = 'font-size: 16px; font-weight: 600; color: #22c55e;';
+
+        const subMsg = document.createElement('div');
+        subMsg.textContent = t('video_csp_restricted', '由于网站限制，无法预览');
+        subMsg.style.cssText = `font-size: 12px; color: ${useDarkStyle ? '#6b7280' : '#9ca3af'}; margin-top: 4px;`;
+
+        loadingText.appendChild(iconDiv);
+        loadingText.appendChild(infoMsg);
+        loadingText.appendChild(subMsg);
+
+        video.style.display = 'none';
+      };
+
+      // 尝试加载视频预览
+      let previewAttempted = false;
+      const tryPreview = () => {
+        if (previewAttempted) return;
+        previewAttempted = true;
+
+        // 视频加载成功
+        video.onloadeddata = () => {
+          console.log('Video loaded successfully, readyState:', video.readyState);
+          loadingText.style.display = 'none';
+          video.play().catch(() => { });
+        };
+
+        video.onerror = (e) => {
+          // 静默处理错误，不打印到控制台（CSP 限制是预期行为）
+          showFallback();
+        };
+
+        // 尝试设置 src
+        try {
+          video.src = blobUrl;
+        } catch (e) {
+          showFallback();
+        }
+      };
+
+      // 延迟尝试预览，给 DOM 一些时间
+      setTimeout(tryPreview, 50);
+
+      // 2秒超时后显示备用方案
+      setTimeout(() => {
+        if (loadingText.style.display !== 'none' && video.readyState < 2) {
+          showFallback();
+        }
+      }, 2000);
+
+      // 文件大小信息
+      const sizeInfo = document.createElement('div');
+      const sizeMB = (blob.size / (1024 * 1024)).toFixed(2);
+      sizeInfo.textContent = `${t('file_size', '文件大小')}: ${sizeMB} MB`;
+      sizeInfo.style.cssText = `font-size: 13px; opacity: 0.7;`;
+      dialog.appendChild(sizeInfo);
+
+      // 按钮容器
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end;';
+
+      const createBtn = (text, onClick, primary = false) => {
+        const btn = document.createElement('button');
+        btn.textContent = text;
+        const bg = primary ? '#3b82f6' : (useDarkStyle ? '#374151' : 'white');
+        const color = primary ? 'white' : (useDarkStyle ? '#e2e8f0' : '#475569');
+        const border = primary ? '#3b82f6' : (useDarkStyle ? '#4b5563' : '#e2e8f0');
+        btn.style.cssText = `
+          padding: 8px 16px;
+          border-radius: 6px;
+          border: 1px solid ${border};
+          background: ${bg};
+          color: ${color};
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+        `;
+        btn.onclick = onClick;
+        return btn;
+      };
+
+      // 清理函数
+      const cleanup = () => {
+        this.activeSessionCleanup = null;
+        video.pause();
+        video.src = '';
+        URL.revokeObjectURL(blobUrl);
+        dialog.remove();
+        this._removeZoomInvariantContainer();
+        document.removeEventListener('keydown', onKey);
+        // 恢复主题检测
+        this._isScreenshotting = false;
+      };
+
+      // 取消按钮 - 清理缓存
+      actions.appendChild(createBtn(t('screenshot_cancel', '取消'), cleanup));
+
+      // 下载按钮 - 下载后也清理缓存
+      actions.appendChild(createBtn(t('save_and_clear_cache', '保存并删除缓存'), async () => {
+        try {
+          await this._saveBlob(blob, 'screen_recording', mimeType.includes('mp4') ? 'mp4' : 'webm', mimeType);
+          setTimeout(cleanup, 500);
+        } catch (error) {
+          alert(`${t('screen_record_error', '录屏失败')}: ${error.message || error}`);
+        }
+      }, true));
+
+      dialog.appendChild(actions);
+      fixedLayer.appendChild(dialog);
+
+      // ESC 关闭并清理
+      const onKey = (e) => {
+        if (e.key === 'Escape') {
+          cleanup();
+        }
+      };
+      document.addEventListener('keydown', onKey);
+
+      // 右键关闭并清理
+      const onContextMenu = (e) => {
+        e.preventDefault();
+        cleanup();
+      };
+      dialog.addEventListener('contextmenu', onContextMenu);
+    }
+
+
+    async _startManualScrollSession(rect) {
+      try {
+        if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+            window.__dev1SnapshotHighlighter._instance && 
+            typeof window.__dev1SnapshotHighlighter._instance._suppressCursor === 'function') {
+          window.__dev1SnapshotHighlighter._instance._suppressCursor('screenshot');
+        }
+      } catch (_) {}
+
+      // Color constants for status indication
+      const COLORS = {
+        IDLE: '#9ca3af',      // Gray - default/ready state
+        SCROLLING: '#4ade80', // Green - normal scrolling
+        TOO_FAST: '#fbbf24',  // Yellow - scrolling too fast warning
+        ERROR: '#ef4444',     // Red - capture failed or gap too large
+        PAUSED: '#60a5fa'     // Blue - paused state
+      };
+
+      // Bracket corner settings
+      const CORNER_SIZE = 20;
+      const BORDER_WIDTH = 3;
+
+      // Capture area inside the bracket corners (exclude border width)
+      const cleanRect = {
+        left: rect.left + BORDER_WIDTH,
+        top: rect.top + BORDER_WIDTH,
+        width: rect.width - (BORDER_WIDTH * 2),
+        height: rect.height - (BORDER_WIDTH * 2)
+      };
+
+      // Canvas for real-time stitching (device-pixel aligned)
+      const masterCanvas = document.createElement('canvas');
+      const masterCtx = masterCanvas.getContext('2d', { willReadFrequently: true });
+      const dpr = window.devicePixelRatio || 1;
+      const viewWidth = Math.max(1, Math.round(cleanRect.width * dpr));
+      const viewHeight = Math.max(1, Math.round(cleanRect.height * dpr));
+      const baseViewport = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        dpr
+      };
+      masterCanvas.width = viewWidth;
+      masterCanvas.height = 0;
+
+      // Helper for translations
+      const t = (key, fallback) => (this.t && this.t(key)) || fallback;
+
+      // ===== Smart UI Positioning System =====
+      const MARGIN = 20;
+      const PREVIEW_WIDTH = 200;
+      const PREVIEW_MAX_HEIGHT = Math.min(300, window.innerHeight * 0.4);
+      const BTN_SIZE = 36;
+      const BTN_GAP = 8;
+
+      // Check if selection covers most of the screen (fullscreen mode)
+      const isFullscreen = rect.width >= window.innerWidth * 0.9 && rect.height >= window.innerHeight * 0.9;
+
+      // Calculate available space in each direction
+      const spaceLeft = rect.left;
+      const spaceRight = window.innerWidth - rect.right;
+      const spaceTop = rect.top;
+      const spaceBottom = window.innerHeight - rect.bottom;
+
+      // Determine best position for UI (opposite to selection)
+      const calcUIPosition = () => {
+        const spaces = [
+          { side: 'left', space: spaceLeft },
+          { side: 'right', space: spaceRight },
+          { side: 'top', space: spaceTop },
+          { side: 'bottom', space: spaceBottom }
+        ].sort((a, b) => b.space - a.space);
+
+        const bestSide = spaces[0];
+        const secondBest = spaces[1];
+
+        // Calculate required space for preview + buttons
+        const minSpaceForPreview = PREVIEW_WIDTH + MARGIN * 2;
+        const minSpaceForButtons = BTN_SIZE * 3 + BTN_GAP * 2 + MARGIN * 2;
+
+        let showPreview = !isFullscreen && bestSide.space >= minSpaceForPreview;
+        let buttonsLayout = 'horizontal'; // or 'vertical'
+        let position = { side: bestSide.side };
+
+        // Determine button layout based on available space
+        if (bestSide.side === 'left' || bestSide.side === 'right') {
+          if (bestSide.space < minSpaceForButtons) {
+            buttonsLayout = 'vertical';
+          }
+        } else {
+          if (bestSide.space < BTN_SIZE + MARGIN * 2) {
+            buttonsLayout = 'horizontal';
+          }
+        }
+
+        // Calculate actual position
+        if (bestSide.side === 'left') {
+          position.x = MARGIN;
+          position.y = Math.max(MARGIN, rect.top);
+        } else if (bestSide.side === 'right') {
+          position.x = window.innerWidth - MARGIN;
+          position.y = Math.max(MARGIN, rect.top);
+        } else if (bestSide.side === 'top') {
+          position.x = Math.max(MARGIN, rect.left);
+          position.y = MARGIN;
+        } else {
+          position.x = Math.max(MARGIN, rect.left);
+          position.y = window.innerHeight - MARGIN;
+        }
+
+        return { showPreview, buttonsLayout, position, side: bestSide.side };
+      };
+
+      const uiLayout = calcUIPosition();
+
+      // ===== Create UI Container =====
+      const uiContainer = document.createElement('div');
+      uiContainer.id = 'screenshot-ui-container';
+
+      // Position based on calculated layout
+      const getContainerStyle = () => {
+        const { side, position } = uiLayout;
+        let style = `
+          position: fixed;
+          z-index: 2147483647;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          display: flex;
+          gap: 10px;
+          pointer-events: auto;
+        `;
+
+        if (side === 'left') {
+          style += `left: ${MARGIN}px; top: ${position.y}px; flex-direction: column; align-items: flex-start;`;
+        } else if (side === 'right') {
+          style += `right: ${MARGIN}px; top: ${position.y}px; flex-direction: column; align-items: flex-end;`;
+        } else if (side === 'top') {
+          style += `top: ${MARGIN}px; left: ${position.x}px; flex-direction: row; align-items: flex-start;`;
+        } else {
+          style += `bottom: ${MARGIN}px; left: ${position.x}px; flex-direction: row; align-items: flex-end;`;
+        }
+
+        return style;
+      };
+
+      uiContainer.style.cssText = getContainerStyle();
+
+      // ===== Preview Container (conditionally shown) =====
+      let previewFrame = null;
+      let previewImg = null;
+      let statusBar = null;
+
+      if (uiLayout.showPreview) {
+        previewFrame = document.createElement('div');
+        const previewWidth = Math.min(PREVIEW_WIDTH, uiLayout.position.side === 'left' ? spaceLeft - MARGIN * 2 :
+          uiLayout.position.side === 'right' ? spaceRight - MARGIN * 2 : PREVIEW_WIDTH);
+        previewFrame.style.cssText = `
+          width: ${previewWidth}px;
+          max-height: ${PREVIEW_MAX_HEIGHT}px;
+          min-height: 100px;
+          background: #1e1e1e;
+          border: 2px solid ${COLORS.IDLE};
+          border-radius: 12px;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column-reverse;
+          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+          position: relative;
+        `;
+
+        // Preview scrollable area (grows upward)
+        const previewScroll = document.createElement('div');
+        previewScroll.style.cssText = `
+          flex: 1;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column-reverse;
+        `;
+
+        previewImg = document.createElement('img');
+        previewImg.style.cssText = 'width: 100%; display: block; object-fit: contain;';
+        previewScroll.appendChild(previewImg);
+
+        // Status Bar (at bottom)
+        statusBar = document.createElement('div');
+        statusBar.style.cssText = `
+          flex-shrink: 0;
+          background: rgba(0,0,0,0.85);
+          color: white;
+          padding: 8px 10px;
+          font-size: 11px;
+          text-align: center;
+          backdrop-filter: blur(4px);
+          border-top: 1px solid rgba(255,255,255,0.1);
+        `;
+        statusBar.textContent = t('screenshot_ready', 'Ready. Scroll to capture.');
+
+        previewFrame.appendChild(statusBar);
+        previewFrame.appendChild(previewScroll);
+        uiContainer.appendChild(previewFrame);
+      } else {
+        // Minimal status indicator when no preview
+        statusBar = document.createElement('div');
+        statusBar.style.cssText = `
+          background: rgba(0,0,0,0.85);
+          color: white;
+          padding: 6px 12px;
+          font-size: 11px;
+          border-radius: 16px;
+          backdrop-filter: blur(4px);
+          white-space: nowrap;
+        `;
+        statusBar.textContent = t('screenshot_ready', 'Ready');
+      }
+
+      // ===== Controls Container =====
+      const controls = document.createElement('div');
+      const isVertical = uiLayout.buttonsLayout === 'vertical' ||
+        (uiLayout.side === 'left' || uiLayout.side === 'right');
+      controls.style.cssText = `
+        display: flex;
+        gap: ${BTN_GAP}px;
+        flex-direction: ${isVertical ? 'column' : 'row'};
+        align-items: center;
+      `;
+
+      let controlTooltip = null;
+
+      const hideControlTooltip = () => {
+        if (controlTooltip) {
+          controlTooltip.remove();
+          controlTooltip = null;
+        }
+      };
+
+      const showControlTooltip = (target, text) => {
+        hideControlTooltip();
+        const rect = target.getBoundingClientRect();
+        if (!rect) return;
+
+        controlTooltip = document.createElement('div');
+        controlTooltip.textContent = text;
+        controlTooltip.style.cssText = `
+          position: fixed;
+          left: 0;
+          top: 0;
+          z-index: 2147483648;
+          padding: 6px 10px;
+          border-radius: 8px;
+          background: rgba(17, 24, 39, 0.96);
+          color: #ffffff;
+          font-size: 12px;
+          line-height: 1.3;
+          font-weight: 500;
+          white-space: nowrap;
+          pointer-events: none;
+          box-shadow: 0 8px 20px rgba(0,0,0,0.28);
+        `;
+        document.body.appendChild(controlTooltip);
+
+        const tooltipRect = controlTooltip.getBoundingClientRect();
+        const margin = 8;
+        let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+        let top = rect.top - tooltipRect.height - margin;
+
+        if (top < margin) top = rect.bottom + margin;
+        left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
+
+        controlTooltip.style.left = `${left}px`;
+        controlTooltip.style.top = `${top}px`;
+      };
+
+      // Button style helper
+      const createBtn = (text, icon, bgColor, textColor, borderColor) => {
+        const btn = document.createElement('button');
+        btn.innerHTML = icon ? `<span style="font-size:14px;">${icon}</span>` : '';
+        btn.setAttribute('aria-label', text);
+        btn.style.cssText = `
+          width: ${BTN_SIZE}px;
+          height: ${BTN_SIZE}px;
+          border-radius: 50%;
+          border: 2px solid ${borderColor || bgColor};
+          background: ${bgColor};
+          color: ${textColor};
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: transform 0.1s, box-shadow 0.1s;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        `;
+        btn.addEventListener('mouseenter', () => {
+          btn.style.transform = 'scale(1.1)';
+          btn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+          showControlTooltip(btn, text);
+        });
+        btn.addEventListener('mouseleave', () => {
+          btn.style.transform = 'scale(1)';
+          btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+          hideControlTooltip();
+        });
+        btn.addEventListener('focus', () => showControlTooltip(btn, text));
+        btn.addEventListener('blur', () => hideControlTooltip());
+        return btn;
+      };
+
+      // Main control buttons
+      const cancelBtn = createBtn(t('screenshot_cancel', 'Cancel (Esc)'), '✕', '#ffffff', '#ef4444', '#ef4444');
+      const autoBtn = createBtn(t('screenshot_auto_scroll', 'Auto Scroll'), '▶', '#111827', '#e5e7eb', '#4b5563');
+      const finishBtn = createBtn(t('screenshot_finish', 'Finish & Save'), '✓', '#3b82f6', '#ffffff', '#3b82f6');
+
+      const breatheStyleId = 'dev1-auto-scroll-breathe-style';
+      if (!document.getElementById(breatheStyleId)) {
+        const style = document.createElement('style');
+        style.id = breatheStyleId;
+        style.textContent = '@keyframes dev1AutoScrollBorderBreathe { 0%, 100% { border-color: #4b5563; } 50% { border-color: #60a5fa; } }';
+        document.head.appendChild(style);
+      }
+      autoBtn.style.animation = 'dev1AutoScrollBorderBreathe 3s ease-in-out infinite';
+
+      const autoBtnWrap = document.createElement('div');
+      autoBtnWrap.style.cssText = `
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: ${BTN_SIZE}px;
+        height: ${BTN_SIZE}px;
+        flex: 0 0 auto;
+      `;
+
+      const directionBadge = document.createElement('div');
+      directionBadge.style.cssText = `
+        position: absolute;
+        top: -7px;
+        right: -7px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 3px;
+        border-radius: 999px;
+        background: #22c55e;
+        color: white;
+        font-size: 11px;
+        line-height: 16px;
+        text-align: center;
+        font-weight: 700;
+        pointer-events: none;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+      `;
+      autoBtnWrap.appendChild(autoBtn);
+      autoBtnWrap.appendChild(directionBadge);
+
+      // Auto-scroll control buttons (initially hidden)
+      const pauseBtn = createBtn(t('screenshot_pause', 'Pause'), '⏸', '#f59e0b', '#ffffff', '#f59e0b');
+      const resumeBtn = createBtn(t('screenshot_resume', 'Resume'), '▶', '#22c55e', '#ffffff', '#22c55e');
+
+      pauseBtn.style.display = 'none';
+      resumeBtn.style.display = 'none';
+
+      controls.appendChild(cancelBtn);
+      controls.appendChild(autoBtnWrap);
+      controls.appendChild(pauseBtn);
+      controls.appendChild(resumeBtn);
+      controls.appendChild(finishBtn);
+
+      // Add status bar if no preview
+      if (!uiLayout.showPreview) {
+        uiContainer.appendChild(statusBar);
+      }
+      uiContainer.appendChild(controls);
+
+      // Get zoom-invariant container to prevent position drift during PDF zoom/resize
+      const fixedLayer = this._getZoomInvariantContainer();
+      fixedLayer.appendChild(uiContainer);
+
+      // ===== Indicator on the page =====
+      const indicator = document.createElement('div');
+      indicator.id = 'screenshot-area-indicator';
+      indicator.style.cssText = `
+        position: fixed;
+        left: ${rect.left}px;
+        top: ${rect.top}px;
+        width: ${rect.width}px;
+        height: ${rect.height}px;
+        pointer-events: none;
+        z-index: 2147483646;
+        box-shadow: 0 0 0 9999px rgba(0,0,0,0.3);
+        box-sizing: border-box;
+      `;
+
+      // Create corner brackets
+      const corners = ['tl', 'tr', 'bl', 'br'];
+      const cornerElements = {};
+
+      corners.forEach(corner => {
+        const el = document.createElement('div');
+        el.className = `screenshot-corner screenshot-corner-${corner}`;
+        const isTop = corner.includes('t');
+        const isLeft = corner.includes('l');
+
+        el.style.cssText = `
+          position: absolute;
+          width: ${CORNER_SIZE}px;
+          height: ${CORNER_SIZE}px;
+          pointer-events: none;
+          ${isTop ? 'top: 0' : 'bottom: 0'};
+          ${isLeft ? 'left: 0' : 'right: 0'};
+        `;
+
+        const vLine = document.createElement('div');
+        vLine.style.cssText = `
+          position: absolute;
+          width: ${BORDER_WIDTH}px;
+          height: 100%;
+          background: ${COLORS.IDLE};
+          ${isLeft ? 'left: 0' : 'right: 0'};
+          top: 0;
+        `;
+
+        const hLine = document.createElement('div');
+        hLine.style.cssText = `
+          position: absolute;
+          width: 100%;
+          height: ${BORDER_WIDTH}px;
+          background: ${COLORS.IDLE};
+          ${isTop ? 'top: 0' : 'bottom: 0'};
+          ${isLeft ? 'left: 0' : 'right: 0'};
+        `;
+
+        el.appendChild(vLine);
+        el.appendChild(hLine);
+        indicator.appendChild(el);
+        cornerElements[corner] = { el, vLine, hLine };
+      });
+
+      fixedLayer.appendChild(indicator);
+
+      // Helper to update corner colors
+      const updateCornerColors = (color) => {
+        Object.values(cornerElements).forEach(({ vLine, hLine }) => {
+          vLine.style.background = color;
+          hLine.style.background = color;
+        });
+      };
+
+      const hasViewportChanged = () => {
+        try {
+          const dw = Math.abs(window.innerWidth - baseViewport.width);
+          const dh = Math.abs(window.innerHeight - baseViewport.height);
+          const zoomChanged = (window.devicePixelRatio || 1) !== baseViewport.dpr;
+          return dw > 2 || dh > 2 || zoomChanged;
+        } catch (_) {
+          return false;
+        }
+      };
+
+      // ===== State Management =====
+      let lastCapturedScrollY = window.scrollY;
+      let capturedMinScrollY = lastCapturedScrollY;
+      let capturedMaxScrollY = lastCapturedScrollY;
+
+      let isCapturing = false;
+      let scrollTimer = null;
+      let currentStatus = 'IDLE';
+      let captureCount = 0;
+      let hasError = false;
+      let autoMode = false;
+      let autoPaused = false;
+      let autoTimer = null;
+      let needsRepairCapture = false;
+      let lastErrorScrollY = null;
+      let lastObservedScrollY = window.scrollY;
+      let autoScrollDirection = 'down';
+      let autoRepairTimer = null;
+      let autoRepairing = false;
+
+      const updateDirectionBadge = () => {
+        const isUp = autoScrollDirection === 'up';
+        directionBadge.textContent = isUp ? '↑' : '↓';
+        directionBadge.style.background = isUp ? '#f59e0b' : '#22c55e';
+        directionBadge.title = this.config.lang === 'en' ? (isUp ? 'Auto scroll up' : 'Auto scroll down') : (isUp ? '自动向上滚动' : '自动向下滚动');
+      };
+      updateDirectionBadge();
+
+      const getDirectionalScrollSlowlyMessage = () => {
+        const isUp = autoScrollDirection === 'up';
+        return this.config.lang === 'en' ? (isUp ? 'Scroll up slowly...' : 'Scroll down slowly...') : (isUp ? '缓慢向上滚动...' : '缓慢向下滚动...');
+      };
+
+      const getDirectionalScrollToCaptureMessage = () => {
+        const isUp = autoScrollDirection === 'up';
+        return this.config.lang === 'en' ? (isUp ? 'Scroll up...' : 'Scroll down...') : (isUp ? '向上滚动...' : '向下滚动...');
+      };
+
+      const getDirectionalReadyContinueMessage = () => {
+        const isUp = autoScrollDirection === 'up';
+        return this.config.lang === 'en' ? (isUp ? 'Ready. Continue upward...' : 'Ready. Continue downward...') : (isUp ? '准备继续向上滚动...' : '准备继续向下滚动...');
+      };
+
+      const getDirectionalAutoScrollingMessage = () => {
+        const isUp = autoScrollDirection === 'up';
+        return this.config.lang === 'en' ? (isUp ? 'Auto scrolling up...' : 'Auto scrolling down...') : (isUp ? '自动向上滚动中...' : '自动向下滚动中...');
+      };
+
+      // Status update function
+      const setStatus = (status, message) => {
+        if (currentStatus === status && statusBar.textContent === message) return;
+        currentStatus = status;
+        hasError = status === 'ERROR';
+
+        const color = COLORS[status] || COLORS.IDLE;
+        updateCornerColors(color);
+        if (previewFrame) previewFrame.style.borderColor = color;
+        statusBar.style.color = status === 'IDLE' ? 'white' : color;
+        statusBar.textContent = message;
+      };
+
+      // Helper to update preview (grows upward)
+      const updatePreview = () => {
+        if (previewImg) {
+          previewImg.src = masterCanvas.toDataURL('image/png');
+        }
+      };
+
+      const getUncapturedScrollDelta = (scrollY) => {
+        const tolerance = 2;
+        if (scrollY < capturedMinScrollY - tolerance) return scrollY - capturedMinScrollY;
+        if (scrollY > capturedMaxScrollY + tolerance) return scrollY - capturedMaxScrollY;
+        return 0;
+      };
+
+      const getCaptureBoundaryScrollY = (scrollY) => {
+        if (scrollY < capturedMinScrollY) return capturedMinScrollY;
+        if (scrollY > capturedMaxScrollY) return capturedMaxScrollY;
+        return scrollY;
+      };
+
+      const waitForStableScrollY = async (initialScrollY, options = {}) => {
+        const maxWaitMs = Number.isFinite(options.maxWaitMs) ? options.maxWaitMs : 420;
+        const stableFrameCount = Number.isFinite(options.stableFrameCount) ? options.stableFrameCount : 3;
+        const stableTolerancePx = Number.isFinite(options.stableTolerancePx) ? options.stableTolerancePx : 1;
+        let lastScrollY = initialScrollY;
+        let stableFrames = 0;
+        const startTime = Date.now();
+        while (Date.now() - startTime < maxWaitMs) {
+          await new Promise(r => requestAnimationFrame(() => setTimeout(r, 16)));
+          const currentScrollY = window.scrollY;
+          if (Math.abs(currentScrollY - lastScrollY) <= stableTolerancePx) {
+            stableFrames++;
+            if (stableFrames >= stableFrameCount) return currentScrollY;
+          } else {
+            stableFrames = 0;
+          }
+          lastScrollY = currentScrollY;
+        }
+        return window.scrollY;
+      };
+
+      const findMatchedNewContentHeight = (frameCtx, expectedNewContentHeight, captureDirection, prevHeight) => {
+        if (prevHeight <= 0 || expectedNewContentHeight <= 0 || expectedNewContentHeight >= viewHeight - 2) {
+          return expectedNewContentHeight;
+        }
+
+        const radius = Math.max(6, Math.min(Math.round(viewHeight * 0.12), Math.round(expectedNewContentHeight * 0.35)));
+        const minNewHeight = Math.max(3, expectedNewContentHeight - radius);
+        const maxNewHeight = Math.min(viewHeight - 3, expectedNewContentHeight + radius);
+        const minReliableOverlap = Math.max(24, Math.round(viewHeight * 0.08));
+        if (maxNewHeight <= minNewHeight || viewHeight - maxNewHeight < minReliableOverlap) {
+          return expectedNewContentHeight;
+        }
+
+        const maxOverlap = viewHeight - minNewHeight;
+        if (prevHeight < minReliableOverlap || maxOverlap < minReliableOverlap) {
+          return expectedNewContentHeight;
+        }
+
+        try {
+          const masterDataHeight = Math.min(prevHeight, maxOverlap);
+          const masterY = captureDirection === 'up' ? 0 : prevHeight - masterDataHeight;
+          const masterData = masterCtx.getImageData(0, masterY, viewWidth, masterDataHeight).data;
+          const frameData = frameCtx.getImageData(0, 0, viewWidth, viewHeight).data;
+          const xStep = Math.max(4, Math.floor(viewWidth / 48));
+          let bestHeight = expectedNewContentHeight;
+          let bestScore = Infinity;
+          const heightStep = Math.max(1, Math.round(dpr));
+
+          for (let candidateHeight = minNewHeight; candidateHeight <= maxNewHeight; candidateHeight += heightStep) {
+            const overlapHeight = viewHeight - candidateHeight;
+            if (overlapHeight < minReliableOverlap || overlapHeight > prevHeight || overlapHeight > viewHeight - candidateHeight + 1) {
+              continue;
+            }
+
+            const compareHeight = Math.min(overlapHeight, masterDataHeight, Math.round(viewHeight * 0.65));
+            if (compareHeight < minReliableOverlap) continue;
+
+            const yStep = Math.max(2, Math.floor(compareHeight / 32));
+            let diffSum = 0;
+            let sampleCount = 0;
+
+            for (let y = 0; y < compareHeight; y += yStep) {
+              const masterLocalY = captureDirection === 'up'
+                ? y
+                : masterDataHeight - overlapHeight + y;
+              const frameY = captureDirection === 'up'
+                ? candidateHeight + y
+                : y;
+              if (masterLocalY < 0 || masterLocalY >= masterDataHeight || frameY < 0 || frameY >= viewHeight) continue;
+
+              for (let x = 0; x < viewWidth; x += xStep) {
+                const masterIndex = ((masterLocalY * viewWidth) + x) * 4;
+                const frameIndex = ((frameY * viewWidth) + x) * 4;
+                diffSum += Math.abs(masterData[masterIndex] - frameData[frameIndex]);
+                diffSum += Math.abs(masterData[masterIndex + 1] - frameData[frameIndex + 1]);
+                diffSum += Math.abs(masterData[masterIndex + 2] - frameData[frameIndex + 2]);
+                sampleCount += 3;
+              }
+            }
+
+            if (!sampleCount) continue;
+            const averageDiff = diffSum / sampleCount;
+            const score = averageDiff + Math.abs(candidateHeight - expectedNewContentHeight) * 0.08;
+            if (score < bestScore) {
+              bestScore = score;
+              bestHeight = candidateHeight;
+            }
+          }
+
+          return bestHeight;
+        } catch (_) {
+          return expectedNewContentHeight;
+        }
+      };
+
+      const scheduleAutoRepair = () => {
+        if (autoRepairing || !needsRepairCapture || !Number.isFinite(lastErrorScrollY)) return;
+        if (autoRepairTimer) clearTimeout(autoRepairTimer);
+        autoRepairTimer = setTimeout(() => {
+          autoRepairTimer = null;
+          if (!needsRepairCapture || !Number.isFinite(lastErrorScrollY)) return;
+          autoRepairing = true;
+          stopAutoScroll();
+          const buffer = Math.max(12, Math.min(80, Math.round(cleanRect.height * 0.08)));
+          const targetScrollY = autoScrollDirection === 'up'
+            ? Math.max(0, lastErrorScrollY - buffer)
+            : lastErrorScrollY + buffer;
+          setStatus('PAUSED', t('screenshot_auto_returning', 'Returning to memory point...'));
+          window.scrollTo({ top: targetScrollY, behavior: 'smooth' });
+          setTimeout(async () => {
+            try {
+              if (!needsRepairCapture) return;
+              await performRepairCapture();
+            } finally {
+              autoRepairing = false;
+              lastObservedScrollY = window.scrollY;
+            }
+          }, 420);
+        }, 180);
+      };
+
+      // Capture a single frame - simple and reliable: always take from bottom of capture area
+      const captureFrame = async (scrollY, isRepairMode = false, useStableScroll = false) => {
+        if (hasError && !isRepairMode) return false;
+
+        if (hasViewportChanged()) {
+          setStatus('ERROR', t('screenshot_error_init', 'Window or zoom changed. Please restart.'));
+          return false;
+        }
+
+        const isFirstIncrementCapture = !isRepairMode && captureCount <= 1;
+        let effectiveScrollY = scrollY;
+        if (useStableScroll && !isRepairMode) {
+          const stableOptions = isFirstIncrementCapture
+            ? { maxWaitMs: 760, stableFrameCount: 5, stableTolerancePx: 1 }
+            : undefined;
+          effectiveScrollY = await waitForStableScrollY(scrollY, stableOptions);
+          if (hasViewportChanged()) {
+            setStatus('ERROR', t('screenshot_error_init', 'Window or zoom changed. Please restart.'));
+            return false;
+          }
+        }
+
+        const referenceScrollY = isRepairMode ? lastCapturedScrollY : getCaptureBoundaryScrollY(effectiveScrollY);
+        const scrollDelta = effectiveScrollY - referenceScrollY;
+        const captureDirection = scrollDelta < 0 ? 'up' : 'down';
+        const absScrollDelta = Math.abs(scrollDelta);
+
+        if (scrollDelta === 0 && !isRepairMode) return true;
+
+        // Allow up to 95% of viewport height - almost full viewport scroll is OK
+        const maxGap = cleanRect.height * 0.95;
+        if (absScrollDelta > maxGap && !isRepairMode) {
+          setStatus('ERROR', t('screenshot_gap_large', '⚠️ Gap too large! Scroll back.'));
+          lastErrorScrollY = referenceScrollY;
+          needsRepairCapture = true;
+          scheduleAutoRepair();
+          return false;
+        }
+
+        const doc = document.documentElement || document.body;
+        const atBottom = doc
+          ? (effectiveScrollY + window.innerHeight) >= ((doc.scrollHeight || doc.offsetHeight || 0) - 4)
+          : false;
+        const atTop = effectiveScrollY <= 2;
+        // Lower threshold - capture even small scrolls
+        const minDelta = Math.min(cleanRect.height * 0.15, Math.max(10, cleanRect.height * 0.03));
+        const firstCaptureMinDelta = Math.max(
+          minDelta,
+          Math.min(cleanRect.height * 0.2, Math.max(24, cleanRect.height * 0.08))
+        );
+        const requiredMinDelta = isFirstIncrementCapture ? firstCaptureMinDelta : minDelta;
+        const atEdge = captureDirection === 'up' ? atTop : atBottom;
+        if (!atEdge && absScrollDelta < requiredMinDelta && !isRepairMode) {
+          return true;
+        }
+
+        try {
+          // Quick stabilization wait
+          await new Promise(r => requestAnimationFrame(() => setTimeout(r, 30)));
+
+          const response = await this._captureVisibleTab();
+
+          if (response && response.dataUrl) {
+            const img = new Image();
+            img.src = response.dataUrl;
+            await new Promise((resolve, reject) => {
+              img.onload = resolve;
+              img.onerror = reject;
+            });
+
+            const prevHeight = masterCanvas.height;
+            const frameCanvas = document.createElement('canvas');
+            frameCanvas.width = viewWidth;
+            frameCanvas.height = viewHeight;
+            const frameCtx = frameCanvas.getContext('2d', { willReadFrequently: true });
+            frameCtx.drawImage(
+              img,
+              cleanRect.left * dpr, cleanRect.top * dpr, viewWidth, viewHeight,
+              0, 0, viewWidth, viewHeight
+            );
+
+            // Simple approach: take scrollDelta worth of content from the BOTTOM of capture area
+            // This is the new content that scrolled into view
+            let newContentHeight = Math.round(absScrollDelta * dpr);
+
+            // For repair mode, capture more
+            if (isRepairMode) {
+              newContentHeight = Math.max(newContentHeight, Math.round(cleanRect.height * 0.4 * dpr));
+            }
+
+            // Clamp to available height
+            newContentHeight = Math.min(newContentHeight, viewHeight);
+            if (!isRepairMode) {
+              const expectedNewContentHeight = newContentHeight;
+              const matchedNewContentHeight = findMatchedNewContentHeight(frameCtx, expectedNewContentHeight, captureDirection, prevHeight);
+              if (isFirstIncrementCapture) {
+                const maxFirstCaptureAdjust = Math.max(14, Math.round(expectedNewContentHeight * 0.28));
+                newContentHeight = Math.abs(matchedNewContentHeight - expectedNewContentHeight) > maxFirstCaptureAdjust
+                  ? expectedNewContentHeight
+                  : matchedNewContentHeight;
+              } else {
+                newContentHeight = matchedNewContentHeight;
+              }
+            }
+
+            if (newContentHeight <= 2) {
+              return true;
+            }
+
+            // Source: from the BOTTOM of the capture area, going up by newContentHeight
+            // This is the new content that appeared after scrolling
+            const sourceY = captureDirection === 'up'
+              ? cleanRect.top * dpr
+              : (cleanRect.top + cleanRect.height) * dpr - newContentHeight;
+
+            // Backup previous content
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = masterCanvas.width;
+            tempCanvas.height = prevHeight;
+            if (prevHeight > 0) {
+              tempCanvas.getContext('2d').drawImage(masterCanvas, 0, 0);
+            }
+
+            // Resize and draw
+            masterCanvas.height = prevHeight + newContentHeight;
+            masterCtx.clearRect(0, 0, masterCanvas.width, masterCanvas.height);
+
+            if (captureDirection === 'up') {
+              masterCtx.drawImage(
+                frameCanvas,
+                0, sourceY - (cleanRect.top * dpr), viewWidth, newContentHeight,
+                0, 0, viewWidth, newContentHeight
+              );
+              if (prevHeight > 0) {
+                masterCtx.drawImage(tempCanvas, 0, newContentHeight);
+              }
+            } else {
+              if (prevHeight > 0) {
+                masterCtx.drawImage(tempCanvas, 0, 0);
+              }
+              // Append new content at the bottom
+              masterCtx.drawImage(
+                frameCanvas,
+                0, sourceY - (cleanRect.top * dpr), viewWidth, newContentHeight,
+                0, prevHeight, viewWidth, newContentHeight
+              );
+            }
+
+            lastCapturedScrollY = effectiveScrollY;
+            capturedMinScrollY = Math.min(capturedMinScrollY, effectiveScrollY);
+            capturedMaxScrollY = Math.max(capturedMaxScrollY, effectiveScrollY);
+            captureCount++;
+            needsRepairCapture = false;
+            updatePreview();
+            return true;
+          }
+          return false;
+        } catch (e) {
+          console.error('Capture error:', e);
+          return false;
+        }
+      };
+
+      // Repair capture function
+      const performRepairCapture = async () => {
+        if (!needsRepairCapture) return false;
+
+        setStatus('SCROLLING', t('screenshot_repairing', 'Repairing...'));
+        isCapturing = true;
+
+        const currentScrollY = window.scrollY;
+        const success = await captureFrame(currentScrollY, true);
+
+        isCapturing = false;
+        hasError = false;
+
+        if (success) {
+          setStatus('SCROLLING', t('screenshot_repaired', 'Fixed! Continue...'));
+          setTimeout(() => {
+            if (currentStatus === 'SCROLLING') {
+              setStatus('IDLE', getDirectionalScrollSlowlyMessage());
+            }
+          }, 800);
+        }
+
+        return success;
+      };
+
+      const releaseStability = this._prepareLongScreenshotStability();
+      const waitForStabilityStyle = async () => {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await new Promise(resolve => setTimeout(resolve, 130));
+      };
+
+      // ===== Initial Capture =====
+      try {
+        await waitForStabilityStyle();
+        setStatus('IDLE', t('screenshot_capturing_initial', 'Capturing initial view...'));
+
+        if (hasViewportChanged()) {
+          setStatus('ERROR', t('screenshot_error_init', 'Window or zoom changed. Please restart.'));
+          return;
+        }
+
+        const response = await this._captureVisibleTab();
+
+        if (response && response.dataUrl) {
+          const img = new Image();
+          img.src = response.dataUrl;
+          await new Promise(r => img.onload = r);
+
+          masterCanvas.width = viewWidth;
+          masterCanvas.height = viewHeight;
+          masterCtx.clearRect(0, 0, masterCanvas.width, masterCanvas.height);
+          masterCtx.drawImage(
+            img,
+            cleanRect.left * dpr, cleanRect.top * dpr, viewWidth, viewHeight,
+            0, 0, viewWidth, viewHeight
+          );
+          updatePreview();
+          captureCount = 1;
+          setStatus('IDLE', getDirectionalScrollSlowlyMessage());
+        }
+      } catch (e) {
+        console.error(e);
+        setStatus('ERROR', t('screenshot_error_init', 'Error initializing. Try again.'));
+      }
+
+      // ===== Scroll Handler =====
+      const onScroll = () => {
+        if (isCapturing) return;
+        if (autoRepairing) return;
+        if (autoMode && !autoPaused) return;
+        if (hasViewportChanged()) {
+          setStatus('ERROR', t('screenshot_error_init', 'Window or zoom changed. Please restart.'));
+          return;
+        }
+
+        const currentScrollY = window.scrollY;
+        const observedDelta = currentScrollY - lastObservedScrollY;
+        if (observedDelta !== 0) {
+          autoScrollDirection = observedDelta < 0 ? 'up' : 'down';
+          updateDirectionBadge();
+          lastObservedScrollY = currentScrollY;
+        }
+        const scrollDelta = getUncapturedScrollDelta(currentScrollY);
+
+        if (scrollDelta === 0 && !hasError) {
+          setStatus('IDLE', getDirectionalReadyContinueMessage());
+        } else if (scrollDelta > 0) {
+          const maxGap = cleanRect.height * 0.95;
+          if (scrollDelta > maxGap) {
+            setStatus('ERROR', t('screenshot_too_far', '⚠️ Too far! Scroll back.'));
+            lastErrorScrollY = capturedMaxScrollY;
+            needsRepairCapture = true;
+            scheduleAutoRepair();
+          } else if (scrollDelta > maxGap * 0.85) {
+            setStatus('TOO_FAST', t('screenshot_slow_down', '⚠️ Slow down...'));
+          } else {
+            setStatus('SCROLLING', t('screenshot_scrolling', 'Scrolling...'));
+          }
+        } else if (scrollDelta < 0) {
+          if (hasError && needsRepairCapture) {
+            const distanceFromError = Math.abs(currentScrollY - lastErrorScrollY);
+            const repairZone = cleanRect.height * 0.5;
+
+            if (distanceFromError <= repairZone) {
+              setStatus('PAUSED', t('screenshot_repair_ready', '🔧 Stop to repair...'));
+            } else {
+              setStatus('TOO_FAST', t('screenshot_scroll_back_more', '↑ Scroll back more...'));
+            }
+          } else {
+            setStatus('IDLE', getDirectionalReadyContinueMessage());
+          }
+        }
+
+        if (scrollTimer) clearTimeout(scrollTimer);
+
+        scrollTimer = setTimeout(async () => {
+          const finalScrollY = window.scrollY;
+          const finalDelta = getUncapturedScrollDelta(finalScrollY);
+
+          // Check if we need to perform a repair capture
+          if (hasError && needsRepairCapture) {
+            const distanceFromError = Math.abs(finalScrollY - lastErrorScrollY);
+            const repairZone = cleanRect.height * 0.5;
+
+            if (distanceFromError <= repairZone) {
+              await performRepairCapture();
+              return;
+            } else {
+              setStatus('ERROR', t('screenshot_scroll_back_more', '↑ Scroll back more...'));
+              scheduleAutoRepair();
+              return;
+            }
+          }
+
+          if (finalDelta === 0) {
+            setStatus('IDLE', getDirectionalScrollToCaptureMessage());
+            return;
+          }
+
+          if (hasError) return;
+
+          const maxGap = cleanRect.height * 0.95;
+          if (Math.abs(finalDelta) > maxGap) {
+            setStatus('ERROR', t('screenshot_gap_large_slow', '⚠️ Gap too large! Scroll back.'));
+            lastErrorScrollY = finalDelta < 0 ? capturedMinScrollY : capturedMaxScrollY;
+            needsRepairCapture = true;
+            scheduleAutoRepair();
+            return;
+          }
+
+          isCapturing = true;
+
+          const success = await captureFrame(finalScrollY, false, true);
+          isCapturing = false;
+
+          if (success) {
+            setStatus('IDLE', getDirectionalScrollSlowlyMessage());
+          } else {
+            setStatus('ERROR', t('screenshot_capture_failed', 'Failed. Scroll back.'));
+            lastErrorScrollY = lastCapturedScrollY;
+            needsRepairCapture = true;
+            scheduleAutoRepair();
+          }
+        }, 100);
+      };
+
+      window.addEventListener('scroll', onScroll, { passive: true });
+
+      // ===== Finish & Cleanup =====
+      const finish = () => {
+        setStatus('IDLE', t('screenshot_saving', 'Saving...'));
+        setTimeout(() => {
+          this._showScreenshotResult(masterCanvas.toDataURL('image/png'), 'long_screenshot');
+          cleanup();
+        }, 100);
+      };
+
+      const cleanup = () => {
+        this.activeSessionCleanup = null;
+        autoMode = false;
+        autoPaused = false;
+        if (autoTimer) {
+          clearTimeout(autoTimer);
+          autoTimer = null;
+        }
+        if (autoRepairTimer) {
+          clearTimeout(autoRepairTimer);
+          autoRepairTimer = null;
+        }
+        window.removeEventListener('scroll', onScroll);
+        document.removeEventListener('keydown', onKeyDown);
+        document.removeEventListener('contextmenu', onContextMenu);
+        hideControlTooltip();
+        uiContainer.remove();
+        indicator.remove();
+        try { releaseStability(); } catch (_) { }
+        this._removeZoomInvariantContainer();
+        if (scrollTimer) clearTimeout(scrollTimer);
+        // 长截图结束，清除截图状态
+        this._isScreenshotting = false;
+
+        try {
+          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
+              window.__dev1SnapshotHighlighter._instance && 
+              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
+            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
+          }
+        } catch (_) {}
+      };
+
+      this.activeSessionCleanup = cleanup;
+
+      // ===== Auto Scroll Functions =====
+      const showAutoControls = () => {
+        autoBtnWrap.style.display = 'none';
+        pauseBtn.style.display = 'flex';
+        resumeBtn.style.display = 'none';
+      };
+
+      const showPausedControls = () => {
+        pauseBtn.style.display = 'none';
+        resumeBtn.style.display = 'flex';
+      };
+
+      const showResumedControls = () => {
+        pauseBtn.style.display = 'flex';
+        resumeBtn.style.display = 'none';
+      };
+
+      const stopAutoScroll = () => {
+        autoMode = false;
+        autoPaused = false;
+        if (autoTimer) {
+          clearTimeout(autoTimer);
+          autoTimer = null;
+        }
+        lastObservedScrollY = window.scrollY;
+        autoBtnWrap.style.display = 'flex';
+        pauseBtn.style.display = 'none';
+        resumeBtn.style.display = 'none';
+      };
+
+      const startAutoScroll = () => {
+        if (autoMode && !autoPaused) return;
+        autoMode = true;
+        autoPaused = false;
+        showAutoControls();
+
+        const doc = document.scrollingElement || document.documentElement || document.body;
+        const stepPx = Math.max(16, Math.round(cleanRect.height * 0.7));
+
+        const runStep = async () => {
+          if (!autoMode || autoPaused) return;
+          if (hasViewportChanged()) {
+            setStatus('ERROR', t('screenshot_error_init', 'Window or zoom changed. Please restart.'));
+            stopAutoScroll();
+            return;
+          }
+
+          const currentScrollY = window.scrollY;
+          const maxScrollYBase = (doc && doc.scrollHeight) || (document.body && document.body.scrollHeight) || 0;
+          const maxScrollY = Math.max(0, maxScrollYBase - window.innerHeight);
+
+          if ((autoScrollDirection === 'down' && currentScrollY >= maxScrollY - 2) ||
+            (autoScrollDirection === 'up' && currentScrollY <= 2)) {
+            stopAutoScroll();
+            finish();
+            return;
+          }
+
+          const nextScrollY = autoScrollDirection === 'up'
+            ? Math.max(currentScrollY - stepPx, 0)
+            : Math.min(currentScrollY + stepPx, maxScrollY);
+          window.scrollTo(0, nextScrollY);
+
+          await new Promise((r) => setTimeout(r, 220));
+
+          isCapturing = true;
+          const success = await captureFrame(nextScrollY);
+          isCapturing = false;
+
+          if (!autoMode || autoPaused) return;
+
+          if (!success) {
+            setStatus('ERROR', t('screenshot_capture_failed', 'Capture failed. Scroll back.'));
+            lastErrorScrollY = lastCapturedScrollY;
+            needsRepairCapture = true;
+            stopAutoScroll();
+            scheduleAutoRepair();
+            return;
+          }
+
+          autoTimer = setTimeout(runStep, 180);
+        };
+
+        setStatus('SCROLLING', getDirectionalAutoScrollingMessage());
+        runStep();
+      };
+
+      const pauseAutoScroll = () => {
+        if (!autoMode || autoPaused) return;
+        autoPaused = true;
+        if (autoTimer) {
+          clearTimeout(autoTimer);
+          autoTimer = null;
+        }
+        showPausedControls();
+        setStatus('PAUSED', t('screenshot_paused', 'Paused - scroll manually or resume'));
+      };
+
+      const resumeAutoScroll = () => {
+        if (!autoMode || !autoPaused) return;
+        autoPaused = false;
+        showResumedControls();
+        startAutoScroll();
+      };
+
+      // ===== ESC Key Handler =====
+      const onKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          cleanup();
+        }
+      };
+      document.addEventListener('keydown', onKeyDown);
+
+      // ===== 右键取消 =====
+      const onContextMenu = (e) => {
+        e.preventDefault();
+        cleanup();
+      };
+      document.addEventListener('contextmenu', onContextMenu);
+
+      // ===== Wire up control buttons =====
+      finishBtn.onclick = () => finish();
+      cancelBtn.onclick = () => cleanup();
+      autoBtn.onclick = () => startAutoScroll();
+      pauseBtn.onclick = () => pauseAutoScroll();
+      resumeBtn.onclick = () => resumeAutoScroll();
+    }
+
+// =================================================================================
+// IV. MARKDOWN SOURCE, IMAGE & SETTINGS (Markdown 来源、图片与设置)
+// =================================================================================
+
 
     _isMarkdownSourceCandidateVisible(element, options = {}) {
       if (!element || !(element instanceof Element)) return false;
@@ -4128,6 +7127,7 @@
       updateOverlay();
     }
 
+
     _getMarkdownImageFileMime(file) {
       if (!file) return '';
       const rawType = String(file.type || '').trim().toLowerCase();
@@ -4579,6 +7579,7 @@
 
       return '';
     }
+
 
     _repositionMdSettingsPanel() {
       const panel = this._getMdSettingsPanel();
@@ -5691,2967 +8692,10 @@
       rootLayer.appendChild(panel);
     }
 
-    // 显示录屏设置面板
-    async _showRecordingSettings(anchor) {
-      console.log('_showRecordingSettings called');
+// =================================================================================
+// V. SCREENSHOT PROCESSING & API EXPORT (截图处理与 API 导出)
+// =================================================================================
 
-      if (!this._codecCheckPromise) {
-        this._codecCheckPromise = this._checkAllCodecsSupport();
-      }
-
-      // 移除已存在的设置面板
-      const existing = this._getRecordingSettingsPanel();
-      if (existing) { existing.remove(); return; }
-
-      const t = (key, fallback) => (this.t && this.t(key)) || fallback;
-      const isDark = this.darkModeEnabled;
-
-      const root = this.shadow && this.shadow.querySelector('.dev1-helper-root');
-      let positionStyle = 'bottom: 64px; right: 0;';
-      if (root) {
-        if (root.classList.contains('pos-bottom-left')) {
-          positionStyle = 'bottom: 64px; left: 0;';
-        } else if (root.classList.contains('pos-top-right')) {
-          positionStyle = 'top: 64px; right: 0;';
-        } else if (root.classList.contains('pos-top-left')) {
-          positionStyle = 'top: 64px; left: 0;';
-        }
-      }
-
-      const panel = document.createElement('div');
-      panel.id = 'recording-settings-panel';
-      if (!root) {
-        const rect = anchor.getBoundingClientRect();
-        const PANEL_WIDTH = 280;
-        const PANEL_HEIGHT = 370;
-        let left = rect.left - (PANEL_WIDTH / 2) + (rect.width / 2);
-        if (left + PANEL_WIDTH > window.innerWidth) left = window.innerWidth - PANEL_WIDTH - 10;
-        if (left < 10) left = 10;
-        let top = rect.bottom + 10;
-        if (top + PANEL_HEIGHT > window.innerHeight) {
-          top = rect.top - PANEL_HEIGHT - 10;
-          if (top < 10) top = Math.max(10, window.innerHeight - PANEL_HEIGHT - 10);
-        }
-        panel.style.cssText = `
-          position: fixed;
-          top: ${top}px;
-          left: ${left}px;
-          width: 280px;
-          padding: 16px;
-          background: ${isDark ? 'var(--panel-bg, #1f1f1f)' : 'var(--panel-bg, #f0f4f8)'};
-          border: 1px solid var(--panel-border, ${isDark ? '#3b3b3b' : '#cbd5e1'});
-          border-radius: 20px;
-          box-shadow: var(--panel-shadow, 0 10px 40px rgba(0,0,0,0.3));
-          z-index: 2147483648;
-          font-size: 13px;
-          color: var(--text-main, ${isDark ? '#e2e8f0' : '#1e293b'});
-          pointer-events: auto !important;
-          backdrop-filter: var(--backdrop-filter);
-          -webkit-backdrop-filter: var(--backdrop-filter);
-        `;
-      }
-
-      let closeHandler = null;
-      const closePanel = () => {
-        panel.remove();
-        if (closeHandler) document.removeEventListener('click', closeHandler);
-      };
-
-      // 标题
-      const title = document.createElement('div');
-      title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; position: relative;';
-      
-      const titleLabel = document.createElement('div');
-      titleLabel.style.cssText = 'display: flex; align-items: center; gap: 8px; flex: 1;';
-      
-      const iconSpan = document.createElement('span');
-      iconSpan.style.display = 'flex';
-      iconSpan.style.alignItems = 'center';
-      iconSpan.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
-      titleLabel.appendChild(iconSpan);
-
-      const titleText = document.createElement('span');
-      titleText.textContent = t('recording_settings', '录制设置');
-      titleLabel.appendChild(titleText);
-
-      // 提示说明按钮
-      const infoBtn = document.createElement('button');
-      infoBtn.type = 'button';
-      infoBtn.textContent = '?';
-      infoBtn.title = t('recording_settings_info_title', '录制说明');
-      infoBtn.setAttribute('aria-label', t('recording_settings_info_title', '录制说明'));
-      infoBtn.style.cssText = `
-        box-sizing: border-box !important;
-        appearance: none !important;
-        -webkit-appearance: none !important;
-        outline: none !important;
-        border: 1px solid ${isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.18)'} !important;
-        border-radius: 999px !important;
-        background: ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'} !important;
-        color: ${isDark ? '#e2e8f0' : '#475569'} !important;
-        width: 20px !important;
-        height: 20px !important;
-        min-width: 20px !important;
-        padding: 0 !important;
-        font-size: 11px !important;
-        font-weight: 700 !important;
-        font-family: inherit !important;
-        cursor: pointer !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        pointer-events: auto !important;
-        transition: all 0.2s ease !important;
-        margin-left: 6px !important;
-        line-height: 1 !important;
-      `;
-      
-      infoBtn.addEventListener('mouseenter', () => {
-        infoBtn.style.setProperty('background', isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.12)', 'important');
-        infoBtn.style.setProperty('color', '#3b82f6', 'important');
-        infoBtn.style.setProperty('border-color', '#3b82f6', 'important');
-      });
-      infoBtn.addEventListener('mouseleave', () => {
-        infoBtn.style.setProperty('background', isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', 'important');
-        infoBtn.style.setProperty('color', isDark ? '#e2e8f0' : '#475569', 'important');
-        infoBtn.style.setProperty('border-color', isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.18)', 'important');
-      });
-      
-      const isChinese = (this.config && this.config.lang) !== 'en';
-      infoBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const helpPanelId = 'recording-settings-help-panel';
-        let helpPanel = panel.querySelector('#' + helpPanelId);
-        if (helpPanel) {
-          helpPanel.remove();
-        } else {
-          helpPanel = document.createElement('div');
-          helpPanel.id = helpPanelId;
-          helpPanel.style.cssText = `
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: ${isDark ? 'var(--panel-bg, #1f1f1f)' : 'var(--panel-bg, #f0f4f8)'};
-            border: 1px solid var(--panel-border, ${isDark ? '#3b3b3b' : '#cbd5e1'});
-            border-radius: 19px;
-            padding: 12px 10px;
-            z-index: 10;
-            display: flex;
-            flex-direction: column;
-            color: var(--text-main, ${isDark ? '#e2e8f0' : '#1e293b'});
-            box-sizing: border-box;
-            pointer-events: auto !important;
-          `;
-
-          const scrollbarStyle = document.createElement('style');
-          scrollbarStyle.textContent = `
-            #${helpPanelId} ul::-webkit-scrollbar {
-              width: 5px !important;
-              height: 5px !important;
-            }
-            #${helpPanelId} ul::-webkit-scrollbar-track {
-              background: transparent !important;
-            }
-            #${helpPanelId} ul::-webkit-scrollbar-thumb {
-              background: ${isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.2)'} !important;
-              border-radius: 10px !important;
-            }
-            #${helpPanelId} ul::-webkit-scrollbar-thumb:hover {
-              background: ${isDark ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.35)'} !important;
-            }
-          `;
-          helpPanel.appendChild(scrollbarStyle);
-          
-          const helpTitle = document.createElement('div');
-          helpTitle.style.cssText = 'font-weight: 750 !important; font-size: 14px !important; margin-bottom: 12px !important; text-align: left !important;';
-          helpTitle.textContent = t('recording_settings_info_title', '录制说明');
-          
-          const list = document.createElement('ul');
-          list.style.cssText = 'margin: 0 0 12px 14px !important; padding: 0 6px 0 0 !important; font-size: 12px !important; line-height: 1.5 !important; flex: 1 !important; overflow-y: auto !important;';
-          
-          const items = isChinese ? [
-            '<strong style="color: #f97316;">不要改变窗口大小</strong>：录屏中途调整窗口会导致裁剪偏移、边缘露出红线。',
-            '<strong>视频缓存自动释放</strong>：录制完点击“保存并删除缓存”或“取消”都会瞬间彻底清空内存。',
-            '<strong>日常网页与办公</strong>：推荐使用 <strong>MP4 (H.264) + 60 FPS + 10M/20Mbps</strong>（兼容性最好，文件小）。',
-            '<strong>高刷新率 (120/240fps)</strong>：必须搭配 <strong>50M/100Mbps</strong> 码率（码率太低会导致运动画面变糊）。',
-            '<strong>网页视频 / 3D / 复杂动效</strong>：推荐 <strong>MP4 + 50M/100Mbps</strong>（防止剧烈运动时画面出现马赛克）。',
-            '<strong style="color: #f97316;">动态高亮 (流动线框/波纹)</strong>：推荐使用 <strong>60 FPS + 20M/50Mbps</strong>（保证高亮动画流动丝滑、无毛刺）。',
-            '<strong style="color: #f97316;">页面高亮过多导致卡顿</strong>：限制在 <strong>60 FPS</strong>，码率选 <strong>20Mbps</strong>（降低 CPU/GPU 负荷，防止掉帧）。',
-            '<strong>播放黑屏或打不开</strong>：首选 <strong>MP4</strong> 格式；遇到旧设备兼容问题可切换 <strong>WebM</strong> 备用。'
-          ] : [
-            '<strong style="color: #f97316;">Do not resize window</strong>: Resizing during recording causes crop shifts and exposes the red border.',
-            '<strong>Auto memory release</strong>: Canceling or saving will instantly clear all RAM video caches.',
-            '<strong>General Web Recording</strong>: Recommended <strong>MP4 (H.264) + 60 FPS + 10M/20Mbps</strong> (Best compatibility & size).',
-            '<strong>High FPS (120/240fps)</strong>: Must use <strong>50M/100Mbps</strong> (Low bitrates will cause blurry frames).',
-            '<strong>Videos / 3D / Complex Animations</strong>: Recommended <strong>MP4 + 50M/100Mbps</strong> (Prevents pixelation during fast motions).',
-            '<strong style="color: #f97316;">Dynamic Highlights (Running Line/Ripple)</strong>: Use <strong>60 FPS + 20M/50Mbps</strong> (Keeps border animation sharp & smooth).',
-            '<strong style="color: #f97316;">Stuttering due to too many highlights</strong>: Limit to <strong>60 FPS</strong>, select <strong>20Mbps</strong> (Reduces CPU/GPU load).',
-            '<strong>Player issues / Black screen</strong>: Use <strong>MP4</strong> (Best player compatibility). Use <strong>WebM</strong> as a fallback on old devices.'
-          ];
-          
-          items.forEach(text => {
-            const li = document.createElement('li');
-            li.style.cssText = 'margin: 8px 0 !important; text-align: left !important; list-style-type: disc !important;';
-            li.innerHTML = text;
-            list.appendChild(li);
-          });
-          
-          const closeHelpBtn = document.createElement('button');
-          closeHelpBtn.type = 'button';
-          closeHelpBtn.textContent = t('got_it', isChinese ? '知道了' : 'Got it');
-          closeHelpBtn.style.cssText = `
-            width: 100% !important;
-            height: 32px !important;
-            background: linear-gradient(135deg, #1976d2, #42a5f5) !important;
-            color: #fff !important;
-            border: 0 !important;
-            border-radius: 8px !important;
-            cursor: pointer !important;
-            font-weight: 600 !important;
-            font-size: 13px !important;
-            transition: opacity 0.2s !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            pointer-events: auto !important;
-            outline: none !important;
-            box-shadow: 0 2px 6px rgba(25, 118, 210, 0.2) !important;
-          `;
-          closeHelpBtn.addEventListener('mouseenter', () => closeHelpBtn.style.setProperty('opacity', '0.9', 'important'));
-          closeHelpBtn.addEventListener('mouseleave', () => closeHelpBtn.style.setProperty('opacity', '1', 'important'));
-          closeHelpBtn.addEventListener('click', (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            helpPanel.remove();
-          });
-          
-          helpPanel.appendChild(helpTitle);
-          helpPanel.appendChild(list);
-          helpPanel.appendChild(closeHelpBtn);
-          panel.appendChild(helpPanel);
-        }
-      });
-      titleLabel.appendChild(infoBtn);
-
-      const closeBtn = document.createElement('button');
-      closeBtn.type = 'button';
-      closeBtn.textContent = '×';
-      closeBtn.title = t('recording_settings_close', '关闭录制设置');
-      closeBtn.setAttribute('aria-label', t('recording_settings_close', '关闭录制设置'));
-      closeBtn.style.cssText = `
-        width: 24px;
-        height: 24px;
-        border: 0;
-        border-radius: 7px;
-        background: var(--btn-min-hover, ${isDark ? '#374151' : '#e2e8f0'});
-        color: var(--text-muted, ${isDark ? '#e2e8f0' : '#475569'});
-        cursor: pointer;
-        font-size: 16px;
-        line-height: 24px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      `;
-      closeBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        closePanel();
-      });
-      title.appendChild(titleLabel);
-      title.appendChild(closeBtn);
-      panel.appendChild(title);
-
-      // 创建设置项
-      const createSettingRow = (labelText, options, storageKey, defaultValue) => {
-        const row = document.createElement('div');
-        row.className = 'settings-row-' + storageKey;
-        row.style.cssText = 'margin-bottom: 14px;';
-
-        const label = document.createElement('div');
-        label.textContent = labelText;
-        label.style.cssText = 'font-size: 12px; color: var(--row-label-color, ' + (isDark ? '#9ca3af' : '#64748b') + '); margin-bottom: 8px;';
-        row.appendChild(label);
-
-        const btnGroup = document.createElement('div');
-        btnGroup.style.cssText = 'display: flex; gap: 6px; flex-wrap: wrap;';
-
-        let saved = defaultValue;
-        try { saved = localStorage.getItem(storageKey) || defaultValue; } catch (_) { }
-
-        options.forEach(opt => {
-          const btn = document.createElement('button');
-          btn.textContent = opt.label;
-          btn.dataset.value = opt.value;
-          const isActive = saved === opt.value;
-          const isDisabled = opt.disabled;
-
-          btn.style.cssText = `
-            padding: 6px 12px;
-            border-radius: 6px;
-            border: 1px solid ${isActive ? '#3b82f6' : `var(--btn-border, ${isDark ? '#3b3b3b' : '#e2e8f0'})`};
-            background: ${isActive ? `var(--btn-active-bg, ${isDark ? '#1e3a5f' : '#dbeafe'})` : `var(--btn-bg, ${isDark ? '#2d2d2d' : '#f8fafc'})`};
-            color: ${isActive ? '#3b82f6' : `var(--btn-color, ${isDark ? '#e2e8f0' : '#475569'})`};
-            cursor: ${isDisabled ? 'not-allowed' : 'pointer'};
-            font-size: 12px;
-            opacity: ${isDisabled ? '0.4' : '1'};
-            transition: all 0.15s ease;
-            display: ${isDisabled ? 'none' : ''};
-          `;
-
-          if (isActive) {
-            btn.classList.add('active');
-          }
-
-          if (!isDisabled) {
-            btn.addEventListener('click', () => {
-              btnGroup.querySelectorAll('button').forEach(b => {
-                b.style.border = `1px solid var(--btn-border, ${isDark ? '#3b3b3b' : '#e2e8f0'})`;
-                b.style.background = `var(--btn-bg, ${isDark ? '#2d2d2d' : '#f8fafc'})`;
-                b.style.color = `var(--btn-color, ${isDark ? '#e2e8f0' : '#475569'})`;
-                b.classList.remove('active');
-              });
-              btn.style.border = '1px solid #3b82f6';
-              btn.style.background = `var(--btn-active-bg, ${isDark ? '#1e3a5f' : '#dbeafe'})`;
-              btn.style.color = '#3b82f6';
-              btn.classList.add('active');
-              try { localStorage.setItem(storageKey, opt.value); } catch (_) { }
-
-              if (storageKey === 'record_format') {
-                updateSettingPanelState();
-              }
-            });
-          }
-
-          btnGroup.appendChild(btn);
-        });
-
-        row.appendChild(btnGroup);
-        return row;
-      };
-
-      // 动态更新面板禁用状态
-      const updateSettingPanelState = () => {
-        let format = 'mp4';
-        try { format = localStorage.getItem('record_format') || (webCodecsSupported ? 'mp4' : 'webm'); } catch (_) {}
-
-        const codecRow = panel.querySelector('.settings-row-record_codec');
-        const qualityRow = panel.querySelector('.settings-row-record_quality');
-        const fpsRow = panel.querySelector('.settings-row-record_fps');
-
-        if (!codecRow || !qualityRow || !fpsRow) return;
-
-        const setButtonEnabled = (btn, enabled) => {
-          if (enabled) {
-            btn.style.opacity = '1';
-            btn.style.pointerEvents = 'auto';
-            btn.style.cursor = 'pointer';
-            btn.disabled = false;
-            btn.style.display = '';
-          } else {
-            btn.style.opacity = '0.4';
-            btn.style.pointerEvents = 'none';
-            btn.style.cursor = 'not-allowed';
-            btn.disabled = true;
-            btn.style.border = `1px solid var(--btn-border, ${isDark ? '#3b3b3b' : '#e2e8f0'})`;
-            btn.style.background = `var(--btn-bg, ${isDark ? '#2d2d2d' : '#f8fafc'})`;
-            btn.style.color = `var(--btn-color, ${isDark ? '#e2e8f0' : '#475569'})`;
-            btn.classList.remove('active');
-            btn.style.display = 'none';
-          }
-        };
-
-        const setButtonActive = (btn) => {
-          btn.style.border = '1px solid #3b82f6';
-          btn.style.background = `var(--btn-active-bg, ${isDark ? '#1e3a5f' : '#dbeafe'})`;
-          btn.style.color = '#3b82f6';
-          btn.classList.add('active');
-          try {
-            const key = btn.parentElement.parentElement.className.replace('settings-row-', '');
-            localStorage.setItem(key, btn.dataset.value);
-          } catch (_) {}
-        };
-
-        if (format === 'mp4') {
-          // MP4: H.264, HEVC, AV1 Enabled; VP9, VP8 Disabled
-          codecRow.querySelectorAll('button').forEach(btn => {
-            const val = btn.dataset.value;
-            const isMp4Codec = val.startsWith('avc1') || val.startsWith('av01') || val.startsWith('hvc1');
-            setButtonEnabled(btn, isMp4Codec);
-          });
-
-          // Quality: All enabled
-          qualityRow.querySelectorAll('button').forEach(btn => {
-            setButtonEnabled(btn, true);
-          });
-
-          // FPS: All enabled
-          fpsRow.querySelectorAll('button').forEach(btn => {
-            setButtonEnabled(btn, true);
-          });
-        } else {
-          // WebM: VP9, VP8 Enabled; Others Disabled
-          codecRow.querySelectorAll('button').forEach(btn => {
-            const val = btn.dataset.value;
-            const isWebmCodec = val.includes('webm');
-            setButtonEnabled(btn, isWebmCodec);
-          });
-
-          // Quality: 100M/50M Disabled; 20M/10M/5M Enabled
-          qualityRow.querySelectorAll('button').forEach(btn => {
-            const val = parseInt(btn.dataset.value);
-            const isWebmQuality = val <= 20000000;
-            setButtonEnabled(btn, isWebmQuality);
-          });
-
-          // FPS: 240/120 Disabled; 60/30 Enabled
-          fpsRow.querySelectorAll('button').forEach(btn => {
-            const val = parseInt(btn.dataset.value);
-            const isWebmFps = val <= 60;
-            setButtonEnabled(btn, isWebmFps);
-          });
-        }
-
-        // Auto-select first enabled option if active button is disabled
-        [codecRow, qualityRow, fpsRow].forEach(row => {
-          const activeBtn = row.querySelector('button.active');
-          if (!activeBtn || activeBtn.disabled) {
-            if (activeBtn) activeBtn.classList.remove('active');
-            const firstEnabled = Array.from(row.querySelectorAll('button')).find(btn => !btn.disabled);
-            if (firstEnabled) {
-              setButtonActive(firstEnabled);
-            }
-          }
-        });
-      };
-
-      // 确保已经完成编解码器支持检测
-      if (this._codecCheckPromise) {
-        await this._codecCheckPromise;
-      }
-
-      const codecs = this._supportedCodecsCache || [
-        { value: 'avc1.640033', label: isChinese ? 'H.264 High 5.1 (推荐)' : 'H.264 High 5.1 (Recommended)' },
-        { value: 'avc1.42001f', label: isChinese ? 'H.264 Baseline (兼容)' : 'H.264 Baseline (Compatible)' }
-      ];
-
-      const webCodecsSupported = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined' && typeof Mp4Muxer.Muxer === 'function';
-      const defaultCodec = codecs[0] ? codecs[0].value : (webCodecsSupported ? 'avc1.640033' : 'video/webm;codecs=vp9');
-      panel.appendChild(createSettingRow(t('codec', '编码器'), codecs, 'record_codec', defaultCodec));
-
-      // 画质选择（码率） - WebCodecs 支持更高码率
-      const qualities = webCodecsSupported ? [
-        { value: '100000000', label: t('quality_max', '无损') + ' 100Mbps' },
-        { value: '50000000', label: t('quality_ultra', '极清') + ' 50Mbps' },
-        { value: '20000000', label: t('quality_high', '超清') + ' 20Mbps' },
-        { value: '10000000', label: t('quality_medium', '高清') + ' 10Mbps' },
-        { value: '5000000', label: t('quality_low', '标清') + ' 5Mbps' }
-      ] : [
-        { value: '40000000', label: t('quality_ultra', '极清') + ' 40Mbps' },
-        { value: '20000000', label: t('quality_high', '超清') + ' 20Mbps' },
-        { value: '10000000', label: t('quality_medium', '高清') + ' 10Mbps' },
-        { value: '5000000', label: t('quality_low', '标清') + ' 5Mbps' }
-      ];
-      const defaultQuality = webCodecsSupported ? '50000000' : '20000000';
-      panel.appendChild(createSettingRow(t('quality', '画质'), qualities, 'record_quality', defaultQuality));
-
-      // 帧率选择
-      const frameRates = [
-        { value: '240', label: '240 FPS' },
-        { value: '120', label: '120 FPS' },
-        { value: '60', label: '60 FPS' },
-        { value: '30', label: '30 FPS' }
-      ];
-      panel.appendChild(createSettingRow(t('frame_rate', '帧率'), frameRates, 'record_fps', '60'));
-
-      // 格式选择
-      const formats = [
-        { value: 'mp4', label: 'MP4', disabled: !webCodecsSupported },
-        { value: 'webm', label: 'WebM' }
-      ];
-      const defaultFormat = webCodecsSupported ? 'mp4' : 'webm';
-      panel.appendChild(createSettingRow(t('format', '格式'), formats, 'record_format', defaultFormat));
-
-      // 触发初始状态匹配更新
-      updateSettingPanelState();
-
-
-
-      // 点击外部关闭
-      closeHandler = (e) => {
-        const target = (e.composedPath && e.composedPath()[0]) || e.target;
-        if (!panel.contains(target) && (!anchor || !anchor.contains(target))) {
-          closePanel();
-        }
-      };
-      setTimeout(() => document.addEventListener('click', closeHandler, true), 0);
-
-      if (root) {
-        root.appendChild(panel);
-      } else {
-        (this.shadow || document.body).appendChild(panel);
-      }
-      console.log('Settings panel appended', panel);
-    }
-
-    startAreaScreenshot(options = {}) {
-      try {
-        if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
-            window.__dev1SnapshotHighlighter._instance && 
-            typeof window.__dev1SnapshotHighlighter._instance._suppressCursor === 'function') {
-          window.__dev1SnapshotHighlighter._instance._suppressCursor('screenshot');
-        }
-      } catch (_) {}
-
-      // 截图开始前缓存当前主题，避免截图期间主题检测被覆盖层干扰
-      this._cachedTheme = this.detectPageTheme();
-      this._isScreenshotting = true;
-
-      // Close settings panel
-      this._removeRecordingSettingsPanel();
-
-      // Get zoom-invariant container to prevent position drift during PDF zoom/resize
-      const fixedLayer = this._getZoomInvariantContainer();
-
-      // Create overlay
-      const overlay = document.createElement('div');
-      overlay.id = 'screenshot-overlay';
-      overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2147483647; cursor: crosshair; background: rgba(0,0,0,0.3); pointer-events: auto;';
-
-      // Add instruction text
-      const hint = document.createElement('div');
-      hint.textContent = options.mode === 'manual_scroll'
-        ? ((this.t && this.t('screenshot_manual_instruction')) || 'Drag to select area for scrolling capture')
-        : ((this.t && this.t('screenshot_instruction_area')) || 'Drag to select area');
-      // 根据页面主题调整提示文字颜色：深色页面用白字深底，浅色页面用深字浅底
-      const isDarkPage = this._cachedTheme === true;
-      const hintBg = isDarkPage ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.9)';
-      const hintColor = isDarkPage ? '#ffffff' : '#1e293b';
-      hint.style.cssText = `position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: ${hintBg}; color: ${hintColor}; padding: 8px 16px; border-radius: 20px; font-size: 14px; pointer-events: none; font-weight: 500; box-shadow: 0 2px 8px rgba(0,0,0,0.15);`;
-      overlay.appendChild(hint);
-
-      const selection = document.createElement('div');
-      selection.style.cssText = 'position: absolute; border: 2px solid #3b82f6; background: rgba(59, 130, 246, 0.1); display: none; pointer-events: none;';
-      overlay.appendChild(selection);
-      fixedLayer.appendChild(overlay);
-
-      let startX, startY;
-      let isDragging = false;
-
-      const onDown = (e) => {
-        isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
-        selection.style.left = startX + 'px';
-        selection.style.top = startY + 'px';
-        selection.style.width = '0px';
-        selection.style.height = '0px';
-        selection.style.display = 'block';
-        e.preventDefault();
-      };
-
-      const onMove = (e) => {
-        if (!isDragging) return;
-        const currentX = e.clientX;
-        const currentY = e.clientY;
-
-        const left = Math.min(startX, currentX);
-        const top = Math.min(startY, currentY);
-        const width = Math.abs(currentX - startX);
-        const height = Math.abs(currentY - startY);
-
-        selection.style.left = left + 'px';
-        selection.style.top = top + 'px';
-        selection.style.width = width + 'px';
-        selection.style.height = height + 'px';
-        e.preventDefault();
-      };
-
-      const onUp = async (e) => {
-        if (!isDragging) return;
-        isDragging = false;
-
-        const rect = selection.getBoundingClientRect();
-        overlay.remove();
-        this.activeSessionCleanup = null;
-        document.removeEventListener('keydown', onKey);
-        document.removeEventListener('contextmenu', onContextMenu);
-        this._removeZoomInvariantContainer();
-
-        if (rect.width < 5 || rect.height < 5) {
-          try {
-            if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
-                window.__dev1SnapshotHighlighter._instance && 
-                typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
-              window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
-            }
-          } catch (_) {}
-          // 选择太小，清除截图状态
-          this._isScreenshotting = false;
-          return;
-        }
-
-        // If callback provided (e.g. for manual scroll), use it
-        // 注意：长截图模式下，标志由 _startManualScrollSession 的 cleanup 清除
-        if (options.onSelect) {
-          options.onSelect(rect);
-          return;
-        }
-
-        try {
-          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
-              window.__dev1SnapshotHighlighter._instance && 
-              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
-            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
-          }
-        } catch (_) {}
-
-        // Default: Capture immediate area
-        try {
-          const response = await this._captureVisibleTab();
-          if (response && response.success && response.dataUrl) {
-            this._processScreenshot(response.dataUrl, rect);
-          } else {
-            const msg = (this.t && this.t('screenshot_failed')) || 'Screenshot failed';
-            alert(`${msg}\n${response?.error || 'Unknown error'}`);
-          }
-        } catch (err) {
-          console.error(err);
-          const msg = (this.t && this.t('screenshot_failed')) || 'Screenshot failed';
-          alert(`${msg}\n${err.message || err}`);
-        } finally {
-          // 区域截图完成，清除截图状态
-          this._isScreenshotting = false;
-        }
-      };
-
-      overlay.addEventListener('mousedown', onDown);
-      overlay.addEventListener('mousemove', onMove);
-      overlay.addEventListener('mouseup', onUp);
-
-      // 取消选区的清理函数
-      const cancelSelection = () => {
-        overlay.remove();
-        this._removeZoomInvariantContainer();
-        document.removeEventListener('keydown', onKey);
-        document.removeEventListener('contextmenu', onContextMenu);
-        this.activeSessionCleanup = null;
-        this._isScreenshotting = false;
-
-        try {
-          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
-              window.__dev1SnapshotHighlighter._instance && 
-              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
-            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
-          }
-        } catch (_) {}
-      };
-
-      this.activeSessionCleanup = cancelSelection;
-
-      // ESC 取消
-      const onKey = (e) => {
-        if (e.key === 'Escape') {
-          cancelSelection();
-        }
-      };
-      document.addEventListener('keydown', onKey);
-
-      // 右键取消
-      const onContextMenu = (e) => {
-        e.preventDefault();
-        cancelSelection();
-      };
-      document.addEventListener('contextmenu', onContextMenu);
-    }
-
-    startLongScreenshot() {
-      // Close settings panel
-      this._removeRecordingSettingsPanel();
-
-      // Reuse area selection to define the viewport
-      this.startAreaScreenshot({
-        mode: 'manual_scroll',
-        onSelect: (rect) => this._startManualScrollSession(rect)
-      });
-    }
-
-    // 屏幕录制功能 - 先选择区域再录制
-    startScreenRecording() {
-      if (!this._codecCheckPromise) {
-        this._codecCheckPromise = this._checkAllCodecsSupport();
-      }
-
-      try {
-        if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
-            window.__dev1SnapshotHighlighter._instance && 
-            typeof window.__dev1SnapshotHighlighter._instance._suppressCursor === 'function') {
-          window.__dev1SnapshotHighlighter._instance._suppressCursor('screenshot');
-        }
-      } catch (_) {}
-
-      // Close settings panel
-      this._removeRecordingSettingsPanel();
-
-      // 缓存主题
-      this._cachedTheme = this.detectPageTheme();
-      this._isScreenshotting = true;
-
-      const isDarkPage = this._cachedTheme === true;
-      const t = (key, fallback) => (this.t && this.t(key)) || fallback;
-
-      // Get zoom-invariant container to prevent position drift during PDF zoom/resize
-      const fixedLayer = this._getZoomInvariantContainer();
-
-      // 创建区域选择覆盖层
-      const overlay = document.createElement('div');
-      overlay.id = 'screen-record-overlay';
-      overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2147483647; cursor: crosshair; background: rgba(0,0,0,0.3); user-select: none; pointer-events: auto;';
-
-      // 阻止事件冒泡到页面
-      overlay.addEventListener('click', e => e.stopPropagation());
-      overlay.addEventListener('contextmenu', e => e.preventDefault());
-      overlay.addEventListener('pointerdown', e => e.stopPropagation());
-
-      // 提示文字
-      const hint = document.createElement('div');
-      hint.textContent = t('screen_record_select_area', '拖拽选择录制区域');
-      const hintBg = isDarkPage ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.9)';
-      const hintColor = isDarkPage ? '#ffffff' : '#1e293b';
-      hint.style.cssText = `position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: ${hintBg}; color: ${hintColor}; padding: 8px 16px; border-radius: 20px; font-size: 14px; pointer-events: none; font-weight: 500; box-shadow: 0 2px 8px rgba(0,0,0,0.15);`;
-      overlay.appendChild(hint);
-
-      const selection = document.createElement('div');
-      selection.style.cssText = 'position: absolute; border: 2px solid #ef4444; background: rgba(239, 68, 68, 0.1); display: none; pointer-events: none;';
-      overlay.appendChild(selection);
-      fixedLayer.appendChild(overlay);
-
-      console.log('Screen record overlay created');
-
-      let startX, startY;
-      let isDragging = false;
-
-      const onDown = (e) => {
-        console.log('Screen record: mousedown');
-        isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
-        selection.style.left = startX + 'px';
-        selection.style.top = startY + 'px';
-        selection.style.width = '0px';
-        selection.style.height = '0px';
-        selection.style.display = 'block';
-        e.preventDefault();
-        e.stopPropagation();
-      };
-
-      const onMove = (e) => {
-        if (!isDragging) return;
-        const currentX = e.clientX;
-        const currentY = e.clientY;
-        const left = Math.min(startX, currentX);
-        const top = Math.min(startY, currentY);
-        const width = Math.abs(currentX - startX);
-        const height = Math.abs(currentY - startY);
-        selection.style.left = left + 'px';
-        selection.style.top = top + 'px';
-        selection.style.width = width + 'px';
-        selection.style.height = height + 'px';
-        e.preventDefault();
-        e.stopPropagation();
-      };
-
-      const onUp = async (e) => {
-        console.log('Screen record: mouseup, isDragging:', isDragging);
-        if (!isDragging) return;
-        isDragging = false;
-        e.stopPropagation();
-
-        const rect = selection.getBoundingClientRect();
-        console.log('Screen record: selection rect', rect.width, rect.height);
-
-        overlay.remove();
-        this.activeSessionCleanup = null;
-        document.removeEventListener('keydown', onKey);
-        document.removeEventListener('contextmenu', onContextMenu);
-        this._removeZoomInvariantContainer();
-
-        try {
-          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
-              window.__dev1SnapshotHighlighter._instance && 
-              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
-            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
-          }
-        } catch (_) {}
-
-        if (rect.width < 50 || rect.height < 50) {
-          this._isScreenshotting = false;
-          return;
-        }
-
-        // 开始区域录制
-        await this._startAreaRecording(rect, isDarkPage);
-      };
-
-      overlay.addEventListener('mousedown', onDown, true);
-      overlay.addEventListener('mousemove', onMove, true);
-      overlay.addEventListener('mouseup', onUp, true);
-
-      // 取消选区的清理函数
-      const cancelSelection = () => {
-        overlay.remove();
-        this._removeZoomInvariantContainer();
-        document.removeEventListener('keydown', onKey);
-        document.removeEventListener('contextmenu', onContextMenu);
-        this.activeSessionCleanup = null;
-        this._isScreenshotting = false;
-
-        try {
-          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
-              window.__dev1SnapshotHighlighter._instance && 
-              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
-            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
-          }
-        } catch (_) {}
-      };
-
-      this.activeSessionCleanup = cancelSelection;
-
-      // ESC 取消
-      const onKey = (e) => {
-        if (e.key === 'Escape') {
-          cancelSelection();
-        }
-      };
-      document.addEventListener('keydown', onKey);
-
-      // 右键取消
-      const onContextMenu = (e) => {
-        e.preventDefault();
-        cancelSelection();
-      };
-      document.addEventListener('contextmenu', onContextMenu);
-    }
-
-    // 区域录制核心逻辑 - 使用 WebCodecs + mp4-muxer 实现高清录制
-    async _startAreaRecording(rect, isDarkPage) {
-      const t = (key, fallback) => (this.t && this.t(key)) || fallback;
-      const dpr = window.devicePixelRatio || 1;
-      let discardRecording = false;
-      let worker = null;
-      this.activeSessionCleanup = () => {
-        discardRecording = true;
-        this._isScreenshotting = false;
-      };
-
-      // 检查 WebCodecs 支持
-      console.log('VideoEncoder:', typeof VideoEncoder);
-      console.log('Mp4Muxer:', typeof Mp4Muxer, typeof Mp4Muxer !== 'undefined' ? Mp4Muxer : null);
-      if (typeof Mp4Muxer !== 'undefined') {
-        console.log('Mp4Muxer.Muxer:', typeof Mp4Muxer.Muxer);
-        console.log('Mp4Muxer keys:', Object.keys(Mp4Muxer));
-      }
-      const webCodecsSupported = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined' && typeof Mp4Muxer.Muxer === 'function';
-      let recordFormat = 'mp4';
-      try {
-        recordFormat = localStorage.getItem('record_format') || (webCodecsSupported ? 'mp4' : 'webm');
-      } catch (_) {}
-      const useWebCodecs = recordFormat === 'mp4' && webCodecsSupported;
-      console.log('Recording format:', recordFormat, 'useWebCodecs:', useWebCodecs);
-
-      try {
-        // 读取用户设置（先读取，用于配置 getDisplayMedia）
-        let codecProfile = 'avc1.640033'; // H.264 High Profile Level 5.1
-        let bitrate = 50000000; // 50 Mbps 默认
-        let frameRate = 60;
-
-        try {
-          const savedCodec = localStorage.getItem('record_codec');
-          if (savedCodec) codecProfile = savedCodec;
-
-          const savedQuality = localStorage.getItem('record_quality');
-          if (savedQuality) bitrate = parseInt(savedQuality);
-
-          const savedFps = localStorage.getItem('record_fps');
-          if (savedFps) frameRate = parseInt(savedFps);
-        } catch (_) { }
-
-        // 请求屏幕共享（当前标签页）- 配置高分辨率捕获
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            cursor: 'always',
-            displaySurface: 'browser',
-            // 请求最高分辨率 - 4K 或更高
-            width: { ideal: 3840, max: 7680 },
-            height: { ideal: 2160, max: 4320 },
-            frameRate: { ideal: frameRate, max: Math.max(frameRate, 240) }
-          },
-          audio: false,
-          preferCurrentTab: true
-        });
-
-        if (discardRecording) {
-          displayStream.getTracks().forEach(track => track.stop());
-          return;
-        }
-
-        // 创建视频元素来接收屏幕流
-        const videoEl = document.createElement('video');
-        videoEl.srcObject = displayStream;
-        videoEl.muted = true;
-        await videoEl.play();
-
-        // 等待视频尺寸确定
-        await new Promise(resolve => {
-          if (videoEl.videoWidth > 0) resolve();
-          else videoEl.onloadedmetadata = resolve;
-        });
-
-        // 进一步等待分辨率在高帧率（如 120fps/240fps）或 Retina 屏幕下稳定下来（最多 500ms）
-        let lastWidth = videoEl.videoWidth;
-        let lastHeight = videoEl.videoHeight;
-        let stableCount = 0;
-        for (let i = 0; i < 10; i++) {
-          await new Promise(resolve => setTimeout(resolve, 50));
-          const currentWidth = videoEl.videoWidth;
-          const currentHeight = videoEl.videoHeight;
-          if (currentWidth === lastWidth && currentHeight === lastHeight) {
-            stableCount++;
-            if (stableCount >= 2 && currentWidth > 0) {
-              break;
-            }
-          } else {
-            stableCount = 0;
-            lastWidth = currentWidth;
-            lastHeight = currentHeight;
-          }
-        }
-
-        // 获取视频流 of 实际分辨率
-        const videoWidth = videoEl.videoWidth;
-        const videoHeight = videoEl.videoHeight;
-
-        // 获取视频轨道的设置，了解实际捕获的尺寸
-        const videoTrack = displayStream.getVideoTracks()[0];
-        const trackSettings = videoTrack.getSettings();
-        console.log('Video track settings:', trackSettings);
-
-        // 为了能够精准裁剪录像区域，必须要求用户分享浏览器标签页而非整个屏幕/窗口
-        if (trackSettings.displaySurface && trackSettings.displaySurface !== 'browser') {
-          displayStream.getTracks().forEach(track => track.stop());
-          alert(t('screen_record_tab_only', '为了精准录制框选区域，请在弹出的共享窗口中选择「Chrome 标签页」（或「当前标签页」）进行录制！'));
-          this.activeSessionCleanup = null;
-          this._removeZoomInvariantContainer();
-          this._isScreenshotting = false;
-          return;
-        }
-
-        // 缓存视口大小以防止高频读取触发 Layout Thrashing
-        let cachedInnerWidth = window.innerWidth;
-        let cachedInnerHeight = window.innerHeight;
-        const handleViewportResize = () => {
-          cachedInnerWidth = window.innerWidth;
-          cachedInnerHeight = window.innerHeight;
-        };
-        window.addEventListener('resize', handleViewportResize);
-
-        // 计算缩放比例
-        // getDisplayMedia 捕获的是整个视口内容，需要正确映射坐标
-        // 使用设备像素比来计算真实的缩放
-        const dpr = window.devicePixelRatio || 1;
-
-        // 计算视频分辨率与视口的比例
-        // 注意：getDisplayMedia 可能捕获的分辨率与视口不同
-        const scaleX = videoWidth / cachedInnerWidth;
-        const scaleY = videoHeight / cachedInnerHeight;
-
-        console.log('Scale calculation:', {
-          videoSize: `${videoWidth}x${videoHeight}`,
-          windowSize: `${cachedInnerWidth}x${cachedInnerHeight}`,
-          dpr,
-          scaleX: scaleX.toFixed(3),
-          scaleY: scaleY.toFixed(3),
-          rectPos: `(${rect.left}, ${rect.top}) ${rect.width}x${rect.height}`
-        });
-
-        // 计算源视频中对应的裁剪区域
-        const srcX = Math.round(rect.left * scaleX);
-        const srcY = Math.round(rect.top * scaleY);
-        const srcW = Math.round(rect.width * scaleX);
-        const srcH = Math.round(rect.height * scaleY);
-
-        // 输出尺寸 = 裁剪区域的实际像素尺寸（保持原始清晰度，不缩放）
-        // 确保是偶数（视频编码要求）
-        let width = Math.round(srcW / 2) * 2;
-        let height = Math.round(srcH / 2) * 2;
-
-        // 确保最小尺寸
-        width = Math.max(width, 2);
-        height = Math.max(height, 2);
-
-        console.log('Recording area:', {
-          src: `(${srcX}, ${srcY}) ${srcW}x${srcH}`,
-          output: `${width}x${height}`,
-          codecProfile,
-          bitrate: (bitrate / 1000000).toFixed(1) + ' Mbps',
-          frameRate
-        });
-
-        // 创建用于裁剪的 canvas - 使用高质量绘制设置
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d', {
-          alpha: false,
-          desynchronized: true  // 提高性能
-        });
-        // 高质量缩放设置
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-
-        const calculateCropCoords = (frameW, frameH) => {
-          const currentScaleX = frameW / cachedInnerWidth;
-          const currentScaleY = frameH / cachedInnerHeight;
-          
-          let currentSrcX = Math.round(rect.left * currentScaleX);
-          let currentSrcY = Math.round(rect.top * currentScaleY);
-          let currentSrcW = Math.round(rect.width * currentScaleX);
-          let currentSrcH = Math.round(rect.height * currentScaleY);
-          
-          // Align to 2-pixel boundaries (even numbers) for WebCodecs YUV 4:2:0 format compatibility
-          currentSrcX = Math.floor(currentSrcX / 2) * 2;
-          currentSrcY = Math.floor(currentSrcY / 2) * 2;
-          currentSrcW = Math.floor(currentSrcW / 2) * 2;
-          currentSrcH = Math.floor(currentSrcH / 2) * 2;
-          
-          // Ensure they don't exceed frame dimensions
-          currentSrcX = Math.max(0, Math.min(currentSrcX, frameW - 2));
-          currentSrcY = Math.max(0, Math.min(currentSrcY, frameH - 2));
-          if (currentSrcX + currentSrcW > frameW) {
-            currentSrcW = Math.max(2, Math.floor((frameW - currentSrcX) / 2) * 2);
-          }
-          if (currentSrcY + currentSrcH > frameH) {
-            currentSrcH = Math.max(2, Math.floor((frameH - currentSrcY) / 2) * 2);
-          }
-
-          // Safety clamp
-          currentSrcW = Math.max(2, currentSrcW);
-          currentSrcH = Math.max(2, currentSrcH);
-
-          return { x: currentSrcX, y: currentSrcY, w: currentSrcW, h: currentSrcH };
-        };
-
-        const getCropCoords = () => calculateCropCoords(videoEl.videoWidth, videoEl.videoHeight);
-
-        // Get zoom-invariant container to prevent position drift during PDF zoom/resize
-        const fixedLayer = this._getZoomInvariantContainer();
-
-        // 录制区域指示器 - 红框完全在录制区域外部
-        // 录制区域 = rect，红框要包围它但不能进入
-        const borderWidth = 3;
-        const gap = 4; // 红框内边缘与录制区域的间隙，增加到4px以防小数DPR像素下边缘渗入
-        const indicator = document.createElement('div');
-        indicator.id = 'screen-record-area-indicator';
-        indicator.style.cssText = `
-          position: fixed;
-          left: ${rect.left - borderWidth - gap}px;
-          top: ${rect.top - borderWidth - gap}px;
-          width: ${rect.width + (borderWidth + gap) * 2}px;
-          height: ${rect.height + (borderWidth + gap) * 2}px;
-          border: ${borderWidth}px solid #ef4444;
-          border-radius: 4px;
-          pointer-events: none;
-          z-index: 2147483646;
-          box-sizing: border-box;
-        `;
-        fixedLayer.appendChild(indicator);
-
-        const masks = [];
-
-        // 创建录制控制 UI - 放在录制区域下方
-        const controlPanel = document.createElement('div');
-        controlPanel.id = 'screen-record-controls';
-        controlPanel.style.cssText = `
-          position: fixed;
-          top: ${rect.top + rect.height + 15}px;
-          left: ${rect.left + rect.width / 2}px;
-          transform: translateX(-50%);
-          background: ${isDarkPage ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.95)'};
-          color: ${isDarkPage ? '#ffffff' : '#1e293b'};
-          padding: 10px 16px;
-          border-radius: 20px;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-          z-index: 2147483647;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          font-size: 13px;
-          pointer-events: auto;
-        `;
-
-        // 录制红点
-        const dot = document.createElement('div');
-        dot.style.cssText = `
-          width: 10px;
-          height: 10px;
-          background: #ef4444;
-          border-radius: 50%;
-          animation: pulse 1s ease-in-out infinite;
-        `;
-
-        // 添加脉冲动画样式
-        if (!document.getElementById('record-pulse-style')) {
-          const style = document.createElement('style');
-          style.id = 'record-pulse-style';
-          style.textContent = `
-            @keyframes pulse {
-              0%, 100% { opacity: 1; transform: scale(1); }
-              50% { opacity: 0.5; transform: scale(0.85); }
-            }
-          `;
-          document.head.appendChild(style);
-        }
-
-        // 计时器
-        const timer = document.createElement('span');
-        timer.textContent = '00:00';
-        timer.style.fontWeight = '600';
-        timer.style.minWidth = '45px';
-
-        // 格式标识
-        const formatBadge = document.createElement('span');
-        formatBadge.textContent = useWebCodecs ? 'MP4' : 'WebM';
-        formatBadge.style.cssText = `
-          padding: 2px 6px;
-          border-radius: 4px;
-          background: ${useWebCodecs ? '#22c55e' : '#3b82f6'};
-          color: white;
-          font-size: 10px;
-          font-weight: 600;
-        `;
-
-        // 停止按钮
-        const stopBtn = document.createElement('button');
-        stopBtn.textContent = t('screen_record_stop', '停止');
-        stopBtn.style.cssText = `
-          padding: 6px 14px;
-          border-radius: 14px;
-          border: none;
-          background: #ef4444;
-          color: white;
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        `;
-
-        controlPanel.appendChild(dot);
-        controlPanel.appendChild(timer);
-        controlPanel.appendChild(formatBadge);
-        controlPanel.appendChild(stopBtn);
-        fixedLayer.appendChild(controlPanel);
-
-        // 计时器
-        let seconds = 0;
-        const timerInterval = setInterval(() => {
-          seconds++;
-          const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
-          const secs = (seconds % 60).toString().padStart(2, '0');
-          timer.textContent = `${mins}:${secs}`;
-        }, 1000);
-
-        let isRecording = true;
-        let animationId;
-
-        // 清理函数
-        let cleanup = (discard = false) => {
-          if (discard) discardRecording = true;
-          this.activeSessionCleanup = null;
-          isRecording = false;
-          cancelAnimationFrame(animationId);
-          window.removeEventListener('resize', handleViewportResize);
-          if (worker) {
-            try { worker.terminate(); } catch (_) {}
-            worker = null;
-          }
-          displayStream.getTracks().forEach(track => {
-            try { track.stop(); } catch (_) {}
-          });
-          videoEl.pause();
-          videoEl.srcObject = null;
-          controlPanel.remove();
-          indicator.remove();
-          masks.forEach(m => m.remove());
-          this._removeZoomInvariantContainer();
-          clearInterval(timerInterval);
-          this._isScreenshotting = false;
-        };
-
-        this.activeSessionCleanup = () => cleanup(true);
-
-        let runWebCodecs = useWebCodecs;
-        let mainEncoder = null;
-        let mainMuxer = null;
-        let mainReader = null;
-
-        const runMediaRecorderFallback = () => {
-          console.log('Falling back to MediaRecorder');
-          formatBadge.textContent = 'WebM';
-          formatBadge.style.background = '#3b82f6';
-
-          const drawFrame = () => {
-            if (!isRecording) return;
-            // 每次绘制时动态获取最新坐标以应对高帧率下的分辨率变动或延迟稳定
-            const currentCoords = getCropCoords();
-            ctx.drawImage(videoEl, currentCoords.x, currentCoords.y, currentCoords.w, currentCoords.h, 0, 0, width, height);
-            animationId = requestAnimationFrame(drawFrame);
-          };
-          drawFrame();
-
-          const croppedStream = canvas.captureStream(frameRate);
-          let mimeType = 'video/webm';
-          if (codecProfile && codecProfile.startsWith('video/webm')) {
-            if (MediaRecorder.isTypeSupported(codecProfile)) {
-              mimeType = codecProfile;
-            } else if (codecProfile.includes('vp9') && MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-              mimeType = 'video/webm;codecs=vp9';
-            } else if (codecProfile.includes('vp8') && MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
-              mimeType = 'video/webm;codecs=vp8';
-            }
-          } else {
-            mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-              ? 'video/webm;codecs=vp9' : 'video/webm';
-          }
-
-          const chunks = [];
-          const recorder = new MediaRecorder(croppedStream, {
-            mimeType,
-            videoBitsPerSecond: bitrate
-          });
-
-          recorder.ondataavailable = (e) => {
-            if (e.data.size > 0) chunks.push(e.data);
-          };
-
-          recorder.onstop = () => {
-            cleanup();
-            croppedStream.getTracks().forEach(track => track.stop());
-            if (chunks.length > 0 && !discardRecording) {
-              const blob = new Blob(chunks, { type: mimeType });
-              this._showRecordingResult(blob, mimeType);
-            }
-          };
-
-          this.activeSessionCleanup = () => {
-            discardRecording = true;
-            if (recorder.state !== 'inactive') {
-              recorder.stop();
-            } else {
-              cleanup(true);
-            }
-          };
-
-          stopBtn.onclick = () => {
-            if (recorder.state !== 'inactive') recorder.stop();
-          };
-
-          const onKeyDown = (e) => {
-            if (e.key === 'Escape') {
-              if (recorder.state !== 'inactive') recorder.stop();
-              document.removeEventListener('keydown', onKeyDown);
-              document.removeEventListener('contextmenu', onContextMenu);
-            }
-          };
-          document.addEventListener('keydown', onKeyDown);
-
-          // 右键停止
-          const onContextMenu = (e) => {
-            e.preventDefault();
-            if (recorder.state !== 'inactive') recorder.stop();
-            document.removeEventListener('keydown', onKeyDown);
-            document.removeEventListener('contextmenu', onContextMenu);
-          };
-          document.addEventListener('contextmenu', onContextMenu);
-
-          displayStream.getVideoTracks()[0].onended = () => {
-            if (recorder.state !== 'inactive') recorder.stop();
-          };
-
-          recorder.start(100);
-        };
-
-        if (runWebCodecs) {
-          stopBtn.disabled = false;
-
-          // Function to get H.264 level string based on pixel count
-          const getRequiredAvcLevel = (w, h) => {
-            const pixels = w * h;
-            if (pixels <= 921600) return '1f'; // Level 3.1
-            if (pixels <= 2097152) return '29'; // Level 4.1
-            return '33'; // Level 5.1
-          };
-
-          const adjustAvcLevel = (codecStr, w, h) => {
-            if (codecStr.startsWith('avc1.')) {
-              const req = getRequiredAvcLevel(w, h);
-              const cur = codecStr.slice(-2);
-              if (parseInt(req, 16) > parseInt(cur, 16)) {
-                return codecStr.slice(0, -2) + req;
-              }
-            }
-            return codecStr;
-          };
-
-          // 确定 finalCodec
-          let finalCodec = codecProfile;
-          if (finalCodec.startsWith('avc1.')) {
-            finalCodec = adjustAvcLevel(finalCodec, width, height);
-          }
-
-          const codecConfig = {
-            codec: finalCodec,
-            width: width,
-            height: height,
-            bitrate: bitrate,
-            framerate: frameRate
-          };
-
-          try {
-            try {
-              const support = await VideoEncoder.isConfigSupported(codecConfig);
-              if (!support.supported) {
-                console.warn(`Codec ${finalCodec} not supported, trying fallback codecs...`);
-                const fallbacks = [
-                  'avc1.640033', // H.264 High 5.1
-                  'avc1.420033', // H.264 Baseline 5.1
-                  'avc1.42001f'  // H.264 Baseline 3.1
-                ];
-                let foundFallback = false;
-                for (let cand of fallbacks) {
-                  cand = adjustAvcLevel(cand, width, height);
-                  const candConfig = { ...codecConfig, codec: cand };
-                  try {
-                    const candSupport = await VideoEncoder.isConfigSupported(candConfig);
-                    if (candSupport.supported) {
-                      console.warn(`Falling back to supported codec: ${cand}`);
-                      finalCodec = cand;
-                      foundFallback = true;
-                      break;
-                    }
-                  } catch (_) {}
-                }
-                if (!foundFallback) {
-                  console.warn(`No fallback candidates supported, defaulting to avc1.640033`);
-                  finalCodec = 'avc1.640033';
-                }
-              }
-            } catch (e) {
-              console.warn('Could not check codec support:', e);
-              finalCodec = adjustAvcLevel('avc1.640033', width, height);
-            }
-
-            // 1. Initialize MP4 Muxer on main thread
-            const isAV1 = finalCodec.startsWith('av01');
-            const isHEVC = finalCodec.startsWith('hvc1');
-            let muxerCodec = 'avc';
-            if (isAV1) {
-              muxerCodec = 'av1';
-            } else if (isHEVC) {
-              muxerCodec = 'hevc';
-            }
-
-            mainMuxer = new Mp4Muxer.Muxer({
-              target: new Mp4Muxer.ArrayBufferTarget(),
-              video: {
-                codec: muxerCodec,
-                width: width,
-                height: height
-              },
-              firstTimestampBehavior: 'offset',
-              fastStart: 'in-memory'
-            });
-
-            // 2. Initialize VideoEncoder on main thread
-            mainEncoder = new VideoEncoder({
-              output: (chunk, meta) => {
-                if (mainMuxer) {
-                  mainMuxer.addVideoChunk(chunk, meta);
-                }
-              },
-              error: (e) => {
-                console.error('VideoEncoder on main thread error:', e);
-                alert(t('screen_record_error', '录屏失败') + ': ' + (e.message || String(e)));
-                stopRecording();
-              }
-            });
-
-            const encoderConfig = {
-              codec: finalCodec,
-              width: width,
-              height: height,
-              bitrate: bitrate,
-              framerate: frameRate,
-              latencyMode: 'quality',
-              hardwareAcceleration: 'no-preference'
-            };
-            if (finalCodec.startsWith('avc1')) {
-              encoderConfig.avc = { format: 'avc' };
-            }
-            mainEncoder.configure(encoderConfig);
-
-            const videoTrack = displayStream.getVideoTracks()[0];
-            const processor = new MediaStreamTrackProcessor({ track: videoTrack });
-            mainReader = processor.readable.getReader();
-
-            // 停止录制函数
-            const stopRecording = async () => {
-              if (!isRecording) return;
-              isRecording = false;
-
-              stopBtn.textContent = t('processing', '处理中...');
-              stopBtn.disabled = true;
-
-              try {
-                if (mainReader) {
-                  try {
-                    await mainReader.cancel();
-                  } catch (_) {}
-                }
-                if (mainEncoder) {
-                  try {
-                    await mainEncoder.flush();
-                  } catch (_) {}
-                }
-                if (mainMuxer) {
-                  try {
-                    mainMuxer.finalize();
-                    const { buffer } = mainMuxer.target;
-                    const blob = new Blob([buffer], { type: 'video/mp4' });
-                    cleanup();
-                    this._showRecordingResult(blob, 'video/mp4');
-                  } catch (e) {
-                    console.error('Muxer finalization failed:', e);
-                    cleanup();
-                    alert(t('screen_record_error', '录屏失败') + ': ' + e.message);
-                  }
-                }
-              } catch (err) {
-                console.error('Stop recording error:', err);
-                cleanup();
-                alert(t('screen_record_error', '录屏失败') + ': ' + (err.message || String(err)));
-              }
-            };
-
-            stopBtn.onclick = stopRecording;
-
-            // ESC 停止
-            const onKeyDown = (e) => {
-              if (e.key === 'Escape') {
-                stopRecording();
-                document.removeEventListener('keydown', onKeyDown);
-                document.removeEventListener('contextmenu', onContextMenu);
-              }
-            };
-            document.addEventListener('keydown', onKeyDown);
-
-            // 右键停止
-            const onContextMenu = (e) => {
-              e.preventDefault();
-              stopRecording();
-              document.removeEventListener('keydown', onKeyDown);
-              document.removeEventListener('contextmenu', onContextMenu);
-            };
-            document.addEventListener('contextmenu', onContextMenu);
-
-            // 监听流结束
-            videoTrack.addEventListener('ended', stopRecording);
-
-            // Override original cleanup to clean up main thread references
-            const originalCleanup = cleanup;
-            cleanup = (discard = false) => {
-              isRecording = false;
-              mainEncoder = null;
-              mainMuxer = null;
-              mainReader = null;
-              originalCleanup(discard);
-            };
-
-            // 启动帧读取与编码循环
-            let frameCount = 0;
-            (async () => {
-              try {
-                while (isRecording) {
-                  const { done, value: frame } = await mainReader.read();
-                  if (done) {
-                    break;
-                  }
-                  if (!isRecording) {
-                    if (frame) frame.close();
-                    break;
-                  }
-
-                  let croppedFrame;
-                  try {
-                    const frameW = frame.codedWidth || frame.displayWidth;
-                    const frameH = frame.codedHeight || frame.displayHeight;
-
-                    // 根据当前 VideoFrame 真实物理分辨率，动态计算该帧的最优裁剪坐标
-                    const frameCoords = calculateCropCoords(frameW, frameH);
-
-                    croppedFrame = new VideoFrame(frame, {
-                      visibleRect: {
-                        x: frameCoords.x,
-                        y: frameCoords.y,
-                        width: frameCoords.w,
-                        height: frameCoords.h
-                      }
-                    });
-                  } catch (err) {
-                    console.error('VideoFrame cropping error:', err);
-                    if (frame) frame.close();
-                    throw err;
-                  }
-                  frame.close(); // 关闭输入帧
-
-                  if (mainEncoder) {
-                    const keyFrame = frameCount % (frameRate * 2) === 0; // 每两秒一个关键帧
-                    mainEncoder.encode(croppedFrame, { keyFrame });
-                  }
-                  croppedFrame.close(); // 关闭裁剪帧
-
-                  frameCount++;
-                }
-
-                if (isRecording) {
-                  await stopRecording();
-                }
-              } catch (loopErr) {
-                console.error('Main thread recording loop error:', loopErr);
-                cleanup();
-                alert(t('screen_record_error', '录屏失败') + ': ' + (loopErr.message || String(loopErr)));
-              }
-            })();
-
-          } catch (err) {
-            console.error('Failed to run WebCodecs on main thread, falling back to MediaRecorder:', err);
-            runWebCodecs = false;
-            cleanup(true);
-            runMediaRecorderFallback();
-          }
-        } else {
-          runMediaRecorderFallback();
-        }
-
-      } catch (err) {
-        const errName = err && err.name ? err.name : '';
-        const errMessage = err && err.message ? err.message : String(err || '');
-        console.error('Area recording error:', {
-          name: errName,
-          message: errMessage,
-          error: err
-        });
-        this._isScreenshotting = false;
-        if (errName !== 'NotAllowedError') {
-          alert(`${t('screen_record_error', '录屏失败')}: ${errMessage}`);
-        }
-      }
-    }
-
-    // 显示录制结果
-    _showRecordingResult(blob, mimeType = 'video/webm') {
-      // 屏蔽主题检测矩阵采样，避免检测到对话框
-      this._cachedTheme = this._cachedTheme !== null ? this._cachedTheme : this.detectPageTheme();
-      this._isScreenshotting = true;
-
-      const useDarkStyle = this.darkModeEnabled;
-      const t = (key, fallback) => (this.t && this.t(key)) || fallback;
-
-      // 检测是否在扩展页面中（扩展页面没有 CSP 限制）
-      const isExtensionPage = window.location.protocol === 'chrome-extension:';
-
-      console.log('Recording result:', { size: blob.size, type: blob.type, mimeType, isExtensionPage });
-
-      // 创建 blob URL 并保存引用以便清理
-      const blobUrl = URL.createObjectURL(blob);
-
-      // Get zoom-invariant container to prevent position drift during PDF zoom/resize
-      const fixedLayer = this._getZoomInvariantContainer();
-
-      const dialog = document.createElement('div');
-      dialog.id = 'screen-record-result-dialog';
-      const dialogBg = useDarkStyle ? '#252525' : '#f0f4f8';
-      const dialogColor = useDarkStyle ? '#f0f4f8' : '#1e293b';
-      const dialogBorder = useDarkStyle ? '1px solid #3b3b3b' : '1px solid #cbd5e1';
-      dialog.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: ${dialogBg};
-        color: ${dialogColor};
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        z-index: 2147483647;
-        max-width: 90vw;
-        max-height: 90vh;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-        min-width: 400px;
-        border: ${dialogBorder};
-        pointer-events: auto;
-      `;
-
-      const title = document.createElement('h3');
-      title.textContent = t('screen_record', '屏幕录制');
-      title.style.cssText = `margin: 0; font-size: 18px; color: ${dialogColor};`;
-      dialog.appendChild(title);
-
-      // 视频预览
-      const videoContainer = document.createElement('div');
-      videoContainer.style.cssText = `
-        position: relative;
-        overflow: hidden;
-        border-radius: 8px;
-        background: #000;
-        max-height: 60vh;
-        min-height: 200px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      `;
-
-      const video = document.createElement('video');
-      video.controls = true;
-      video.playsInline = true;
-      video.muted = true;
-      video.style.cssText = 'max-width: 100%; max-height: 60vh; display: block; width: 100%;';
-
-      // 先添加到 DOM
-      videoContainer.appendChild(video);
-      dialog.appendChild(videoContainer);
-
-      // 加载提示
-      const loadingText = document.createElement('div');
-      loadingText.textContent = t('loading', '加载中...');
-      loadingText.style.cssText = 'position: absolute; color: #888; font-size: 14px;';
-      videoContainer.appendChild(loadingText);
-
-      // 显示备用下载界面（当预览不可用时）
-      const showFallback = () => {
-        loadingText.innerHTML = '';
-        loadingText.style.cssText = `
-          position: absolute; 
-          color: ${useDarkStyle ? '#9ca3af' : '#6b7280'}; 
-          font-size: 13px; 
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 10px;
-          padding: 20px;
-        `;
-
-        // 成功图标（绿色勾）
-        const iconDiv = document.createElement('div');
-        iconDiv.innerHTML = `<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#22c55e" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <path d="M8 12l2.5 2.5L16 9"></path>
-        </svg>`;
-
-        const infoMsg = document.createElement('div');
-        infoMsg.textContent = t('video_record_success', '录制完成');
-        infoMsg.style.cssText = 'font-size: 16px; font-weight: 600; color: #22c55e;';
-
-        const subMsg = document.createElement('div');
-        subMsg.textContent = t('video_csp_restricted', '由于网站限制，无法预览');
-        subMsg.style.cssText = `font-size: 12px; color: ${useDarkStyle ? '#6b7280' : '#9ca3af'}; margin-top: 4px;`;
-
-        loadingText.appendChild(iconDiv);
-        loadingText.appendChild(infoMsg);
-        loadingText.appendChild(subMsg);
-
-        video.style.display = 'none';
-      };
-
-      // 尝试加载视频预览
-      let previewAttempted = false;
-      const tryPreview = () => {
-        if (previewAttempted) return;
-        previewAttempted = true;
-
-        // 视频加载成功
-        video.onloadeddata = () => {
-          console.log('Video loaded successfully, readyState:', video.readyState);
-          loadingText.style.display = 'none';
-          video.play().catch(() => { });
-        };
-
-        video.onerror = (e) => {
-          // 静默处理错误，不打印到控制台（CSP 限制是预期行为）
-          showFallback();
-        };
-
-        // 尝试设置 src
-        try {
-          video.src = blobUrl;
-        } catch (e) {
-          showFallback();
-        }
-      };
-
-      // 延迟尝试预览，给 DOM 一些时间
-      setTimeout(tryPreview, 50);
-
-      // 2秒超时后显示备用方案
-      setTimeout(() => {
-        if (loadingText.style.display !== 'none' && video.readyState < 2) {
-          showFallback();
-        }
-      }, 2000);
-
-      // 文件大小信息
-      const sizeInfo = document.createElement('div');
-      const sizeMB = (blob.size / (1024 * 1024)).toFixed(2);
-      sizeInfo.textContent = `${t('file_size', '文件大小')}: ${sizeMB} MB`;
-      sizeInfo.style.cssText = `font-size: 13px; opacity: 0.7;`;
-      dialog.appendChild(sizeInfo);
-
-      // 按钮容器
-      const actions = document.createElement('div');
-      actions.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end;';
-
-      const createBtn = (text, onClick, primary = false) => {
-        const btn = document.createElement('button');
-        btn.textContent = text;
-        const bg = primary ? '#3b82f6' : (useDarkStyle ? '#374151' : 'white');
-        const color = primary ? 'white' : (useDarkStyle ? '#e2e8f0' : '#475569');
-        const border = primary ? '#3b82f6' : (useDarkStyle ? '#4b5563' : '#e2e8f0');
-        btn.style.cssText = `
-          padding: 8px 16px;
-          border-radius: 6px;
-          border: 1px solid ${border};
-          background: ${bg};
-          color: ${color};
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
-        `;
-        btn.onclick = onClick;
-        return btn;
-      };
-
-      // 清理函数
-      const cleanup = () => {
-        this.activeSessionCleanup = null;
-        video.pause();
-        video.src = '';
-        URL.revokeObjectURL(blobUrl);
-        dialog.remove();
-        this._removeZoomInvariantContainer();
-        document.removeEventListener('keydown', onKey);
-        // 恢复主题检测
-        this._isScreenshotting = false;
-      };
-
-      // 取消按钮 - 清理缓存
-      actions.appendChild(createBtn(t('screenshot_cancel', '取消'), cleanup));
-
-      // 下载按钮 - 下载后也清理缓存
-      actions.appendChild(createBtn(t('save_and_clear_cache', '保存并删除缓存'), async () => {
-        try {
-          await this._saveBlob(blob, 'screen_recording', mimeType.includes('mp4') ? 'mp4' : 'webm', mimeType);
-          setTimeout(cleanup, 500);
-        } catch (error) {
-          alert(`${t('screen_record_error', '录屏失败')}: ${error.message || error}`);
-        }
-      }, true));
-
-      dialog.appendChild(actions);
-      fixedLayer.appendChild(dialog);
-
-      // ESC 关闭并清理
-      const onKey = (e) => {
-        if (e.key === 'Escape') {
-          cleanup();
-        }
-      };
-      document.addEventListener('keydown', onKey);
-
-      // 右键关闭并清理
-      const onContextMenu = (e) => {
-        e.preventDefault();
-        cleanup();
-      };
-      dialog.addEventListener('contextmenu', onContextMenu);
-    }
-
-    async _startManualScrollSession(rect) {
-      try {
-        if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
-            window.__dev1SnapshotHighlighter._instance && 
-            typeof window.__dev1SnapshotHighlighter._instance._suppressCursor === 'function') {
-          window.__dev1SnapshotHighlighter._instance._suppressCursor('screenshot');
-        }
-      } catch (_) {}
-
-      // Color constants for status indication
-      const COLORS = {
-        IDLE: '#9ca3af',      // Gray - default/ready state
-        SCROLLING: '#4ade80', // Green - normal scrolling
-        TOO_FAST: '#fbbf24',  // Yellow - scrolling too fast warning
-        ERROR: '#ef4444',     // Red - capture failed or gap too large
-        PAUSED: '#60a5fa'     // Blue - paused state
-      };
-
-      // Bracket corner settings
-      const CORNER_SIZE = 20;
-      const BORDER_WIDTH = 3;
-
-      // Capture area inside the bracket corners (exclude border width)
-      const cleanRect = {
-        left: rect.left + BORDER_WIDTH,
-        top: rect.top + BORDER_WIDTH,
-        width: rect.width - (BORDER_WIDTH * 2),
-        height: rect.height - (BORDER_WIDTH * 2)
-      };
-
-      // Canvas for real-time stitching (device-pixel aligned)
-      const masterCanvas = document.createElement('canvas');
-      const masterCtx = masterCanvas.getContext('2d', { willReadFrequently: true });
-      const dpr = window.devicePixelRatio || 1;
-      const viewWidth = Math.max(1, Math.round(cleanRect.width * dpr));
-      const viewHeight = Math.max(1, Math.round(cleanRect.height * dpr));
-      const baseViewport = {
-        width: window.innerWidth,
-        height: window.innerHeight,
-        dpr
-      };
-      masterCanvas.width = viewWidth;
-      masterCanvas.height = 0;
-
-      // Helper for translations
-      const t = (key, fallback) => (this.t && this.t(key)) || fallback;
-
-      // ===== Smart UI Positioning System =====
-      const MARGIN = 20;
-      const PREVIEW_WIDTH = 200;
-      const PREVIEW_MAX_HEIGHT = Math.min(300, window.innerHeight * 0.4);
-      const BTN_SIZE = 36;
-      const BTN_GAP = 8;
-
-      // Check if selection covers most of the screen (fullscreen mode)
-      const isFullscreen = rect.width >= window.innerWidth * 0.9 && rect.height >= window.innerHeight * 0.9;
-
-      // Calculate available space in each direction
-      const spaceLeft = rect.left;
-      const spaceRight = window.innerWidth - rect.right;
-      const spaceTop = rect.top;
-      const spaceBottom = window.innerHeight - rect.bottom;
-
-      // Determine best position for UI (opposite to selection)
-      const calcUIPosition = () => {
-        const spaces = [
-          { side: 'left', space: spaceLeft },
-          { side: 'right', space: spaceRight },
-          { side: 'top', space: spaceTop },
-          { side: 'bottom', space: spaceBottom }
-        ].sort((a, b) => b.space - a.space);
-
-        const bestSide = spaces[0];
-        const secondBest = spaces[1];
-
-        // Calculate required space for preview + buttons
-        const minSpaceForPreview = PREVIEW_WIDTH + MARGIN * 2;
-        const minSpaceForButtons = BTN_SIZE * 3 + BTN_GAP * 2 + MARGIN * 2;
-
-        let showPreview = !isFullscreen && bestSide.space >= minSpaceForPreview;
-        let buttonsLayout = 'horizontal'; // or 'vertical'
-        let position = { side: bestSide.side };
-
-        // Determine button layout based on available space
-        if (bestSide.side === 'left' || bestSide.side === 'right') {
-          if (bestSide.space < minSpaceForButtons) {
-            buttonsLayout = 'vertical';
-          }
-        } else {
-          if (bestSide.space < BTN_SIZE + MARGIN * 2) {
-            buttonsLayout = 'horizontal';
-          }
-        }
-
-        // Calculate actual position
-        if (bestSide.side === 'left') {
-          position.x = MARGIN;
-          position.y = Math.max(MARGIN, rect.top);
-        } else if (bestSide.side === 'right') {
-          position.x = window.innerWidth - MARGIN;
-          position.y = Math.max(MARGIN, rect.top);
-        } else if (bestSide.side === 'top') {
-          position.x = Math.max(MARGIN, rect.left);
-          position.y = MARGIN;
-        } else {
-          position.x = Math.max(MARGIN, rect.left);
-          position.y = window.innerHeight - MARGIN;
-        }
-
-        return { showPreview, buttonsLayout, position, side: bestSide.side };
-      };
-
-      const uiLayout = calcUIPosition();
-
-      // ===== Create UI Container =====
-      const uiContainer = document.createElement('div');
-      uiContainer.id = 'screenshot-ui-container';
-
-      // Position based on calculated layout
-      const getContainerStyle = () => {
-        const { side, position } = uiLayout;
-        let style = `
-          position: fixed;
-          z-index: 2147483647;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          display: flex;
-          gap: 10px;
-          pointer-events: auto;
-        `;
-
-        if (side === 'left') {
-          style += `left: ${MARGIN}px; top: ${position.y}px; flex-direction: column; align-items: flex-start;`;
-        } else if (side === 'right') {
-          style += `right: ${MARGIN}px; top: ${position.y}px; flex-direction: column; align-items: flex-end;`;
-        } else if (side === 'top') {
-          style += `top: ${MARGIN}px; left: ${position.x}px; flex-direction: row; align-items: flex-start;`;
-        } else {
-          style += `bottom: ${MARGIN}px; left: ${position.x}px; flex-direction: row; align-items: flex-end;`;
-        }
-
-        return style;
-      };
-
-      uiContainer.style.cssText = getContainerStyle();
-
-      // ===== Preview Container (conditionally shown) =====
-      let previewFrame = null;
-      let previewImg = null;
-      let statusBar = null;
-
-      if (uiLayout.showPreview) {
-        previewFrame = document.createElement('div');
-        const previewWidth = Math.min(PREVIEW_WIDTH, uiLayout.position.side === 'left' ? spaceLeft - MARGIN * 2 :
-          uiLayout.position.side === 'right' ? spaceRight - MARGIN * 2 : PREVIEW_WIDTH);
-        previewFrame.style.cssText = `
-          width: ${previewWidth}px;
-          max-height: ${PREVIEW_MAX_HEIGHT}px;
-          min-height: 100px;
-          background: #1e1e1e;
-          border: 2px solid ${COLORS.IDLE};
-          border-radius: 12px;
-          overflow: hidden;
-          display: flex;
-          flex-direction: column-reverse;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-          position: relative;
-        `;
-
-        // Preview scrollable area (grows upward)
-        const previewScroll = document.createElement('div');
-        previewScroll.style.cssText = `
-          flex: 1;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column-reverse;
-        `;
-
-        previewImg = document.createElement('img');
-        previewImg.style.cssText = 'width: 100%; display: block; object-fit: contain;';
-        previewScroll.appendChild(previewImg);
-
-        // Status Bar (at bottom)
-        statusBar = document.createElement('div');
-        statusBar.style.cssText = `
-          flex-shrink: 0;
-          background: rgba(0,0,0,0.85);
-          color: white;
-          padding: 8px 10px;
-          font-size: 11px;
-          text-align: center;
-          backdrop-filter: blur(4px);
-          border-top: 1px solid rgba(255,255,255,0.1);
-        `;
-        statusBar.textContent = t('screenshot_ready', 'Ready. Scroll to capture.');
-
-        previewFrame.appendChild(statusBar);
-        previewFrame.appendChild(previewScroll);
-        uiContainer.appendChild(previewFrame);
-      } else {
-        // Minimal status indicator when no preview
-        statusBar = document.createElement('div');
-        statusBar.style.cssText = `
-          background: rgba(0,0,0,0.85);
-          color: white;
-          padding: 6px 12px;
-          font-size: 11px;
-          border-radius: 16px;
-          backdrop-filter: blur(4px);
-          white-space: nowrap;
-        `;
-        statusBar.textContent = t('screenshot_ready', 'Ready');
-      }
-
-      // ===== Controls Container =====
-      const controls = document.createElement('div');
-      const isVertical = uiLayout.buttonsLayout === 'vertical' ||
-        (uiLayout.side === 'left' || uiLayout.side === 'right');
-      controls.style.cssText = `
-        display: flex;
-        gap: ${BTN_GAP}px;
-        flex-direction: ${isVertical ? 'column' : 'row'};
-        align-items: center;
-      `;
-
-      let controlTooltip = null;
-
-      const hideControlTooltip = () => {
-        if (controlTooltip) {
-          controlTooltip.remove();
-          controlTooltip = null;
-        }
-      };
-
-      const showControlTooltip = (target, text) => {
-        hideControlTooltip();
-        const rect = target.getBoundingClientRect();
-        if (!rect) return;
-
-        controlTooltip = document.createElement('div');
-        controlTooltip.textContent = text;
-        controlTooltip.style.cssText = `
-          position: fixed;
-          left: 0;
-          top: 0;
-          z-index: 2147483648;
-          padding: 6px 10px;
-          border-radius: 8px;
-          background: rgba(17, 24, 39, 0.96);
-          color: #ffffff;
-          font-size: 12px;
-          line-height: 1.3;
-          font-weight: 500;
-          white-space: nowrap;
-          pointer-events: none;
-          box-shadow: 0 8px 20px rgba(0,0,0,0.28);
-        `;
-        document.body.appendChild(controlTooltip);
-
-        const tooltipRect = controlTooltip.getBoundingClientRect();
-        const margin = 8;
-        let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
-        let top = rect.top - tooltipRect.height - margin;
-
-        if (top < margin) top = rect.bottom + margin;
-        left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
-
-        controlTooltip.style.left = `${left}px`;
-        controlTooltip.style.top = `${top}px`;
-      };
-
-      // Button style helper
-      const createBtn = (text, icon, bgColor, textColor, borderColor) => {
-        const btn = document.createElement('button');
-        btn.innerHTML = icon ? `<span style="font-size:14px;">${icon}</span>` : '';
-        btn.setAttribute('aria-label', text);
-        btn.style.cssText = `
-          width: ${BTN_SIZE}px;
-          height: ${BTN_SIZE}px;
-          border-radius: 50%;
-          border: 2px solid ${borderColor || bgColor};
-          background: ${bgColor};
-          color: ${textColor};
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: transform 0.1s, box-shadow 0.1s;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        `;
-        btn.addEventListener('mouseenter', () => {
-          btn.style.transform = 'scale(1.1)';
-          btn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
-          showControlTooltip(btn, text);
-        });
-        btn.addEventListener('mouseleave', () => {
-          btn.style.transform = 'scale(1)';
-          btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
-          hideControlTooltip();
-        });
-        btn.addEventListener('focus', () => showControlTooltip(btn, text));
-        btn.addEventListener('blur', () => hideControlTooltip());
-        return btn;
-      };
-
-      // Main control buttons
-      const cancelBtn = createBtn(t('screenshot_cancel', 'Cancel (Esc)'), '✕', '#ffffff', '#ef4444', '#ef4444');
-      const autoBtn = createBtn(t('screenshot_auto_scroll', 'Auto Scroll'), '▶', '#111827', '#e5e7eb', '#4b5563');
-      const finishBtn = createBtn(t('screenshot_finish', 'Finish & Save'), '✓', '#3b82f6', '#ffffff', '#3b82f6');
-
-      const breatheStyleId = 'dev1-auto-scroll-breathe-style';
-      if (!document.getElementById(breatheStyleId)) {
-        const style = document.createElement('style');
-        style.id = breatheStyleId;
-        style.textContent = '@keyframes dev1AutoScrollBorderBreathe { 0%, 100% { border-color: #4b5563; } 50% { border-color: #60a5fa; } }';
-        document.head.appendChild(style);
-      }
-      autoBtn.style.animation = 'dev1AutoScrollBorderBreathe 3s ease-in-out infinite';
-
-      const autoBtnWrap = document.createElement('div');
-      autoBtnWrap.style.cssText = `
-        position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: ${BTN_SIZE}px;
-        height: ${BTN_SIZE}px;
-        flex: 0 0 auto;
-      `;
-
-      const directionBadge = document.createElement('div');
-      directionBadge.style.cssText = `
-        position: absolute;
-        top: -7px;
-        right: -7px;
-        min-width: 16px;
-        height: 16px;
-        padding: 0 3px;
-        border-radius: 999px;
-        background: #22c55e;
-        color: white;
-        font-size: 11px;
-        line-height: 16px;
-        text-align: center;
-        font-weight: 700;
-        pointer-events: none;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-      `;
-      autoBtnWrap.appendChild(autoBtn);
-      autoBtnWrap.appendChild(directionBadge);
-
-      // Auto-scroll control buttons (initially hidden)
-      const pauseBtn = createBtn(t('screenshot_pause', 'Pause'), '⏸', '#f59e0b', '#ffffff', '#f59e0b');
-      const resumeBtn = createBtn(t('screenshot_resume', 'Resume'), '▶', '#22c55e', '#ffffff', '#22c55e');
-
-      pauseBtn.style.display = 'none';
-      resumeBtn.style.display = 'none';
-
-      controls.appendChild(cancelBtn);
-      controls.appendChild(autoBtnWrap);
-      controls.appendChild(pauseBtn);
-      controls.appendChild(resumeBtn);
-      controls.appendChild(finishBtn);
-
-      // Add status bar if no preview
-      if (!uiLayout.showPreview) {
-        uiContainer.appendChild(statusBar);
-      }
-      uiContainer.appendChild(controls);
-
-      // Get zoom-invariant container to prevent position drift during PDF zoom/resize
-      const fixedLayer = this._getZoomInvariantContainer();
-      fixedLayer.appendChild(uiContainer);
-
-      // ===== Indicator on the page =====
-      const indicator = document.createElement('div');
-      indicator.id = 'screenshot-area-indicator';
-      indicator.style.cssText = `
-        position: fixed;
-        left: ${rect.left}px;
-        top: ${rect.top}px;
-        width: ${rect.width}px;
-        height: ${rect.height}px;
-        pointer-events: none;
-        z-index: 2147483646;
-        box-shadow: 0 0 0 9999px rgba(0,0,0,0.3);
-        box-sizing: border-box;
-      `;
-
-      // Create corner brackets
-      const corners = ['tl', 'tr', 'bl', 'br'];
-      const cornerElements = {};
-
-      corners.forEach(corner => {
-        const el = document.createElement('div');
-        el.className = `screenshot-corner screenshot-corner-${corner}`;
-        const isTop = corner.includes('t');
-        const isLeft = corner.includes('l');
-
-        el.style.cssText = `
-          position: absolute;
-          width: ${CORNER_SIZE}px;
-          height: ${CORNER_SIZE}px;
-          pointer-events: none;
-          ${isTop ? 'top: 0' : 'bottom: 0'};
-          ${isLeft ? 'left: 0' : 'right: 0'};
-        `;
-
-        const vLine = document.createElement('div');
-        vLine.style.cssText = `
-          position: absolute;
-          width: ${BORDER_WIDTH}px;
-          height: 100%;
-          background: ${COLORS.IDLE};
-          ${isLeft ? 'left: 0' : 'right: 0'};
-          top: 0;
-        `;
-
-        const hLine = document.createElement('div');
-        hLine.style.cssText = `
-          position: absolute;
-          width: 100%;
-          height: ${BORDER_WIDTH}px;
-          background: ${COLORS.IDLE};
-          ${isTop ? 'top: 0' : 'bottom: 0'};
-          ${isLeft ? 'left: 0' : 'right: 0'};
-        `;
-
-        el.appendChild(vLine);
-        el.appendChild(hLine);
-        indicator.appendChild(el);
-        cornerElements[corner] = { el, vLine, hLine };
-      });
-
-      fixedLayer.appendChild(indicator);
-
-      // Helper to update corner colors
-      const updateCornerColors = (color) => {
-        Object.values(cornerElements).forEach(({ vLine, hLine }) => {
-          vLine.style.background = color;
-          hLine.style.background = color;
-        });
-      };
-
-      const hasViewportChanged = () => {
-        try {
-          const dw = Math.abs(window.innerWidth - baseViewport.width);
-          const dh = Math.abs(window.innerHeight - baseViewport.height);
-          const zoomChanged = (window.devicePixelRatio || 1) !== baseViewport.dpr;
-          return dw > 2 || dh > 2 || zoomChanged;
-        } catch (_) {
-          return false;
-        }
-      };
-
-      // ===== State Management =====
-      let lastCapturedScrollY = window.scrollY;
-      let capturedMinScrollY = lastCapturedScrollY;
-      let capturedMaxScrollY = lastCapturedScrollY;
-
-      let isCapturing = false;
-      let scrollTimer = null;
-      let currentStatus = 'IDLE';
-      let captureCount = 0;
-      let hasError = false;
-      let autoMode = false;
-      let autoPaused = false;
-      let autoTimer = null;
-      let needsRepairCapture = false;
-      let lastErrorScrollY = null;
-      let lastObservedScrollY = window.scrollY;
-      let autoScrollDirection = 'down';
-      let autoRepairTimer = null;
-      let autoRepairing = false;
-
-      const updateDirectionBadge = () => {
-        const isUp = autoScrollDirection === 'up';
-        directionBadge.textContent = isUp ? '↑' : '↓';
-        directionBadge.style.background = isUp ? '#f59e0b' : '#22c55e';
-        directionBadge.title = this.config.lang === 'en' ? (isUp ? 'Auto scroll up' : 'Auto scroll down') : (isUp ? '自动向上滚动' : '自动向下滚动');
-      };
-      updateDirectionBadge();
-
-      const getDirectionalScrollSlowlyMessage = () => {
-        const isUp = autoScrollDirection === 'up';
-        return this.config.lang === 'en' ? (isUp ? 'Scroll up slowly...' : 'Scroll down slowly...') : (isUp ? '缓慢向上滚动...' : '缓慢向下滚动...');
-      };
-
-      const getDirectionalScrollToCaptureMessage = () => {
-        const isUp = autoScrollDirection === 'up';
-        return this.config.lang === 'en' ? (isUp ? 'Scroll up...' : 'Scroll down...') : (isUp ? '向上滚动...' : '向下滚动...');
-      };
-
-      const getDirectionalReadyContinueMessage = () => {
-        const isUp = autoScrollDirection === 'up';
-        return this.config.lang === 'en' ? (isUp ? 'Ready. Continue upward...' : 'Ready. Continue downward...') : (isUp ? '准备继续向上滚动...' : '准备继续向下滚动...');
-      };
-
-      const getDirectionalAutoScrollingMessage = () => {
-        const isUp = autoScrollDirection === 'up';
-        return this.config.lang === 'en' ? (isUp ? 'Auto scrolling up...' : 'Auto scrolling down...') : (isUp ? '自动向上滚动中...' : '自动向下滚动中...');
-      };
-
-      // Status update function
-      const setStatus = (status, message) => {
-        if (currentStatus === status && statusBar.textContent === message) return;
-        currentStatus = status;
-        hasError = status === 'ERROR';
-
-        const color = COLORS[status] || COLORS.IDLE;
-        updateCornerColors(color);
-        if (previewFrame) previewFrame.style.borderColor = color;
-        statusBar.style.color = status === 'IDLE' ? 'white' : color;
-        statusBar.textContent = message;
-      };
-
-      // Helper to update preview (grows upward)
-      const updatePreview = () => {
-        if (previewImg) {
-          previewImg.src = masterCanvas.toDataURL('image/png');
-        }
-      };
-
-      const getUncapturedScrollDelta = (scrollY) => {
-        const tolerance = 2;
-        if (scrollY < capturedMinScrollY - tolerance) return scrollY - capturedMinScrollY;
-        if (scrollY > capturedMaxScrollY + tolerance) return scrollY - capturedMaxScrollY;
-        return 0;
-      };
-
-      const getCaptureBoundaryScrollY = (scrollY) => {
-        if (scrollY < capturedMinScrollY) return capturedMinScrollY;
-        if (scrollY > capturedMaxScrollY) return capturedMaxScrollY;
-        return scrollY;
-      };
-
-      const waitForStableScrollY = async (initialScrollY, options = {}) => {
-        const maxWaitMs = Number.isFinite(options.maxWaitMs) ? options.maxWaitMs : 420;
-        const stableFrameCount = Number.isFinite(options.stableFrameCount) ? options.stableFrameCount : 3;
-        const stableTolerancePx = Number.isFinite(options.stableTolerancePx) ? options.stableTolerancePx : 1;
-        let lastScrollY = initialScrollY;
-        let stableFrames = 0;
-        const startTime = Date.now();
-        while (Date.now() - startTime < maxWaitMs) {
-          await new Promise(r => requestAnimationFrame(() => setTimeout(r, 16)));
-          const currentScrollY = window.scrollY;
-          if (Math.abs(currentScrollY - lastScrollY) <= stableTolerancePx) {
-            stableFrames++;
-            if (stableFrames >= stableFrameCount) return currentScrollY;
-          } else {
-            stableFrames = 0;
-          }
-          lastScrollY = currentScrollY;
-        }
-        return window.scrollY;
-      };
-
-      const findMatchedNewContentHeight = (frameCtx, expectedNewContentHeight, captureDirection, prevHeight) => {
-        if (prevHeight <= 0 || expectedNewContentHeight <= 0 || expectedNewContentHeight >= viewHeight - 2) {
-          return expectedNewContentHeight;
-        }
-
-        const radius = Math.max(6, Math.min(Math.round(viewHeight * 0.12), Math.round(expectedNewContentHeight * 0.35)));
-        const minNewHeight = Math.max(3, expectedNewContentHeight - radius);
-        const maxNewHeight = Math.min(viewHeight - 3, expectedNewContentHeight + radius);
-        const minReliableOverlap = Math.max(24, Math.round(viewHeight * 0.08));
-        if (maxNewHeight <= minNewHeight || viewHeight - maxNewHeight < minReliableOverlap) {
-          return expectedNewContentHeight;
-        }
-
-        const maxOverlap = viewHeight - minNewHeight;
-        if (prevHeight < minReliableOverlap || maxOverlap < minReliableOverlap) {
-          return expectedNewContentHeight;
-        }
-
-        try {
-          const masterDataHeight = Math.min(prevHeight, maxOverlap);
-          const masterY = captureDirection === 'up' ? 0 : prevHeight - masterDataHeight;
-          const masterData = masterCtx.getImageData(0, masterY, viewWidth, masterDataHeight).data;
-          const frameData = frameCtx.getImageData(0, 0, viewWidth, viewHeight).data;
-          const xStep = Math.max(4, Math.floor(viewWidth / 48));
-          let bestHeight = expectedNewContentHeight;
-          let bestScore = Infinity;
-          const heightStep = Math.max(1, Math.round(dpr));
-
-          for (let candidateHeight = minNewHeight; candidateHeight <= maxNewHeight; candidateHeight += heightStep) {
-            const overlapHeight = viewHeight - candidateHeight;
-            if (overlapHeight < minReliableOverlap || overlapHeight > prevHeight || overlapHeight > viewHeight - candidateHeight + 1) {
-              continue;
-            }
-
-            const compareHeight = Math.min(overlapHeight, masterDataHeight, Math.round(viewHeight * 0.65));
-            if (compareHeight < minReliableOverlap) continue;
-
-            const yStep = Math.max(2, Math.floor(compareHeight / 32));
-            let diffSum = 0;
-            let sampleCount = 0;
-
-            for (let y = 0; y < compareHeight; y += yStep) {
-              const masterLocalY = captureDirection === 'up'
-                ? y
-                : masterDataHeight - overlapHeight + y;
-              const frameY = captureDirection === 'up'
-                ? candidateHeight + y
-                : y;
-              if (masterLocalY < 0 || masterLocalY >= masterDataHeight || frameY < 0 || frameY >= viewHeight) continue;
-
-              for (let x = 0; x < viewWidth; x += xStep) {
-                const masterIndex = ((masterLocalY * viewWidth) + x) * 4;
-                const frameIndex = ((frameY * viewWidth) + x) * 4;
-                diffSum += Math.abs(masterData[masterIndex] - frameData[frameIndex]);
-                diffSum += Math.abs(masterData[masterIndex + 1] - frameData[frameIndex + 1]);
-                diffSum += Math.abs(masterData[masterIndex + 2] - frameData[frameIndex + 2]);
-                sampleCount += 3;
-              }
-            }
-
-            if (!sampleCount) continue;
-            const averageDiff = diffSum / sampleCount;
-            const score = averageDiff + Math.abs(candidateHeight - expectedNewContentHeight) * 0.08;
-            if (score < bestScore) {
-              bestScore = score;
-              bestHeight = candidateHeight;
-            }
-          }
-
-          return bestHeight;
-        } catch (_) {
-          return expectedNewContentHeight;
-        }
-      };
-
-      const scheduleAutoRepair = () => {
-        if (autoRepairing || !needsRepairCapture || !Number.isFinite(lastErrorScrollY)) return;
-        if (autoRepairTimer) clearTimeout(autoRepairTimer);
-        autoRepairTimer = setTimeout(() => {
-          autoRepairTimer = null;
-          if (!needsRepairCapture || !Number.isFinite(lastErrorScrollY)) return;
-          autoRepairing = true;
-          stopAutoScroll();
-          const buffer = Math.max(12, Math.min(80, Math.round(cleanRect.height * 0.08)));
-          const targetScrollY = autoScrollDirection === 'up'
-            ? Math.max(0, lastErrorScrollY - buffer)
-            : lastErrorScrollY + buffer;
-          setStatus('PAUSED', t('screenshot_auto_returning', 'Returning to memory point...'));
-          window.scrollTo({ top: targetScrollY, behavior: 'smooth' });
-          setTimeout(async () => {
-            try {
-              if (!needsRepairCapture) return;
-              await performRepairCapture();
-            } finally {
-              autoRepairing = false;
-              lastObservedScrollY = window.scrollY;
-            }
-          }, 420);
-        }, 180);
-      };
-
-      // Capture a single frame - simple and reliable: always take from bottom of capture area
-      const captureFrame = async (scrollY, isRepairMode = false, useStableScroll = false) => {
-        if (hasError && !isRepairMode) return false;
-
-        if (hasViewportChanged()) {
-          setStatus('ERROR', t('screenshot_error_init', 'Window or zoom changed. Please restart.'));
-          return false;
-        }
-
-        const isFirstIncrementCapture = !isRepairMode && captureCount <= 1;
-        let effectiveScrollY = scrollY;
-        if (useStableScroll && !isRepairMode) {
-          const stableOptions = isFirstIncrementCapture
-            ? { maxWaitMs: 760, stableFrameCount: 5, stableTolerancePx: 1 }
-            : undefined;
-          effectiveScrollY = await waitForStableScrollY(scrollY, stableOptions);
-          if (hasViewportChanged()) {
-            setStatus('ERROR', t('screenshot_error_init', 'Window or zoom changed. Please restart.'));
-            return false;
-          }
-        }
-
-        const referenceScrollY = isRepairMode ? lastCapturedScrollY : getCaptureBoundaryScrollY(effectiveScrollY);
-        const scrollDelta = effectiveScrollY - referenceScrollY;
-        const captureDirection = scrollDelta < 0 ? 'up' : 'down';
-        const absScrollDelta = Math.abs(scrollDelta);
-
-        if (scrollDelta === 0 && !isRepairMode) return true;
-
-        // Allow up to 95% of viewport height - almost full viewport scroll is OK
-        const maxGap = cleanRect.height * 0.95;
-        if (absScrollDelta > maxGap && !isRepairMode) {
-          setStatus('ERROR', t('screenshot_gap_large', '⚠️ Gap too large! Scroll back.'));
-          lastErrorScrollY = referenceScrollY;
-          needsRepairCapture = true;
-          scheduleAutoRepair();
-          return false;
-        }
-
-        const doc = document.documentElement || document.body;
-        const atBottom = doc
-          ? (effectiveScrollY + window.innerHeight) >= ((doc.scrollHeight || doc.offsetHeight || 0) - 4)
-          : false;
-        const atTop = effectiveScrollY <= 2;
-        // Lower threshold - capture even small scrolls
-        const minDelta = Math.min(cleanRect.height * 0.15, Math.max(10, cleanRect.height * 0.03));
-        const firstCaptureMinDelta = Math.max(
-          minDelta,
-          Math.min(cleanRect.height * 0.2, Math.max(24, cleanRect.height * 0.08))
-        );
-        const requiredMinDelta = isFirstIncrementCapture ? firstCaptureMinDelta : minDelta;
-        const atEdge = captureDirection === 'up' ? atTop : atBottom;
-        if (!atEdge && absScrollDelta < requiredMinDelta && !isRepairMode) {
-          return true;
-        }
-
-        try {
-          // Quick stabilization wait
-          await new Promise(r => requestAnimationFrame(() => setTimeout(r, 30)));
-
-          const response = await this._captureVisibleTab();
-
-          if (response && response.dataUrl) {
-            const img = new Image();
-            img.src = response.dataUrl;
-            await new Promise((resolve, reject) => {
-              img.onload = resolve;
-              img.onerror = reject;
-            });
-
-            const prevHeight = masterCanvas.height;
-            const frameCanvas = document.createElement('canvas');
-            frameCanvas.width = viewWidth;
-            frameCanvas.height = viewHeight;
-            const frameCtx = frameCanvas.getContext('2d', { willReadFrequently: true });
-            frameCtx.drawImage(
-              img,
-              cleanRect.left * dpr, cleanRect.top * dpr, viewWidth, viewHeight,
-              0, 0, viewWidth, viewHeight
-            );
-
-            // Simple approach: take scrollDelta worth of content from the BOTTOM of capture area
-            // This is the new content that scrolled into view
-            let newContentHeight = Math.round(absScrollDelta * dpr);
-
-            // For repair mode, capture more
-            if (isRepairMode) {
-              newContentHeight = Math.max(newContentHeight, Math.round(cleanRect.height * 0.4 * dpr));
-            }
-
-            // Clamp to available height
-            newContentHeight = Math.min(newContentHeight, viewHeight);
-            if (!isRepairMode) {
-              const expectedNewContentHeight = newContentHeight;
-              const matchedNewContentHeight = findMatchedNewContentHeight(frameCtx, expectedNewContentHeight, captureDirection, prevHeight);
-              if (isFirstIncrementCapture) {
-                const maxFirstCaptureAdjust = Math.max(14, Math.round(expectedNewContentHeight * 0.28));
-                newContentHeight = Math.abs(matchedNewContentHeight - expectedNewContentHeight) > maxFirstCaptureAdjust
-                  ? expectedNewContentHeight
-                  : matchedNewContentHeight;
-              } else {
-                newContentHeight = matchedNewContentHeight;
-              }
-            }
-
-            if (newContentHeight <= 2) {
-              return true;
-            }
-
-            // Source: from the BOTTOM of the capture area, going up by newContentHeight
-            // This is the new content that appeared after scrolling
-            const sourceY = captureDirection === 'up'
-              ? cleanRect.top * dpr
-              : (cleanRect.top + cleanRect.height) * dpr - newContentHeight;
-
-            // Backup previous content
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = masterCanvas.width;
-            tempCanvas.height = prevHeight;
-            if (prevHeight > 0) {
-              tempCanvas.getContext('2d').drawImage(masterCanvas, 0, 0);
-            }
-
-            // Resize and draw
-            masterCanvas.height = prevHeight + newContentHeight;
-            masterCtx.clearRect(0, 0, masterCanvas.width, masterCanvas.height);
-
-            if (captureDirection === 'up') {
-              masterCtx.drawImage(
-                frameCanvas,
-                0, sourceY - (cleanRect.top * dpr), viewWidth, newContentHeight,
-                0, 0, viewWidth, newContentHeight
-              );
-              if (prevHeight > 0) {
-                masterCtx.drawImage(tempCanvas, 0, newContentHeight);
-              }
-            } else {
-              if (prevHeight > 0) {
-                masterCtx.drawImage(tempCanvas, 0, 0);
-              }
-              // Append new content at the bottom
-              masterCtx.drawImage(
-                frameCanvas,
-                0, sourceY - (cleanRect.top * dpr), viewWidth, newContentHeight,
-                0, prevHeight, viewWidth, newContentHeight
-              );
-            }
-
-            lastCapturedScrollY = effectiveScrollY;
-            capturedMinScrollY = Math.min(capturedMinScrollY, effectiveScrollY);
-            capturedMaxScrollY = Math.max(capturedMaxScrollY, effectiveScrollY);
-            captureCount++;
-            needsRepairCapture = false;
-            updatePreview();
-            return true;
-          }
-          return false;
-        } catch (e) {
-          console.error('Capture error:', e);
-          return false;
-        }
-      };
-
-      // Repair capture function
-      const performRepairCapture = async () => {
-        if (!needsRepairCapture) return false;
-
-        setStatus('SCROLLING', t('screenshot_repairing', 'Repairing...'));
-        isCapturing = true;
-
-        const currentScrollY = window.scrollY;
-        const success = await captureFrame(currentScrollY, true);
-
-        isCapturing = false;
-        hasError = false;
-
-        if (success) {
-          setStatus('SCROLLING', t('screenshot_repaired', 'Fixed! Continue...'));
-          setTimeout(() => {
-            if (currentStatus === 'SCROLLING') {
-              setStatus('IDLE', getDirectionalScrollSlowlyMessage());
-            }
-          }, 800);
-        }
-
-        return success;
-      };
-
-      const releaseStability = this._prepareLongScreenshotStability();
-      const waitForStabilityStyle = async () => {
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        await new Promise(resolve => setTimeout(resolve, 130));
-      };
-
-      // ===== Initial Capture =====
-      try {
-        await waitForStabilityStyle();
-        setStatus('IDLE', t('screenshot_capturing_initial', 'Capturing initial view...'));
-
-        if (hasViewportChanged()) {
-          setStatus('ERROR', t('screenshot_error_init', 'Window or zoom changed. Please restart.'));
-          return;
-        }
-
-        const response = await this._captureVisibleTab();
-
-        if (response && response.dataUrl) {
-          const img = new Image();
-          img.src = response.dataUrl;
-          await new Promise(r => img.onload = r);
-
-          masterCanvas.width = viewWidth;
-          masterCanvas.height = viewHeight;
-          masterCtx.clearRect(0, 0, masterCanvas.width, masterCanvas.height);
-          masterCtx.drawImage(
-            img,
-            cleanRect.left * dpr, cleanRect.top * dpr, viewWidth, viewHeight,
-            0, 0, viewWidth, viewHeight
-          );
-          updatePreview();
-          captureCount = 1;
-          setStatus('IDLE', getDirectionalScrollSlowlyMessage());
-        }
-      } catch (e) {
-        console.error(e);
-        setStatus('ERROR', t('screenshot_error_init', 'Error initializing. Try again.'));
-      }
-
-      // ===== Scroll Handler =====
-      const onScroll = () => {
-        if (isCapturing) return;
-        if (autoRepairing) return;
-        if (autoMode && !autoPaused) return;
-        if (hasViewportChanged()) {
-          setStatus('ERROR', t('screenshot_error_init', 'Window or zoom changed. Please restart.'));
-          return;
-        }
-
-        const currentScrollY = window.scrollY;
-        const observedDelta = currentScrollY - lastObservedScrollY;
-        if (observedDelta !== 0) {
-          autoScrollDirection = observedDelta < 0 ? 'up' : 'down';
-          updateDirectionBadge();
-          lastObservedScrollY = currentScrollY;
-        }
-        const scrollDelta = getUncapturedScrollDelta(currentScrollY);
-
-        if (scrollDelta === 0 && !hasError) {
-          setStatus('IDLE', getDirectionalReadyContinueMessage());
-        } else if (scrollDelta > 0) {
-          const maxGap = cleanRect.height * 0.95;
-          if (scrollDelta > maxGap) {
-            setStatus('ERROR', t('screenshot_too_far', '⚠️ Too far! Scroll back.'));
-            lastErrorScrollY = capturedMaxScrollY;
-            needsRepairCapture = true;
-            scheduleAutoRepair();
-          } else if (scrollDelta > maxGap * 0.85) {
-            setStatus('TOO_FAST', t('screenshot_slow_down', '⚠️ Slow down...'));
-          } else {
-            setStatus('SCROLLING', t('screenshot_scrolling', 'Scrolling...'));
-          }
-        } else if (scrollDelta < 0) {
-          if (hasError && needsRepairCapture) {
-            const distanceFromError = Math.abs(currentScrollY - lastErrorScrollY);
-            const repairZone = cleanRect.height * 0.5;
-
-            if (distanceFromError <= repairZone) {
-              setStatus('PAUSED', t('screenshot_repair_ready', '🔧 Stop to repair...'));
-            } else {
-              setStatus('TOO_FAST', t('screenshot_scroll_back_more', '↑ Scroll back more...'));
-            }
-          } else {
-            setStatus('IDLE', getDirectionalReadyContinueMessage());
-          }
-        }
-
-        if (scrollTimer) clearTimeout(scrollTimer);
-
-        scrollTimer = setTimeout(async () => {
-          const finalScrollY = window.scrollY;
-          const finalDelta = getUncapturedScrollDelta(finalScrollY);
-
-          // Check if we need to perform a repair capture
-          if (hasError && needsRepairCapture) {
-            const distanceFromError = Math.abs(finalScrollY - lastErrorScrollY);
-            const repairZone = cleanRect.height * 0.5;
-
-            if (distanceFromError <= repairZone) {
-              await performRepairCapture();
-              return;
-            } else {
-              setStatus('ERROR', t('screenshot_scroll_back_more', '↑ Scroll back more...'));
-              scheduleAutoRepair();
-              return;
-            }
-          }
-
-          if (finalDelta === 0) {
-            setStatus('IDLE', getDirectionalScrollToCaptureMessage());
-            return;
-          }
-
-          if (hasError) return;
-
-          const maxGap = cleanRect.height * 0.95;
-          if (Math.abs(finalDelta) > maxGap) {
-            setStatus('ERROR', t('screenshot_gap_large_slow', '⚠️ Gap too large! Scroll back.'));
-            lastErrorScrollY = finalDelta < 0 ? capturedMinScrollY : capturedMaxScrollY;
-            needsRepairCapture = true;
-            scheduleAutoRepair();
-            return;
-          }
-
-          isCapturing = true;
-
-          const success = await captureFrame(finalScrollY, false, true);
-          isCapturing = false;
-
-          if (success) {
-            setStatus('IDLE', getDirectionalScrollSlowlyMessage());
-          } else {
-            setStatus('ERROR', t('screenshot_capture_failed', 'Failed. Scroll back.'));
-            lastErrorScrollY = lastCapturedScrollY;
-            needsRepairCapture = true;
-            scheduleAutoRepair();
-          }
-        }, 100);
-      };
-
-      window.addEventListener('scroll', onScroll, { passive: true });
-
-      // ===== Finish & Cleanup =====
-      const finish = () => {
-        setStatus('IDLE', t('screenshot_saving', 'Saving...'));
-        setTimeout(() => {
-          this._showScreenshotResult(masterCanvas.toDataURL('image/png'), 'long_screenshot');
-          cleanup();
-        }, 100);
-      };
-
-      const cleanup = () => {
-        this.activeSessionCleanup = null;
-        autoMode = false;
-        autoPaused = false;
-        if (autoTimer) {
-          clearTimeout(autoTimer);
-          autoTimer = null;
-        }
-        if (autoRepairTimer) {
-          clearTimeout(autoRepairTimer);
-          autoRepairTimer = null;
-        }
-        window.removeEventListener('scroll', onScroll);
-        document.removeEventListener('keydown', onKeyDown);
-        document.removeEventListener('contextmenu', onContextMenu);
-        hideControlTooltip();
-        uiContainer.remove();
-        indicator.remove();
-        try { releaseStability(); } catch (_) { }
-        this._removeZoomInvariantContainer();
-        if (scrollTimer) clearTimeout(scrollTimer);
-        // 长截图结束，清除截图状态
-        this._isScreenshotting = false;
-
-        try {
-          if (typeof window.__dev1SnapshotHighlighter !== 'undefined' && 
-              window.__dev1SnapshotHighlighter._instance && 
-              typeof window.__dev1SnapshotHighlighter._instance._releaseCursor === 'function') {
-            window.__dev1SnapshotHighlighter._instance._releaseCursor('screenshot');
-          }
-        } catch (_) {}
-      };
-
-      this.activeSessionCleanup = cleanup;
-
-      // ===== Auto Scroll Functions =====
-      const showAutoControls = () => {
-        autoBtnWrap.style.display = 'none';
-        pauseBtn.style.display = 'flex';
-        resumeBtn.style.display = 'none';
-      };
-
-      const showPausedControls = () => {
-        pauseBtn.style.display = 'none';
-        resumeBtn.style.display = 'flex';
-      };
-
-      const showResumedControls = () => {
-        pauseBtn.style.display = 'flex';
-        resumeBtn.style.display = 'none';
-      };
-
-      const stopAutoScroll = () => {
-        autoMode = false;
-        autoPaused = false;
-        if (autoTimer) {
-          clearTimeout(autoTimer);
-          autoTimer = null;
-        }
-        lastObservedScrollY = window.scrollY;
-        autoBtnWrap.style.display = 'flex';
-        pauseBtn.style.display = 'none';
-        resumeBtn.style.display = 'none';
-      };
-
-      const startAutoScroll = () => {
-        if (autoMode && !autoPaused) return;
-        autoMode = true;
-        autoPaused = false;
-        showAutoControls();
-
-        const doc = document.scrollingElement || document.documentElement || document.body;
-        const stepPx = Math.max(16, Math.round(cleanRect.height * 0.7));
-
-        const runStep = async () => {
-          if (!autoMode || autoPaused) return;
-          if (hasViewportChanged()) {
-            setStatus('ERROR', t('screenshot_error_init', 'Window or zoom changed. Please restart.'));
-            stopAutoScroll();
-            return;
-          }
-
-          const currentScrollY = window.scrollY;
-          const maxScrollYBase = (doc && doc.scrollHeight) || (document.body && document.body.scrollHeight) || 0;
-          const maxScrollY = Math.max(0, maxScrollYBase - window.innerHeight);
-
-          if ((autoScrollDirection === 'down' && currentScrollY >= maxScrollY - 2) ||
-            (autoScrollDirection === 'up' && currentScrollY <= 2)) {
-            stopAutoScroll();
-            finish();
-            return;
-          }
-
-          const nextScrollY = autoScrollDirection === 'up'
-            ? Math.max(currentScrollY - stepPx, 0)
-            : Math.min(currentScrollY + stepPx, maxScrollY);
-          window.scrollTo(0, nextScrollY);
-
-          await new Promise((r) => setTimeout(r, 220));
-
-          isCapturing = true;
-          const success = await captureFrame(nextScrollY);
-          isCapturing = false;
-
-          if (!autoMode || autoPaused) return;
-
-          if (!success) {
-            setStatus('ERROR', t('screenshot_capture_failed', 'Capture failed. Scroll back.'));
-            lastErrorScrollY = lastCapturedScrollY;
-            needsRepairCapture = true;
-            stopAutoScroll();
-            scheduleAutoRepair();
-            return;
-          }
-
-          autoTimer = setTimeout(runStep, 180);
-        };
-
-        setStatus('SCROLLING', getDirectionalAutoScrollingMessage());
-        runStep();
-      };
-
-      const pauseAutoScroll = () => {
-        if (!autoMode || autoPaused) return;
-        autoPaused = true;
-        if (autoTimer) {
-          clearTimeout(autoTimer);
-          autoTimer = null;
-        }
-        showPausedControls();
-        setStatus('PAUSED', t('screenshot_paused', 'Paused - scroll manually or resume'));
-      };
-
-      const resumeAutoScroll = () => {
-        if (!autoMode || !autoPaused) return;
-        autoPaused = false;
-        showResumedControls();
-        startAutoScroll();
-      };
-
-      // ===== ESC Key Handler =====
-      const onKeyDown = (e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          cleanup();
-        }
-      };
-      document.addEventListener('keydown', onKeyDown);
-
-      // ===== 右键取消 =====
-      const onContextMenu = (e) => {
-        e.preventDefault();
-        cleanup();
-      };
-      document.addEventListener('contextmenu', onContextMenu);
-
-      // ===== Wire up control buttons =====
-      finishBtn.onclick = () => finish();
-      cancelBtn.onclick = () => cleanup();
-      autoBtn.onclick = () => startAutoScroll();
-      pauseBtn.onclick = () => pauseAutoScroll();
-      resumeBtn.onclick = () => resumeAutoScroll();
-    }
 
     _processScreenshot(dataUrl, rect) {
       const canvas = document.createElement('canvas');
@@ -9587,6 +9631,7 @@
     }
     }
 
+
     const helper = new Dev1SnapshotHelper();
     window[API_KEY] = {
       loaded: true,
@@ -9597,3 +9642,4 @@
       isVisible: () => helper.isVisible()
     };
 })();
+

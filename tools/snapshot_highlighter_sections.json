@@ -1,0 +1,150 @@
+{
+  "source_file": "Bookmark-Backup-main/dev_1/snapshot_highlighter/index.js",
+  "table_of_contents_title": "TABLE OF CONTENTS (目录索引)",
+  "check_command": "node --check",
+  "markers": [
+    {
+      "name": "prelude_helpers",
+      "exact": "(function () {"
+    },
+    {
+      "name": "class_core_i18n_theme",
+      "exact": "class SnapshotHighlighter {"
+    },
+    {
+      "name": "state_storage_notes",
+      "exact": "normalizeToolbarUi(value = {}) {"
+    },
+    {
+      "name": "events_lifecycle_url",
+      "exact": "bindEvents() {"
+    },
+    {
+      "name": "toolbar_docking",
+      "exact": "createToolbarButton(icon, label, onClick, className = '') {"
+    },
+    {
+      "name": "indicator_note_dom_sync",
+      "exact": "createIndicatorCapsule() {"
+    },
+    {
+      "name": "picker_common",
+      "exact": "createPanel(className, anchor) {"
+    },
+    {
+      "name": "color_picker",
+      "exact": "showColorPicker(anchor, options = {}) {"
+    },
+    {
+      "name": "tool_picker",
+      "exact": "showToolPicker(anchor, options = {}) {"
+    },
+    {
+      "name": "operations_batch",
+      "exact": "showOperationsPanel(anchor) {"
+    },
+    {
+      "name": "selection_md_edit",
+      "exact": "highlightSelectedText() {"
+    },
+    {
+      "name": "highlight_wrap_core",
+      "exact": "createHighlight(selection, text) {"
+    },
+    {
+      "name": "highlight_style_effects",
+      "exact": "applyHighlightStyles(element, color = this.currentColor, toolStyle = 'highlight', textColorOverride = '') {"
+    },
+    {
+      "name": "presentation_pen",
+      "exact": "renderPresentationPenSettings(content, pickerContext = null) {"
+    },
+    {
+      "name": "rainbow_color_math",
+      "exact": "isRainbowColor(color) {"
+    },
+    {
+      "name": "cursor_runtime",
+      "exact": "updateCursorStyle() {"
+    },
+    {
+      "name": "svg_line_defs",
+      "exact": "ensureGlobalDefs() {"
+    },
+    {
+      "name": "overlay_effects",
+      "exact": "ensureFrameOverlayLayer() {"
+    },
+    {
+      "name": "restore_dom_index",
+      "exact": "cancelRestoreJob() {"
+    },
+    {
+      "name": "cleanup_terminal_utils",
+      "exact": "collectHighlightIdsFromHtml(html) {"
+    },
+    {
+      "name": "api_export",
+      "exact": "const highlighter = new SnapshotHighlighter();"
+    }
+  ],
+  "sections": [
+    {
+      "id": "I",
+      "title": "PRELUDE, CLASS CORE & THEME (前置工具、类核心与主题)",
+      "chunks": [
+        "prelude_helpers",
+        "class_core_i18n_theme"
+      ]
+    },
+    {
+      "id": "II",
+      "title": "STATE, EVENTS & TOOLBAR (状态、事件与工具栏)",
+      "chunks": [
+        "state_storage_notes",
+        "toolbar_docking",
+        "indicator_note_dom_sync",
+        "events_lifecycle_url"
+      ]
+    },
+    {
+      "id": "III",
+      "title": "PICKERS & OPERATIONS (选择器与操作面板)",
+      "chunks": [
+        "picker_common",
+        "color_picker",
+        "tool_picker",
+        "operations_batch"
+      ]
+    },
+    {
+      "id": "IV",
+      "title": "SELECTION, HIGHLIGHT CREATION & STYLES (选区、高亮创建与样式)",
+      "chunks": [
+        "rainbow_color_math",
+        "svg_line_defs",
+        "selection_md_edit",
+        "highlight_wrap_core",
+        "highlight_style_effects"
+      ]
+    },
+    {
+      "id": "V",
+      "title": "EFFECTS, CURSOR & OVERLAYS (效果、光标与覆盖层)",
+      "chunks": [
+        "presentation_pen",
+        "cursor_runtime",
+        "overlay_effects"
+      ]
+    },
+    {
+      "id": "VI",
+      "title": "RESTORE, CLEANUP & API EXPORT (恢复、清理与 API 导出)",
+      "chunks": [
+        "restore_dom_index",
+        "cleanup_terminal_utils",
+        "api_export"
+      ]
+    }
+  ]
+}
