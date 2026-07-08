@@ -16068,7 +16068,6 @@ async function renderTreeView(forceRefresh = false) {
 
 // 树事件处理器映射（避免重复绑定）
 const treeClickHandlers = new WeakMap();
-const treeContextMenuHandlers = new WeakMap();
 
 // 绑定树的展开/折叠事件
 function attachTreeEvents(treeContainer) {
@@ -16274,23 +16273,6 @@ function attachTreeEvents(treeContainer) {
     // 绑定新的事件监听器
     treeContainer.addEventListener('click', clickHandler);
     treeClickHandlers.set(treeContainer, clickHandler);
-
-    // 绑定右键菜单事件（只读树禁用）
-    if (!isReadOnlyTree) {
-        const existingContextHandler = treeContextMenuHandlers.get(treeContainer);
-        if (existingContextHandler) {
-            treeContainer.removeEventListener('contextmenu', existingContextHandler);
-        }
-        const contextHandler = (e) => {
-            const item = e && e.target && e.target.closest ? e.target.closest('.tree-item[data-node-id]') : null;
-            if (!item || !treeContainer.contains(item)) return;
-            if (typeof showContextMenu === 'function') {
-                showContextMenu(e, item);
-            }
-        };
-        treeContainer.addEventListener('contextmenu', contextHandler);
-        treeContextMenuHandlers.set(treeContainer, contextHandler);
-    }
 
     // 绑定拖拽事件（只读树禁用）
     if (!isReadOnlyTree && typeof attachDragEvents === 'function') {
@@ -18116,13 +18098,6 @@ async function applyIncrementalCreateToTree(id, bookmark) {
     // 为新创建的节点绑定事件
     const newItem = newNodeEl?.querySelector('.tree-item');
     if (newItem) {
-        // 绑定右键菜单
-        newItem.addEventListener('contextmenu', (e) => {
-            if (typeof showContextMenu === 'function') {
-                showContextMenu(e, newItem);
-            }
-        });
-
         // 绑定拖拽事件
         if (typeof attachDragEvents === 'function') {
             attachDragEvents(container);
@@ -29455,26 +29430,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 初始化全局导出功能
     initGlobalExport();
 
-    // 初始化右键菜单和拖拽功能
-    if (typeof initContextMenu === 'function') {
-        initContextMenu();
-    }
+    // 初始化拖拽功能
     if (typeof initDragDrop === 'function') {
         initDragDrop();
-    }
-
-    // 初始化批量操作相关功能
-    if (typeof initBatchToolbar === 'function') {
-        initBatchToolbar();
-        
-    }
-    if (typeof initKeyboardShortcuts === 'function') {
-        initKeyboardShortcuts();
-        
-    }
-    if (typeof initClickSelect === 'function') {
-        initClickSelect();
-        
     }
 
     // 注册消息监听
@@ -29626,4 +29584,3 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     
 });
-
