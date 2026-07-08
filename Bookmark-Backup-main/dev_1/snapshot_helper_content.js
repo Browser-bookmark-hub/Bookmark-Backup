@@ -43,7 +43,7 @@
 
     const messages = {
       zh_CN: {
-        title: '网页快照辅助工具',
+        title: '辅助工具',
         section_archive: '网页快照与标注',
         section_capture: '屏幕截图与录制',
         save_mhtml: '保存 MHTML',
@@ -65,6 +65,12 @@
         highlight_tool_launching: '正在打开高亮工具...',
         open_web_snapshot: '打开网页快照页',
         open_web_snapshot_tooltip: '打开网页快照页面',
+        helper_info_tooltip: '说明',
+        helper_shortcut_not_set: '未设置',
+        helper_info_shortcut_prefix: '可以通过快捷键',
+        helper_info_shortcut_suffix: '直接在任意页面打开/关闭工具箱。',
+        helper_info_cache: '辅助工具所做的用户修改暂存于本地，当对应标签页(tabid)关闭或浏览器重启时，相关缓存数据将自动释放。',
+        helper_info_export: '建议临时使用且注意导出',
         screenshot_area: '区域截图',
         screenshot_full: '长截图',
         screen_record: '屏幕录制',
@@ -124,7 +130,7 @@
         screenshot_paused: '已暂停，可手动滚动或继续'
       },
       en: {
-        title: 'Web Snapshot Helper',
+        title: 'Helper',
         section_archive: 'Page Snapshot & Annotate',
         section_capture: 'Screen Capture & Record',
         save_mhtml: 'Save MHTML',
@@ -146,6 +152,12 @@
         highlight_tool_launching: 'Opening highlight tool...',
         open_web_snapshot: 'Open Web Snapshot page',
         open_web_snapshot_tooltip: 'Open the Web Snapshot page',
+        helper_info_tooltip: 'Help',
+        helper_shortcut_not_set: 'Not Set',
+        helper_info_shortcut_prefix: 'Use shortcut',
+        helper_info_shortcut_suffix: 'to open/close the toolbox on any page.',
+        helper_info_cache: 'User changes made by Helper are cached locally. When the related tabid is closed or the browser restarts, the cached data is released automatically.',
+        helper_info_export: 'Use temporarily and export important work',
         screenshot_area: 'Area Screenshot',
         screenshot_full: 'Long Screenshot',
         screen_record: 'Screen Recording',
@@ -362,6 +374,89 @@
           screenshotDialog.style.color = isDark ? '#f0f4f8' : '#1e293b';
           screenshotDialog.style.border = isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.1)';
         }
+      }
+
+      _isMacPlatform() {
+        const nav = typeof navigator !== 'undefined' ? navigator : null;
+        const platform = String((nav && nav.platform) || '').toUpperCase();
+        const userAgent = String((nav && nav.userAgent) || '').toUpperCase();
+        return platform.includes('MAC') || userAgent.includes('MAC');
+      }
+
+      _getOpenWebSnapshotShortcutFallback() {
+        return this._isMacPlatform() ? '⇧⌘P' : 'Ctrl+Shift+P';
+      }
+
+      _formatOpenWebSnapshotShortcut(value, fallback = '') {
+        const raw = String(value || fallback || '').trim();
+        if (!raw) return '';
+        if (!this._isMacPlatform()) return raw;
+
+        const parts = raw.split('+').map(part => part.trim()).filter(Boolean);
+        if (parts.length < 2) {
+          return raw
+            .replace(/Command/gi, '⌘')
+            .replace(/MacCtrl/gi, '⌃')
+            .replace(/Ctrl/gi, '⌃')
+            .replace(/Control/gi, '⌃')
+            .replace(/Alt/gi, '⌥')
+            .replace(/Option/gi, '⌥')
+            .replace(/Shift/gi, '⇧');
+        }
+
+        const key = parts[parts.length - 1];
+        const modifierMap = new Map([
+          ['shift', { symbol: '⇧', order: 1 }],
+          ['command', { symbol: '⌘', order: 2 }],
+          ['cmd', { symbol: '⌘', order: 2 }],
+          ['meta', { symbol: '⌘', order: 2 }],
+          ['macctrl', { symbol: '⌃', order: 3 }],
+          ['ctrl', { symbol: '⌃', order: 3 }],
+          ['control', { symbol: '⌃', order: 3 }],
+          ['alt', { symbol: '⌥', order: 4 }],
+          ['option', { symbol: '⌥', order: 4 }]
+        ]);
+        const modifiers = parts.slice(0, -1)
+          .map(part => modifierMap.get(part.toLowerCase()) || { symbol: part, order: 9 })
+          .sort((a, b) => a.order - b.order)
+          .map(item => item.symbol)
+          .join('');
+        return `${modifiers}${key}`;
+      }
+
+      _renderHelperInfoPopoverHtml() {
+        const shortcut = this._getOpenWebSnapshotShortcutFallback();
+        if (this.config && this.config.lang === 'en') {
+          return `
+                  <div class="dev1-helper-info-popover" role="tooltip">
+                    <div class="dev1-helper-info-line">1. ${this.translate('helper_info_shortcut_prefix')} <kbd data-helper-shortcut>${shortcut}</kbd> ${this.translate('helper_info_shortcut_suffix')}</div>
+                    <div class="dev1-helper-info-line">2. ${this.translate('helper_info_cache')}</div>
+                    <div class="dev1-helper-info-line dev1-helper-info-warning">3. ${this.translate('helper_info_export')}</div>
+                  </div>`;
+        }
+        return `
+                  <div class="dev1-helper-info-popover" role="tooltip">
+                    <div class="dev1-helper-info-line">1、${this.translate('helper_info_shortcut_prefix')}「<kbd data-helper-shortcut>${shortcut}</kbd>」${this.translate('helper_info_shortcut_suffix')}</div>
+                    <div class="dev1-helper-info-line">2、${this.translate('helper_info_cache')}</div>
+                    <div class="dev1-helper-info-line dev1-helper-info-warning">3、「${this.translate('helper_info_export')}」</div>
+                  </div>`;
+      }
+
+      async _hydrateOpenWebSnapshotShortcut() {
+        const shortcutEl = this.shadow && this.shadow.querySelector('[data-helper-shortcut]');
+        if (!shortcutEl) return;
+        try {
+          const response = await sendRuntimeMessage({
+            action: 'dev1GetOpenWebSnapshotShortcut'
+          }, 3000);
+          if (!response || response.success !== true) return;
+          const raw = String(response.shortcut || '').trim();
+          if (response.configured === true && !raw) {
+            shortcutEl.textContent = this.translate('helper_shortcut_not_set');
+            return;
+          }
+          shortcutEl.textContent = this._formatOpenWebSnapshotShortcut(raw, this._getOpenWebSnapshotShortcutFallback());
+        } catch (_) { }
       }
 
       async _checkAllCodecsSupport() {
@@ -717,7 +812,7 @@
               border: 1px solid var(--panel-border);
               box-shadow: var(--panel-shadow);
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-              overflow: hidden;
+              overflow: visible;
               pointer-events: none;
               opacity: 0;
               transform: translateY(30px) scale(0.96);
@@ -932,17 +1027,26 @@
               padding: 12px 14px;
               background: var(--header-bg);
               border-bottom: 1px solid var(--panel-border);
+              border-radius: 20px 20px 0 0;
               cursor: move;
+              position: relative;
               user-select: none;
+              z-index: 30;
             }
             .dev1-helper-title {
-              flex: 1;
               font-size: 13px;
               font-weight: 600;
               color: var(--text-main);
               overflow: hidden;
               white-space: nowrap;
               text-overflow: ellipsis;
+            }
+            .dev1-helper-title-group {
+              flex: 1;
+              min-width: 0;
+              display: flex;
+              align-items: center;
+              gap: 4px;
             }
             .dev1-helper-btn {
               width: 26px;
@@ -967,6 +1071,66 @@
               color: #ef4444;
             }
             .dev1-helper-open-snapshot svg { transform: translateY(0.5px); }
+            .dev1-helper-info svg { transform: translateY(1px); }
+            .dev1-helper-info-wrap {
+              position: relative;
+              width: 26px;
+              height: 26px;
+              flex: 0 0 26px;
+              z-index: 31;
+            }
+            .dev1-helper-info-popover {
+              position: absolute;
+              top: 32px;
+              right: -32px;
+              z-index: 2147483647;
+              width: 272px;
+              max-width: min(272px, calc(100vw - 42px));
+              box-sizing: border-box;
+              padding: 12px 13px;
+              border-radius: 12px;
+              border: 1px solid var(--panel-border);
+              background: var(--panel-bg);
+              backdrop-filter: var(--backdrop-filter);
+              -webkit-backdrop-filter: var(--backdrop-filter);
+              color: var(--text-main);
+              box-shadow: var(--panel-shadow);
+              font-size: 12px;
+              line-height: 1.55;
+              font-weight: 400;
+              pointer-events: none;
+              opacity: 0;
+              transform: translateY(-4px) scale(0.98);
+              transition: opacity 120ms ease, transform 120ms ease;
+            }
+            .dev1-helper-info-wrap:hover .dev1-helper-info-popover,
+            .dev1-helper-info-wrap:focus-within .dev1-helper-info-popover {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+              pointer-events: auto;
+            }
+            .dev1-helper-info-line + .dev1-helper-info-line {
+              margin-top: 8px;
+            }
+            .dev1-helper-info-line kbd {
+              display: inline-flex;
+              align-items: center;
+              min-height: 18px;
+              padding: 1px 5px;
+              margin: 0 2px;
+              border-radius: 5px;
+              border: 1px solid var(--card-border);
+              background: var(--card-bg);
+              color: var(--accent-color);
+              font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+              font-size: 11px;
+              font-weight: 700;
+              white-space: nowrap;
+            }
+            .dev1-helper-info-warning {
+              color: #f97316;
+              font-weight: 700;
+            }
             .dev1-helper-feedback {
               max-width: 100px;
               font-size: 11px;
@@ -1132,7 +1296,15 @@
           <div class="dev1-helper-root" data-open="false">
             <div class="dev1-helper-panel">
               <div class="dev1-helper-header">
-                <div class="dev1-helper-title">${this.translate('title')}</div>
+                <div class="dev1-helper-title-group">
+                  <div class="dev1-helper-title">${this.translate('title')}</div>
+                  <div class="dev1-helper-info-wrap" data-no-drag="true">
+                    <button class="dev1-helper-btn dev1-helper-info" type="button" aria-label="${this.translate('helper_info_tooltip')}" data-no-drag="true">
+                      <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                    </button>
+                    ${this._renderHelperInfoPopoverHtml()}
+                  </div>
+                </div>
                 <div class="dev1-helper-feedback" aria-live="polite"></div>
                 <button class="dev1-helper-btn dev1-helper-open-snapshot" type="button" aria-label="${this.translate('open_web_snapshot_tooltip')}" data-tip="${this.translate('open_web_snapshot_tooltip')}" data-no-drag="true">
                   <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7"></path><path d="M10 14L21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>
@@ -1287,6 +1459,7 @@
         });
         minBtn.addEventListener('click', () => setOpen(false));
         bindTip(openSnapshotBtn);
+        this._hydrateOpenWebSnapshotShortcut();
         mhtmlBtn.addEventListener('click', () => this._saveCurrentMhtml(mhtmlBtn));
         mdBtn.addEventListener('click', () => { this._collapsePanel(); this._showMdSettingsPanel(launcher); });
         highlighterBtn.addEventListener('click', () => this._toggleHighlighter(highlighterBtn));

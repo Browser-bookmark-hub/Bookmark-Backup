@@ -2049,6 +2049,39 @@ async function openOrFocusWebSnapshotPage(options = {}) {
     }
 }
 
+async function getCommandShortcutForDev1Helper(commandName) {
+    const commandsApi = browserAPI && browserAPI.commands;
+    if (!commandsApi || typeof commandsApi.getAll !== 'function') {
+        return { success: true, configured: false, shortcut: '' };
+    }
+
+    const commands = await new Promise((resolve) => {
+        let settled = false;
+        const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+        };
+        try {
+            const maybePromise = commandsApi.getAll((items) => finish(items));
+            if (maybePromise && typeof maybePromise.then === 'function') {
+                maybePromise.then(finish).catch(() => finish(null));
+            }
+        } catch (_) {
+            finish(null);
+        }
+        setTimeout(() => finish(null), 900);
+    });
+
+    const hit = Array.isArray(commands)
+        ? commands.find((command) => command && command.name === commandName)
+        : null;
+    if (!hit || hit.shortcut === undefined) {
+        return { success: true, configured: false, shortcut: '' };
+    }
+    return { success: true, configured: true, shortcut: String(hit.shortcut || '').trim() };
+}
+
 async function openQuickSnapshotHelperForCurrentPage() {
     const tabs = await browserAPI.tabs.query({ active: true, currentWindow: true });
     const tab = Array.isArray(tabs) ? tabs[0] : null;
@@ -11388,6 +11421,19 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({
                         success: false,
                         error: error?.message || 'dev_1 open Web Snapshot page failed'
+                    });
+                }
+            })();
+            return true;
+        } else if (message.action === 'dev1GetOpenWebSnapshotShortcut') {
+            (async () => {
+                try {
+                    const result = await getCommandShortcutForDev1Helper('open_web_snapshot_view');
+                    sendResponse(result);
+                } catch (error) {
+                    sendResponse({
+                        success: false,
+                        error: error?.message || 'dev_1 shortcut query failed'
                     });
                 }
             })();
