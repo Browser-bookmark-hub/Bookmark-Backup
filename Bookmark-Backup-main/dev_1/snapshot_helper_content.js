@@ -32,6 +32,13 @@
       return 1;
     };
 
+    const setImportantStyles = (el, styles) => {
+      if (!el || !styles) return;
+      Object.entries(styles).forEach(([name, value]) => {
+        el.style.setProperty(name, value, 'important');
+      });
+    };
+
     function hashUrl(value) {
       let input = String(value == null ? '' : value);
       if (input.startsWith('http://') || input.startsWith('https://')) {
@@ -3564,34 +3571,42 @@
         // 创建录制控制 UI - 放在录制区域下方
         const controlPanel = document.createElement('div');
         controlPanel.id = 'screen-record-controls';
-        controlPanel.style.cssText = `
-          position: fixed;
-          top: ${rect.top + rect.height + 15}px;
-          left: ${rect.left + rect.width / 2}px;
-          transform: translateX(-50%);
-          background: ${isDarkPage ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.95)'};
-          color: ${isDarkPage ? '#ffffff' : '#1e293b'};
-          padding: 10px 16px;
-          border-radius: 20px;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-          z-index: 2147483647;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          font-size: 13px;
-          pointer-events: auto;
-        `;
+        setImportantStyles(controlPanel, {
+          'position': 'fixed',
+          'top': `${rect.top + rect.height + 15}px`,
+          'left': `${rect.left + rect.width / 2}px`,
+          'transform': 'translateX(-50%)',
+          'background': isDarkPage ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.95)',
+          'color': isDarkPage ? '#ffffff' : '#1e293b',
+          'padding': '10px 16px',
+          'border-radius': '20px',
+          'box-shadow': '0 4px 20px rgba(0,0,0,0.3)',
+          'z-index': '2147483647',
+          'display': 'flex',
+          'align-items': 'center',
+          'gap': '12px',
+          'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          'font-size': '13px',
+          'line-height': '1',
+          'letter-spacing': '0',
+          'box-sizing': 'border-box',
+          'pointer-events': 'auto'
+        });
 
         // 录制红点
         const dot = document.createElement('div');
-        dot.style.cssText = `
-          width: 10px;
-          height: 10px;
-          background: #ef4444;
-          border-radius: 50%;
-          animation: pulse 1s ease-in-out infinite;
-        `;
+        setImportantStyles(dot, {
+          'width': '10px',
+          'height': '10px',
+          'min-width': '10px',
+          'min-height': '10px',
+          'background': '#ef4444',
+          'border-radius': '50%',
+          'border': '0',
+          'box-shadow': 'none',
+          'animation': 'pulse 1s ease-in-out infinite',
+          'flex': '0 0 auto'
+        });
 
         // 添加脉冲动画样式
         if (!document.getElementById('record-pulse-style')) {
@@ -3609,35 +3624,73 @@
         // 计时器
         const timer = document.createElement('span');
         timer.textContent = '00:00';
-        timer.style.fontWeight = '600';
-        timer.style.minWidth = '45px';
+        setImportantStyles(timer, {
+          'display': 'inline-flex',
+          'align-items': 'center',
+          'justify-content': 'center',
+          'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          'font-size': '13px',
+          'font-weight': '600',
+          'line-height': '1',
+          'min-width': '45px',
+          'color': 'currentColor',
+          'letter-spacing': '0',
+          'text-indent': '0',
+          'flex': '0 0 auto'
+        });
 
         // 格式标识
         const formatBadge = document.createElement('span');
         formatBadge.textContent = useWebCodecs ? 'MP4' : 'WebM';
-        formatBadge.style.cssText = `
-          padding: 2px 6px;
-          border-radius: 4px;
-          background: ${useWebCodecs ? '#22c55e' : '#3b82f6'};
-          color: white;
-          font-size: 10px;
-          font-weight: 600;
-        `;
+        setImportantStyles(formatBadge, {
+          'display': 'inline-flex',
+          'align-items': 'center',
+          'justify-content': 'center',
+          'padding': '2px 6px',
+          'border-radius': '4px',
+          'border': '0',
+          'background': useWebCodecs ? '#22c55e' : '#3b82f6',
+          'color': 'white',
+          'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          'font-size': '10px',
+          'font-weight': '600',
+          'line-height': '1',
+          'letter-spacing': '0',
+          'text-indent': '0',
+          'flex': '0 0 auto'
+        });
 
         // 停止按钮
         const stopBtn = document.createElement('button');
+        stopBtn.type = 'button';
         stopBtn.textContent = t('screen_record_stop', '停止');
-        stopBtn.style.cssText = `
-          padding: 6px 14px;
-          border-radius: 14px;
-          border: none;
-          background: #ef4444;
-          color: white;
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        `;
+        setImportantStyles(stopBtn, {
+          'appearance': 'none',
+          '-webkit-appearance': 'none',
+          'box-sizing': 'border-box',
+          'padding': '6px 14px',
+          'margin': '0',
+          'border-radius': '14px',
+          'border': 'none',
+          'background': '#ef4444',
+          'color': 'white',
+          'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          'font-size': '12px',
+          'font-weight': '600',
+          'line-height': '1',
+          'letter-spacing': '0',
+          'text-indent': '0',
+          'text-transform': 'none',
+          'white-space': 'nowrap',
+          'cursor': 'pointer',
+          'transition': 'all 0.2s ease',
+          'display': 'inline-flex',
+          'align-items': 'center',
+          'justify-content': 'center',
+          'min-height': '26px',
+          'flex': '0 0 auto',
+          'pointer-events': 'auto'
+        });
 
         controlPanel.appendChild(dot);
         controlPanel.appendChild(timer);
@@ -3691,7 +3744,7 @@
         const runMediaRecorderFallback = () => {
           console.log('Falling back to MediaRecorder');
           formatBadge.textContent = 'WebM';
-          formatBadge.style.background = '#3b82f6';
+          formatBadge.style.setProperty('background', '#3b82f6', 'important');
 
           const drawFrame = () => {
             if (!isRecording) return;
@@ -4154,6 +4207,35 @@
           <circle cx="12" cy="12" r="10"></circle>
           <path d="M8 12l2.5 2.5L16 9"></path>
         </svg>`;
+        setImportantStyles(iconDiv, {
+          'display': 'flex',
+          'align-items': 'center',
+          'justify-content': 'center',
+          'width': '48px',
+          'height': '48px',
+          'min-width': '48px',
+          'min-height': '48px',
+          'margin': '0 auto',
+          'padding': '0',
+          'background': 'transparent',
+          'border': '0',
+          'box-shadow': 'none',
+          'overflow': 'visible'
+        });
+        const iconSvg = iconDiv.querySelector('svg');
+        if (iconSvg) {
+          setImportantStyles(iconSvg, {
+            'display': 'block',
+            'width': '48px',
+            'height': '48px',
+            'min-width': '48px',
+            'min-height': '48px',
+            'overflow': 'visible',
+            'color': '#22c55e',
+            'stroke': '#22c55e',
+            'fill': 'none'
+          });
+        }
 
         const infoMsg = document.createElement('div');
         infoMsg.textContent = t('video_record_success', '录制完成');
@@ -4167,7 +4249,7 @@
         loadingText.appendChild(infoMsg);
         loadingText.appendChild(subMsg);
 
-        video.style.display = 'none';
+        video.style.setProperty('display', 'none', 'important');
       };
 
       // 尝试加载视频预览
@@ -4179,7 +4261,7 @@
         // 视频加载成功
         video.onloadeddata = () => {
           console.log('Video loaded successfully, readyState:', video.readyState);
-          loadingText.style.display = 'none';
+          loadingText.style.setProperty('display', 'none', 'important');
           video.play().catch(() => { });
         };
 
@@ -4219,20 +4301,37 @@
 
       const createBtn = (text, onClick, primary = false) => {
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.textContent = text;
         const bg = primary ? '#3b82f6' : (useDarkStyle ? '#374151' : 'white');
         const color = primary ? 'white' : (useDarkStyle ? '#e2e8f0' : '#475569');
         const border = primary ? '#3b82f6' : (useDarkStyle ? '#4b5563' : '#e2e8f0');
-        btn.style.cssText = `
-          padding: 8px 16px;
-          border-radius: 6px;
-          border: 1px solid ${border};
-          background: ${bg};
-          color: ${color};
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
-        `;
+        setImportantStyles(btn, {
+          'appearance': 'none',
+          '-webkit-appearance': 'none',
+          'box-sizing': 'border-box',
+          'display': 'inline-flex',
+          'align-items': 'center',
+          'justify-content': 'center',
+          'padding': '8px 16px',
+          'margin': '0',
+          'border-radius': '6px',
+          'border': `1px solid ${border}`,
+          'background': bg,
+          'color': color,
+          'cursor': 'pointer',
+          'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          'font-size': '14px',
+          'font-weight': '500',
+          'line-height': '1.2',
+          'letter-spacing': '0',
+          'text-indent': '0',
+          'text-transform': 'none',
+          'white-space': 'nowrap',
+          'min-height': '34px',
+          'overflow': 'visible',
+          'pointer-events': 'auto'
+        });
         btn.onclick = onClick;
         return btn;
       };
@@ -4556,30 +4655,80 @@
       // Button style helper
       const createBtn = (text, icon, bgColor, textColor, borderColor) => {
         const btn = document.createElement('button');
-        btn.innerHTML = icon ? `<span style="font-size:14px;">${icon}</span>` : '';
+        btn.type = 'button';
+        if (icon) {
+          const iconSpan = document.createElement('span');
+          iconSpan.textContent = icon;
+          iconSpan.setAttribute('aria-hidden', 'true');
+          setImportantStyles(iconSpan, {
+            'display': 'inline-flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            'width': '18px',
+            'height': '18px',
+            'min-width': '18px',
+            'min-height': '18px',
+            'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', 'Apple Color Emoji', sans-serif",
+            'font-size': icon === '▶' ? '16px' : '14px',
+            'font-weight': '700',
+            'line-height': '1',
+            'letter-spacing': '0',
+            'text-indent': '0',
+            'text-transform': 'none',
+            'color': 'currentColor',
+            'background': 'transparent',
+            'border': '0',
+            'box-shadow': 'none',
+            'overflow': 'visible',
+            'transform': 'none',
+            'flex': '0 0 auto',
+            'pointer-events': 'none'
+          });
+          btn.appendChild(iconSpan);
+        }
         btn.setAttribute('aria-label', text);
-        btn.style.cssText = `
-          width: ${BTN_SIZE}px;
-          height: ${BTN_SIZE}px;
-          border-radius: 50%;
-          border: 2px solid ${borderColor || bgColor};
-          background: ${bgColor};
-          color: ${textColor};
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: transform 0.1s, box-shadow 0.1s;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        `;
+        setImportantStyles(btn, {
+          'appearance': 'none',
+          '-webkit-appearance': 'none',
+          'box-sizing': 'border-box',
+          'width': `${BTN_SIZE}px`,
+          'height': `${BTN_SIZE}px`,
+          'min-width': `${BTN_SIZE}px`,
+          'min-height': `${BTN_SIZE}px`,
+          'max-width': `${BTN_SIZE}px`,
+          'max-height': `${BTN_SIZE}px`,
+          'margin': '0',
+          'padding': '0',
+          'border-radius': '50%',
+          'border': `2px solid ${borderColor || bgColor}`,
+          'background': bgColor,
+          'color': textColor,
+          'cursor': 'pointer',
+          'display': 'flex',
+          'align-items': 'center',
+          'justify-content': 'center',
+          'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', 'Apple Color Emoji', sans-serif",
+          'font-size': '14px',
+          'font-weight': '700',
+          'line-height': '1',
+          'letter-spacing': '0',
+          'text-indent': '0',
+          'text-transform': 'none',
+          'vertical-align': 'middle',
+          'overflow': 'visible',
+          'outline': 'none',
+          'transition': 'transform 0.1s, box-shadow 0.1s',
+          'box-shadow': '0 2px 8px rgba(0,0,0,0.2)',
+          'pointer-events': 'auto'
+        });
         btn.addEventListener('mouseenter', () => {
-          btn.style.transform = 'scale(1.1)';
-          btn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+          btn.style.setProperty('transform', 'scale(1.1)', 'important');
+          btn.style.setProperty('box-shadow', '0 4px 12px rgba(0,0,0,0.3)', 'important');
           showControlTooltip(btn, text);
         });
         btn.addEventListener('mouseleave', () => {
-          btn.style.transform = 'scale(1)';
-          btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+          btn.style.setProperty('transform', 'scale(1)', 'important');
+          btn.style.setProperty('box-shadow', '0 2px 8px rgba(0,0,0,0.2)', 'important');
           hideControlTooltip();
         });
         btn.addEventListener('focus', () => showControlTooltip(btn, text));
@@ -4599,37 +4748,58 @@
         style.textContent = '@keyframes dev1AutoScrollBorderBreathe { 0%, 100% { border-color: #4b5563; } 50% { border-color: #60a5fa; } }';
         document.head.appendChild(style);
       }
-      autoBtn.style.animation = 'dev1AutoScrollBorderBreathe 3s ease-in-out infinite';
+      autoBtn.style.setProperty('animation', 'dev1AutoScrollBorderBreathe 3s ease-in-out infinite', 'important');
 
       const autoBtnWrap = document.createElement('div');
-      autoBtnWrap.style.cssText = `
-        position: relative;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: ${BTN_SIZE}px;
-        height: ${BTN_SIZE}px;
-        flex: 0 0 auto;
-      `;
+      setImportantStyles(autoBtnWrap, {
+        'position': 'relative',
+        'display': 'flex',
+        'align-items': 'center',
+        'justify-content': 'center',
+        'width': `${BTN_SIZE}px`,
+        'height': `${BTN_SIZE}px`,
+        'min-width': `${BTN_SIZE}px`,
+        'min-height': `${BTN_SIZE}px`,
+        'margin': '0',
+        'padding': '0',
+        'background': 'transparent',
+        'border': '0',
+        'box-shadow': 'none',
+        'overflow': 'visible',
+        'flex': '0 0 auto'
+      });
 
       const directionBadge = document.createElement('div');
-      directionBadge.style.cssText = `
-        position: absolute;
-        top: -7px;
-        right: -7px;
-        min-width: 16px;
-        height: 16px;
-        padding: 0 3px;
-        border-radius: 999px;
-        background: #22c55e;
-        color: white;
-        font-size: 11px;
-        line-height: 16px;
-        text-align: center;
-        font-weight: 700;
-        pointer-events: none;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-      `;
+      setImportantStyles(directionBadge, {
+        'position': 'absolute',
+        'top': '-7px',
+        'right': '-7px',
+        'box-sizing': 'border-box',
+        'display': 'inline-flex',
+        'align-items': 'center',
+        'justify-content': 'center',
+        'min-width': '16px',
+        'width': '16px',
+        'height': '16px',
+        'padding': '0',
+        'margin': '0',
+        'border-radius': '999px',
+        'border': '0',
+        'background': '#22c55e',
+        'color': 'white',
+        'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', sans-serif",
+        'font-size': '11px',
+        'line-height': '1',
+        'letter-spacing': '0',
+        'text-align': 'center',
+        'text-indent': '0',
+        'text-transform': 'none',
+        'font-weight': '700',
+        'pointer-events': 'none',
+        'box-shadow': '0 2px 6px rgba(0,0,0,0.25)',
+        'overflow': 'visible',
+        'transform': 'none'
+      });
       autoBtnWrap.appendChild(autoBtn);
       autoBtnWrap.appendChild(directionBadge);
 
@@ -4637,8 +4807,8 @@
       const pauseBtn = createBtn(t('screenshot_pause', 'Pause'), '⏸', '#f59e0b', '#ffffff', '#f59e0b');
       const resumeBtn = createBtn(t('screenshot_resume', 'Resume'), '▶', '#22c55e', '#ffffff', '#22c55e');
 
-      pauseBtn.style.display = 'none';
-      resumeBtn.style.display = 'none';
+      pauseBtn.style.setProperty('display', 'none', 'important');
+      resumeBtn.style.setProperty('display', 'none', 'important');
 
       controls.appendChild(cancelBtn);
       controls.appendChild(autoBtnWrap);
@@ -4721,8 +4891,8 @@
       // Helper to update corner colors
       const updateCornerColors = (color) => {
         Object.values(cornerElements).forEach(({ vLine, hLine }) => {
-          vLine.style.background = color;
-          hLine.style.background = color;
+          vLine.style.setProperty('background', color, 'important');
+          hLine.style.setProperty('background', color, 'important');
         });
       };
 
@@ -4760,7 +4930,7 @@
       const updateDirectionBadge = () => {
         const isUp = autoScrollDirection === 'up';
         directionBadge.textContent = isUp ? '↑' : '↓';
-        directionBadge.style.background = isUp ? '#f59e0b' : '#22c55e';
+        directionBadge.style.setProperty('background', isUp ? '#f59e0b' : '#22c55e', 'important');
         directionBadge.title = this.config.lang === 'en' ? (isUp ? 'Auto scroll up' : 'Auto scroll down') : (isUp ? '自动向上滚动' : '自动向下滚动');
       };
       updateDirectionBadge();
@@ -4793,8 +4963,8 @@
 
         const color = COLORS[status] || COLORS.IDLE;
         updateCornerColors(color);
-        if (previewFrame) previewFrame.style.borderColor = color;
-        statusBar.style.color = status === 'IDLE' ? 'white' : color;
+        if (previewFrame) previewFrame.style.setProperty('border-color', color, 'important');
+        statusBar.style.setProperty('color', status === 'IDLE' ? 'white' : color, 'important');
         statusBar.textContent = message;
       };
 
@@ -5317,19 +5487,19 @@
 
       // ===== Auto Scroll Functions =====
       const showAutoControls = () => {
-        autoBtnWrap.style.display = 'none';
-        pauseBtn.style.display = 'flex';
-        resumeBtn.style.display = 'none';
+        autoBtnWrap.style.setProperty('display', 'none', 'important');
+        pauseBtn.style.setProperty('display', 'flex', 'important');
+        resumeBtn.style.setProperty('display', 'none', 'important');
       };
 
       const showPausedControls = () => {
-        pauseBtn.style.display = 'none';
-        resumeBtn.style.display = 'flex';
+        pauseBtn.style.setProperty('display', 'none', 'important');
+        resumeBtn.style.setProperty('display', 'flex', 'important');
       };
 
       const showResumedControls = () => {
-        pauseBtn.style.display = 'flex';
-        resumeBtn.style.display = 'none';
+        pauseBtn.style.setProperty('display', 'flex', 'important');
+        resumeBtn.style.setProperty('display', 'none', 'important');
       };
 
       const stopAutoScroll = () => {
@@ -5340,9 +5510,9 @@
           autoTimer = null;
         }
         lastObservedScrollY = window.scrollY;
-        autoBtnWrap.style.display = 'flex';
-        pauseBtn.style.display = 'none';
-        resumeBtn.style.display = 'none';
+        autoBtnWrap.style.setProperty('display', 'flex', 'important');
+        pauseBtn.style.setProperty('display', 'none', 'important');
+        resumeBtn.style.setProperty('display', 'none', 'important');
       };
 
       const startAutoScroll = () => {
@@ -8763,19 +8933,19 @@
       `;
 
       const subToolbar = document.createElement('div');
-      subToolbar.style.cssText = `
-        display: none;
-        gap: 8px;
-        align-items: center;
-        flex-wrap: wrap;
-        padding: 6px 10px;
-        border-radius: 8px;
-        background: ${useDarkStyle ? 'rgba(30, 30, 30, 0.5)' : 'rgba(245, 247, 250, 0.7)'};
-        border: 1px dashed ${useDarkStyle ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'};
-        margin-top: 6px;
-        width: 100%;
-        box-sizing: border-box;
-      `;
+      setImportantStyles(subToolbar, {
+        'display': 'none',
+        'gap': '8px',
+        'align-items': 'center',
+        'flex-wrap': 'wrap',
+        'padding': '6px 10px',
+        'border-radius': '8px',
+        'background': useDarkStyle ? 'rgba(30, 30, 30, 0.5)' : 'rgba(245, 247, 250, 0.7)',
+        'border': `1px dashed ${useDarkStyle ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'}`,
+        'margin-top': '6px',
+        'width': '100%',
+        'box-sizing': 'border-box'
+      });
 
       toolbar.appendChild(row1);
       toolbar.appendChild(row2);
@@ -8817,27 +8987,44 @@
             currentSubTool = 'rect';
           }
         } else {
-          subToolbar.style.display = 'none';
+          subToolbar.style.setProperty('display', 'none', 'important');
           return;
         }
 
-        subToolbar.style.display = 'flex';
+        subToolbar.style.setProperty('display', 'flex', 'important');
 
         activeSubTools.forEach(st => {
           const btn = document.createElement('button');
+          btn.type = 'button';
           btn.textContent = st.label;
-          btn.style.cssText = `
-            padding: 4px 10px;
-            border-radius: 4px;
-            border: 1px solid ${useDarkStyle ? '#555' : '#d1d5db'};
-            background: ${st.id === currentSubTool ? '#3b82f6' : (useDarkStyle ? '#333' : '#ffffff')};
-            color: ${st.id === currentSubTool ? '#ffffff' : (useDarkStyle ? '#e2e8f0' : '#4b5563')};
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 500;
-            transition: all 0.1s ease;
-            outline: none;
-          `;
+          setImportantStyles(btn, {
+            'appearance': 'none',
+            '-webkit-appearance': 'none',
+            'box-sizing': 'border-box',
+            'display': 'inline-flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            'padding': '4px 10px',
+            'margin': '0',
+            'border-radius': '4px',
+            'border': `1px solid ${useDarkStyle ? '#555' : '#d1d5db'}`,
+            'background': st.id === currentSubTool ? '#3b82f6' : (useDarkStyle ? '#333' : '#ffffff'),
+            'color': st.id === currentSubTool ? '#ffffff' : (useDarkStyle ? '#e2e8f0' : '#4b5563'),
+            'cursor': 'pointer',
+            'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+            'font-size': '12px',
+            'font-weight': '500',
+            'line-height': '1.2',
+            'letter-spacing': '0',
+            'text-indent': '0',
+            'text-transform': 'none',
+            'white-space': 'nowrap',
+            'transition': 'all 0.1s ease',
+            'outline': 'none',
+            'min-height': '26px',
+            'overflow': 'visible',
+            'pointer-events': 'auto'
+          });
           btn.onclick = () => {
             currentSubTool = st.id;
             renderSubToolbar();
@@ -8872,20 +9059,37 @@
       const toolButtons = {};
       tools.forEach(t => {
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.textContent = t.label;
-        btn.style.cssText = `
-          padding: 6px 12px;
-          border-radius: 6px;
-          border: 1px solid ${useDarkStyle ? '#444' : '#cbd5e1'};
-          background: ${useDarkStyle ? '#2a2a2a' : '#ffffff'};
-          color: ${useDarkStyle ? '#f0f4f8' : '#1e293b'};
-          cursor: pointer;
-          font-size: 13px;
-          font-weight: 500;
-          transition: all 0.2s ease;
-          user-select: none;
-          outline: none;
-        `;
+        setImportantStyles(btn, {
+          'appearance': 'none',
+          '-webkit-appearance': 'none',
+          'box-sizing': 'border-box',
+          'display': 'inline-flex',
+          'align-items': 'center',
+          'justify-content': 'center',
+          'padding': '6px 12px',
+          'margin': '0',
+          'border-radius': '6px',
+          'border': `1px solid ${useDarkStyle ? '#444' : '#cbd5e1'}`,
+          'background': useDarkStyle ? '#2a2a2a' : '#ffffff',
+          'color': useDarkStyle ? '#f0f4f8' : '#1e293b',
+          'cursor': 'pointer',
+          'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple Color Emoji', sans-serif",
+          'font-size': '13px',
+          'font-weight': '500',
+          'line-height': '1.2',
+          'letter-spacing': '0',
+          'text-indent': '0',
+          'text-transform': 'none',
+          'white-space': 'nowrap',
+          'transition': 'all 0.2s ease',
+          'user-select': 'none',
+          'outline': 'none',
+          'min-height': '30px',
+          'overflow': 'visible',
+          'pointer-events': 'auto'
+        });
         btn.onclick = () => {
           if (activeInput) {
             commitTextInput(activeInput, activeInput._canvasX, activeInput._canvasY);
@@ -8906,45 +9110,76 @@
 
       const createIconBtn = (svgHtml, titleText) => {
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.innerHTML = svgHtml;
         btn.title = titleText;
-        btn.style.cssText = `
-          background: transparent;
-          border: none;
-          cursor: pointer;
-          width: 28px;
-          height: 28px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-          user-select: none;
-          outline: none;
-          border-radius: 6px;
-          color: ${useDarkStyle ? '#e2e8f0' : '#4b5563'};
-          padding: 0;
-        `;
+        btn.setAttribute('aria-label', titleText);
+        setImportantStyles(btn, {
+          'appearance': 'none',
+          '-webkit-appearance': 'none',
+          'box-sizing': 'border-box',
+          'background': 'transparent',
+          'border': 'none',
+          'cursor': 'pointer',
+          'width': '28px',
+          'height': '28px',
+          'min-width': '28px',
+          'min-height': '28px',
+          'max-width': '28px',
+          'max-height': '28px',
+          'display': 'flex',
+          'align-items': 'center',
+          'justify-content': 'center',
+          'transition': 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+          'user-select': 'none',
+          'outline': 'none',
+          'border-radius': '6px',
+          'color': useDarkStyle ? '#e2e8f0' : '#4b5563',
+          'padding': '0',
+          'margin': '0',
+          'line-height': '1',
+          'letter-spacing': '0',
+          'text-indent': '0',
+          'overflow': 'visible',
+          'flex': '0 0 auto',
+          'pointer-events': 'auto'
+        });
+        const svg = btn.querySelector('svg');
+        if (svg) {
+          setImportantStyles(svg, {
+            'display': 'block',
+            'width': '16px',
+            'height': '16px',
+            'min-width': '16px',
+            'min-height': '16px',
+            'overflow': 'visible',
+            'fill': 'none',
+            'stroke': 'currentColor',
+            'flex': '0 0 auto',
+            'pointer-events': 'none'
+          });
+        }
         
         btn.onmouseenter = () => {
           if (btn.style.pointerEvents !== 'none') {
-            btn.style.background = useDarkStyle ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
-            btn.style.color = useDarkStyle ? '#ffffff' : '#111827';
-            btn.style.transform = 'scale(1.05)';
+            btn.style.setProperty('background', useDarkStyle ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)', 'important');
+            btn.style.setProperty('color', useDarkStyle ? '#ffffff' : '#111827', 'important');
+            btn.style.setProperty('transform', 'scale(1.05)', 'important');
           }
         };
         btn.onmouseleave = () => {
-          btn.style.background = 'transparent';
-          btn.style.color = useDarkStyle ? '#e2e8f0' : '#4b5563';
-          btn.style.transform = 'scale(1)';
+          btn.style.setProperty('background', 'transparent', 'important');
+          btn.style.setProperty('color', useDarkStyle ? '#e2e8f0' : '#4b5563', 'important');
+          btn.style.setProperty('transform', 'scale(1)', 'important');
         };
         btn.onmousedown = () => {
           if (btn.style.pointerEvents !== 'none') {
-            btn.style.transform = 'scale(0.95)';
+            btn.style.setProperty('transform', 'scale(0.95)', 'important');
           }
         };
         btn.onmouseup = () => {
           if (btn.style.pointerEvents !== 'none') {
-            btn.style.transform = 'scale(1.05)';
+            btn.style.setProperty('transform', 'scale(1.05)', 'important');
           }
         };
         
@@ -8980,34 +9215,34 @@
 
       const updateActionButtons = () => {
         if (history.length === 0) {
-          btnReset.style.opacity = '0.3';
-          btnReset.style.pointerEvents = 'none';
-          btnReset.style.background = 'transparent';
-          btnReset.style.color = useDarkStyle ? '#e2e8f0' : '#4b5563';
-          btnReset.style.transform = 'scale(1)';
+          btnReset.style.setProperty('opacity', '0.3', 'important');
+          btnReset.style.setProperty('pointer-events', 'none', 'important');
+          btnReset.style.setProperty('background', 'transparent', 'important');
+          btnReset.style.setProperty('color', useDarkStyle ? '#e2e8f0' : '#4b5563', 'important');
+          btnReset.style.setProperty('transform', 'scale(1)', 'important');
 
-          btnUndo.style.opacity = '0.3';
-          btnUndo.style.pointerEvents = 'none';
-          btnUndo.style.background = 'transparent';
-          btnUndo.style.color = useDarkStyle ? '#e2e8f0' : '#4b5563';
-          btnUndo.style.transform = 'scale(1)';
+          btnUndo.style.setProperty('opacity', '0.3', 'important');
+          btnUndo.style.setProperty('pointer-events', 'none', 'important');
+          btnUndo.style.setProperty('background', 'transparent', 'important');
+          btnUndo.style.setProperty('color', useDarkStyle ? '#e2e8f0' : '#4b5563', 'important');
+          btnUndo.style.setProperty('transform', 'scale(1)', 'important');
         } else {
-          btnReset.style.opacity = '0.75';
-          btnReset.style.pointerEvents = 'auto';
+          btnReset.style.setProperty('opacity', '0.75', 'important');
+          btnReset.style.setProperty('pointer-events', 'auto', 'important');
 
-          btnUndo.style.opacity = '0.75';
-          btnUndo.style.pointerEvents = 'auto';
+          btnUndo.style.setProperty('opacity', '0.75', 'important');
+          btnUndo.style.setProperty('pointer-events', 'auto', 'important');
         }
 
         if (redoHistory.length === 0) {
-          btnRedo.style.opacity = '0.3';
-          btnRedo.style.pointerEvents = 'none';
-          btnRedo.style.background = 'transparent';
-          btnRedo.style.color = useDarkStyle ? '#e2e8f0' : '#4b5563';
-          btnRedo.style.transform = 'scale(1)';
+          btnRedo.style.setProperty('opacity', '0.3', 'important');
+          btnRedo.style.setProperty('pointer-events', 'none', 'important');
+          btnRedo.style.setProperty('background', 'transparent', 'important');
+          btnRedo.style.setProperty('color', useDarkStyle ? '#e2e8f0' : '#4b5563', 'important');
+          btnRedo.style.setProperty('transform', 'scale(1)', 'important');
         } else {
-          btnRedo.style.opacity = '0.75';
-          btnRedo.style.pointerEvents = 'auto';
+          btnRedo.style.setProperty('opacity', '0.75', 'important');
+          btnRedo.style.setProperty('pointer-events', 'auto', 'important');
         }
       };
 
@@ -9137,20 +9372,20 @@
         Object.keys(toolButtons).forEach(id => {
           const btn = toolButtons[id];
           if (id === currentTool) {
-            btn.style.background = '#3b82f6';
-            btn.style.color = '#ffffff';
-            btn.style.borderColor = '#3b82f6';
+            btn.style.setProperty('background', '#3b82f6', 'important');
+            btn.style.setProperty('color', '#ffffff', 'important');
+            btn.style.setProperty('border-color', '#3b82f6', 'important');
           } else {
-            btn.style.background = useDarkStyle ? '#2a2a2a' : '#ffffff';
-            btn.style.color = useDarkStyle ? '#f0f4f8' : '#1e293b';
-            btn.style.borderColor = useDarkStyle ? '#444' : '#cbd5e1';
+            btn.style.setProperty('background', useDarkStyle ? '#2a2a2a' : '#ffffff', 'important');
+            btn.style.setProperty('color', useDarkStyle ? '#f0f4f8' : '#1e293b', 'important');
+            btn.style.setProperty('border-color', useDarkStyle ? '#444' : '#cbd5e1', 'important');
           }
         });
 
         if (currentTool === 'blur' || currentTool === 'crop') {
-          colorsContainer.style.visibility = 'hidden';
+          colorsContainer.style.setProperty('visibility', 'hidden', 'important');
         } else {
-          colorsContainer.style.visibility = 'visible';
+          colorsContainer.style.setProperty('visibility', 'visible', 'important');
         }
 
         renderSubToolbar();
@@ -9547,21 +9782,38 @@
 
       const createBtn = (text, onClick, primary = false) => {
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.textContent = text;
         const bg = primary ? '#3b82f6' : (useDarkStyle ? '#374151' : 'white');
         const color = primary ? 'white' : (useDarkStyle ? '#e2e8f0' : '#475569');
         const border = primary ? '#3b82f6' : (useDarkStyle ? '#4b5563' : '#e2e8f0');
 
-        btn.style.cssText = `
-        padding: 8px 16px;
-        border-radius: 6px;
-        border: 1px solid ${border};
-        background: ${bg};
-        color: ${color};
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 500;
-      `;
+        setImportantStyles(btn, {
+          'appearance': 'none',
+          '-webkit-appearance': 'none',
+          'box-sizing': 'border-box',
+          'display': 'inline-flex',
+          'align-items': 'center',
+          'justify-content': 'center',
+          'padding': '8px 16px',
+          'margin': '0',
+          'border-radius': '6px',
+          'border': `1px solid ${border}`,
+          'background': bg,
+          'color': color,
+          'cursor': 'pointer',
+          'font-family': "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+          'font-size': '14px',
+          'font-weight': '500',
+          'line-height': '1.2',
+          'letter-spacing': '0',
+          'text-indent': '0',
+          'text-transform': 'none',
+          'white-space': 'nowrap',
+          'min-height': '34px',
+          'overflow': 'visible',
+          'pointer-events': 'auto'
+        });
         btn.onclick = onClick;
         return btn;
       };
@@ -9642,4 +9894,3 @@
       isVisible: () => helper.isVisible()
     };
 })();
-
