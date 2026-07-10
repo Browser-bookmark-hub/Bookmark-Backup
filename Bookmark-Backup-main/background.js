@@ -188,7 +188,8 @@ async function getExportRootFolder() {
 async function getCurrentLang() {
     try {
         const { currentLang, preferredLang } = await browserAPI.storage.local.get(['currentLang', 'preferredLang']);
-        return currentLang || preferredLang || 'zh_CN';
+        const rawLang = String(preferredLang || currentLang || 'zh_CN').trim().toLowerCase().replace('_', '-');
+        return rawLang.startsWith('en') ? 'en' : 'zh_CN';
     } catch (e) {
         return 'zh_CN';
     }
@@ -684,6 +685,152 @@ function appendUniqueWarning(warnings, text) {
     if (!warnings.includes(normalized)) {
         warnings.push(normalized);
     }
+}
+
+function normalizeBackupTargetStatus(status) {
+    const normalized = String(status || '').trim().toLowerCase();
+    return ['pending', 'running', 'success', 'failed', 'skipped'].includes(normalized)
+        ? normalized
+        : '';
+}
+
+function cloneBackupTargetSummary(summary) {
+    const source = summary && typeof summary === 'object' ? summary : {};
+    const next = {};
+    BACKUP_TARGET_IDS.forEach((targetKey) => {
+        const bucket = source[targetKey] && typeof source[targetKey] === 'object'
+            ? source[targetKey]
+            : {};
+        const normalizedStatus = normalizeBackupTargetStatus(bucket.status);
+        const derivedStatus = normalizedStatus || (
+            bucket.success === true
+                ? 'success'
+                : (bucket.attempted === true && Number(bucket.failureCount || 0) > 0
+                    ? 'failed'
+                    : 'skipped')
+        );
+        next[targetKey] = {
+            allowed: bucket.allowed !== false,
+            attempted: bucket.attempted === true,
+            success: bucket.success === true,
+            skipped: bucket.skipped !== false,
+            failureCount: Math.max(0, Number(bucket.failureCount) || 0),
+            errors: Array.isArray(bucket.errors)
+                ? bucket.errors.map((item) => String(item || '').trim()).filter(Boolean)
+                : [],
+            status: derivedStatus
+        };
+    });
+    return next;
+}
+
+function setBackupTargetSummaryStatus(summary, targetKey, status, error = '') {
+    const normalizedTargetKey = String(targetKey || '').trim().toLowerCase();
+    if (!BACKUP_TARGET_IDS.includes(normalizedTargetKey)) return;
+    if (!summary || typeof summary !== 'object') return;
+
+    const normalizedStatus = normalizeBackupTargetStatus(status) || 'skipped';
+    const bucket = summary[normalizedTargetKey] || {
+        allowed: true,
+        attempted: false,
+        success: false,
+        skipped: true,
+        failureCount: 0,
+        errors: []
+    };
+
+    bucket.allowed = true;
+    bucket.status = normalizedStatus;
+
+    if (normalizedStatus === 'pending') {
+        bucket.attempted = false;
+        bucket.success = false;
+        bucket.skipped = false;
+    } else if (normalizedStatus === 'running') {
+        bucket.attempted = true;
+        bucket.success = false;
+        bucket.skipped = false;
+    } else if (normalizedStatus === 'success') {
+        bucket.attempted = true;
+        bucket.success = true;
+        bucket.skipped = false;
+        bucket.failureCount = 0;
+        bucket.errors = [];
+    } else if (normalizedStatus === 'failed') {
+        bucket.attempted = true;
+        bucket.success = false;
+        bucket.skipped = false;
+        bucket.failureCount = Math.max(1, Number(bucket.failureCount || 0));
+        const errorText = String(error || '').trim();
+        if (errorText) {
+            bucket.errors = Array.isArray(bucket.errors) ? bucket.errors : [];
+            if (!bucket.errors.includes(errorText)) {
+                bucket.errors.push(errorText);
+            }
+        }
+    } else {
+        bucket.attempted = false;
+        bucket.success = false;
+        bucket.skipped = true;
+    }
+
+    summary[normalizedTargetKey] = bucket;
+}
+
+function finalizeRestoreRecordTargetSummary(summary) {
+    const next = summary && typeof summary === 'object'
+        ? summary
+        : createBackupTargetSummary(null);
+    BACKUP_TARGET_IDS.forEach((targetKey) => {
+        const bucket = next[targetKey];
+        if (!bucket) return;
+        const normalizedStatus = normalizeBackupTargetStatus(bucket.status);
+        if (normalizedStatus) return;
+        if (bucket.success === true) {
+            bucket.status = 'success';
+        } else if (bucket.attempted === true && Number(bucket.failureCount || 0) > 0) {
+            bucket.status = 'failed';
+        } else {
+            bucket.status = 'skipped';
+            bucket.skipped = true;
+        }
+    });
+    return cloneBackupTargetSummary(next);
+}
+
+async function emitRestoreRecordTargetProgress(payload = {}) {
+    try {
+        await Promise.resolve(browserAPI.runtime.sendMessage({
+            action: 'restoreRecordTargetProgress',
+            ...payload
+        }));
+    } catch (_) { }
+}
+
+function localizeRestoreRecordMessageText(text, lang = 'zh_CN') {
+    const raw = String(text || '').trim();
+    if (lang !== 'en' || !raw) return raw;
+
+    return raw
+        .replace(/云端1\(WebDAV\)/g, 'Cloud 1 (WebDAV)')
+        .replace(/云端2\(GitHub仓库\)/g, 'Cloud 2 (GitHub Repo)')
+        .replace(/本地 当前变化归档/g, 'Local current-changes archive')
+        .replace(/本地 备份历史log/g, 'Local backup-history log')
+        .replace(/WebDAV上传失败/g, 'WebDAV upload failed')
+        .replace(/WebDAV 信息未配置/g, 'WebDAV is not configured')
+        .replace(/WebDAV连接超时或网络异常，请检查地址、网络与服务器状态/g, 'WebDAV connection timed out or the network failed. Check the address, network, and server status.')
+        .replace(/GitHub仓库上传失败/g, 'GitHub repository upload failed')
+        .replace(/GitHub Token 未配置/g, 'GitHub token is not configured')
+        .replace(/仓库未配置/g, 'Repository is not configured')
+        .replace(/GitHub 仓库已禁用/g, 'GitHub repository is disabled')
+        .replace(/上传到 GitHub 仓库失败/g, 'Failed to upload to GitHub repository')
+        .replace(/本地快照备份失败（兜底）/g, 'Local snapshot backup failed (fallback)')
+        .replace(/本地快照备份失败/g, 'Local snapshot backup failed')
+        .replace(/本地备份未启用或路径未配置/g, 'Local backup is disabled or the path is not configured')
+        .replace(/本地下载被中断/g, 'Local download was interrupted')
+        .replace(/恢复记录快照导出失败/g, 'Failed to export restore-record snapshot')
+        .replace(/未能写入任何快照目标/g, 'No snapshot target was written')
+        .replace(/未知错误/g, 'Unknown error');
 }
 
 function normalizeBookmarkFolderType(value) {
@@ -2536,12 +2683,21 @@ if (!hasInitializedBackupReminder) {
 // 迁移到分离存储架构（Index vs Data）
 async function migrateToSplitStorage() {
     try {
+        const { splitStorageMigrationCompleted } = await browserAPI.storage.local.get(['splitStorageMigrationCompleted']);
+        if (splitStorageMigrationCompleted) return;
+
         const { syncHistory } = await browserAPI.storage.local.get(['syncHistory']);
-        if (!syncHistory || !Array.isArray(syncHistory) || syncHistory.length === 0) return;
+        if (!syncHistory || !Array.isArray(syncHistory) || syncHistory.length === 0) {
+            await browserAPI.storage.local.set({ splitStorageMigrationCompleted: true });
+            return;
+        }
 
         // 检查是否需要迁移（记录中仍包含 bookmarkTree）
         const needsMigration = syncHistory.some(r => r.bookmarkTree !== undefined && r.bookmarkTree !== null);
-        if (!needsMigration) return;
+        if (!needsMigration) {
+            await browserAPI.storage.local.set({ splitStorageMigrationCompleted: true });
+            return;
+        }
 
         const newIndex = [];
         const storageUpdates = {};
@@ -2561,6 +2717,7 @@ async function migrateToSplitStorage() {
         }
 
         storageUpdates.syncHistory = newIndex;
+        storageUpdates.splitStorageMigrationCompleted = true;
         await browserAPI.storage.local.set(storageUpdates);
     } catch (e) {
         console.error('[Migration] Failed:', e);
@@ -2629,8 +2786,14 @@ function isV2RecordOnlyHistoryRecord(record) {
 
 async function migrateV2RecordOnlyHistory() {
     try {
+        const { v2ToV3MigrationCompleted } = await browserAPI.storage.local.get(['v2ToV3MigrationCompleted']);
+        if (v2ToV3MigrationCompleted) return;
+
         const { syncHistory } = await browserAPI.storage.local.get(['syncHistory']);
-        if (!syncHistory || !Array.isArray(syncHistory) || syncHistory.length === 0) return;
+        if (!syncHistory || !Array.isArray(syncHistory) || syncHistory.length === 0) {
+            await browserAPI.storage.local.set({ v2ToV3MigrationCompleted: true });
+            return;
+        }
 
         let migratedCount = 0;
         const migratedHistory = syncHistory.map((record) => {
@@ -2661,14 +2824,18 @@ async function migrateV2RecordOnlyHistory() {
             };
         });
 
-        if (migratedCount <= 0) return;
+        const updates = {
+            v2ToV3MigrationCompleted: true
+        };
 
-        await browserAPI.storage.local.set({
-            syncHistory: migratedHistory,
-            v2ToV3MigrationCompletedAt: new Date().toISOString(),
-            v2LegacyRecordCount: migratedCount,
-            v2ToV3UpgradeNoticePending: true
-        });
+        if (migratedCount > 0) {
+            updates.syncHistory = migratedHistory;
+            updates.v2ToV3MigrationCompletedAt = new Date().toISOString();
+            updates.v2LegacyRecordCount = migratedCount;
+            updates.v2ToV3UpgradeNoticePending = true;
+        }
+
+        await browserAPI.storage.local.set(updates);
     } catch (e) {
         console.error('[V2 Migration] Failed:', e);
     }
@@ -3826,6 +3993,10 @@ async function syncHistoryOverwriteRevertMarkerWithHistory(syncHistory = []) {
 
 async function handleTriggerRestoreBackupMessage(message = {}) {
     let overwriteBoundaryApplied = false;
+    let latestRestoreRecordTargetSummary = null;
+    let latestRestoreRecordLocalOnly = false;
+    // 启动角标呼吸闪烁动画，提示备份同步中
+    startBadgeBlink('...', '#FF9800', '#FFE0B2', 400);
     try {
         const note = String(message.note || '').trim();
         const sourceSeqNumber = message.sourceSeqNumber;
@@ -3853,9 +4024,8 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             || (sourceSnapshotKey === '__overwrite__' ? 'overwrite' : 'versioned')
         );
         const normalizedStrategy = String(strategy || 'overwrite').trim().toLowerCase();
-        const restoreRecordOverwriteMode = normalizedStrategy === 'merge'
-            ? 'versioned'
-            : sourceOverwriteMode;
+        const { overwriteMode: currentOverwriteMode = 'overwrite' } = await browserAPI.storage.local.get(['overwriteMode']);
+        const restoreRecordOverwriteMode = normalizeOverwriteMode(currentOverwriteMode || 'overwrite');
         const precomputedDiffSummaryMatchesStrategy = !!(
             precomputedDiffSummary
             && precomputedDiffStrategy
@@ -3865,6 +4035,8 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             message?.restoreRecordLocalOnly === true
             || message?.skipRestoreRecordSync === true
         );
+        latestRestoreRecordLocalOnly = restoreRecordLocalOnly;
+        const restoreRecordLang = (await getCurrentLang()) === 'en' ? 'en' : 'zh_CN';
         const shouldDeferRestorePostWork = (
             message?.deferPostRestoreArtifacts === true
             || restoreRecordLocalOnly
@@ -3949,6 +4121,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             storedComparisonGeneration,
             BOOKMARK_COMPARISON_INITIAL_GENERATION
         );
+        const preBoundaryComparisonGeneration = activeComparisonGeneration;
         if (normalizedStrategy === 'overwrite') {
             const boundaryResult = await persistBookmarkComparisonBoundaryByStrategy('overwrite', {
                 reason: 'overwrite_restore',
@@ -3967,7 +4140,9 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
         const baselineComparisonGeneration = resolveComparisonGenerationFromHistoryRecord(
             historyBeforeRestoreRecord,
             baselineTime,
-            activeComparisonGeneration
+            normalizedStrategy === 'overwrite'
+                ? preBoundaryComparisonGeneration
+                : activeComparisonGeneration
         );
 
         const syncTime = new Date().toISOString();
@@ -4064,9 +4239,40 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
         let githubRepoSuccess = false;
         let localSuccess = false;
         const uploadErrors = [];
-
+        const restoreRecordTargetSummary = createBackupTargetSummary(null);
+        latestRestoreRecordTargetSummary = restoreRecordTargetSummary;
+        const activeRestoreRecordTargets = [];
         if (!restoreRecordLocalOnly && webDAVConfigured && webDAVEnabled) {
+            activeRestoreRecordTargets.push('webdav');
+        }
+        if (!restoreRecordLocalOnly && githubRepoConfigured && githubRepoEnabled) {
+            activeRestoreRecordTargets.push('github_repo');
+        }
+        if (!restoreRecordLocalOnly && localBackupConfigured) {
+            activeRestoreRecordTargets.push('local');
+        }
+        activeRestoreRecordTargets.forEach((targetKey) => {
+            setBackupTargetSummaryStatus(restoreRecordTargetSummary, targetKey, 'pending');
+        });
+        const emitRestoreTargetProgress = async (targetKey, status, error = '') => {
+            if (!targetKey) return;
+            setBackupTargetSummaryStatus(restoreRecordTargetSummary, targetKey, status, error);
+            latestRestoreRecordTargetSummary = restoreRecordTargetSummary;
+            await emitRestoreRecordTargetProgress({
+                restoreSessionId,
+                syncTime,
+                phase: 'snapshot',
+                targetKey,
+                status: normalizeBackupTargetStatus(status) || 'skipped',
+                error: String(error || ''),
+                targetSummary: cloneBackupTargetSummary(restoreRecordTargetSummary),
+                localOnly: restoreRecordLocalOnly
+            });
+        };
+
+        const runWebDAVSnapshotUpload = async () => {
             try {
+                await emitRestoreTargetProgress('webdav', 'running');
                 const uploadResult = await uploadBookmarks(bookmarks, {
                     ...snapshotNaming,
                     overwriteMode: restoreRecordOverwriteMode,
@@ -4076,16 +4282,34 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 });
                 if (uploadResult?.success) {
                     webDAVSuccess = true;
-                } else if (!uploadResult?.webDAVNotConfigured) {
-                    uploadErrors.push(uploadResult?.error || 'WebDAV上传失败');
+                    await emitRestoreTargetProgress('webdav', 'success');
+                    return { target: 'webdav', success: true };
                 }
+                if (!uploadResult?.webDAVNotConfigured) {
+                    const errorText = localizeRestoreRecordMessageText(
+                        uploadResult?.error || (restoreRecordLang === 'en' ? 'WebDAV upload failed' : 'WebDAV上传失败'),
+                        restoreRecordLang
+                    );
+                    uploadErrors.push(errorText);
+                    await emitRestoreTargetProgress('webdav', 'failed', errorText);
+                    return { target: 'webdav', success: false, error: errorText };
+                }
+                await emitRestoreTargetProgress('webdav', 'skipped');
+                return { target: 'webdav', success: false, skipped: true };
             } catch (uploadError) {
-                uploadErrors.push(uploadError?.message || 'WebDAV上传失败');
+                const errorText = localizeRestoreRecordMessageText(
+                    uploadError?.message || (restoreRecordLang === 'en' ? 'WebDAV upload failed' : 'WebDAV上传失败'),
+                    restoreRecordLang
+                );
+                uploadErrors.push(errorText);
+                await emitRestoreTargetProgress('webdav', 'failed', errorText);
+                return { target: 'webdav', success: false, error: errorText };
             }
-        }
+        };
 
-        if (!restoreRecordLocalOnly && githubRepoConfigured && githubRepoEnabled) {
+        const runGitHubSnapshotUpload = async () => {
             try {
+                await emitRestoreTargetProgress('github_repo', 'running');
                 const uploadResult = await uploadBookmarksToGitHubRepo(bookmarks, {
                     ...snapshotNaming,
                     overwriteMode: restoreRecordOverwriteMode,
@@ -4095,16 +4319,34 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 });
                 if (uploadResult?.success) {
                     githubRepoSuccess = true;
-                } else if (!uploadResult?.repoNotConfigured && !uploadResult?.repoDisabled) {
-                    uploadErrors.push(uploadResult?.error || 'GitHub仓库上传失败');
+                    await emitRestoreTargetProgress('github_repo', 'success');
+                    return { target: 'github_repo', success: true };
                 }
+                if (!uploadResult?.repoNotConfigured && !uploadResult?.repoDisabled) {
+                    const errorText = localizeRestoreRecordMessageText(
+                        uploadResult?.error || (restoreRecordLang === 'en' ? 'GitHub repository upload failed' : 'GitHub仓库上传失败'),
+                        restoreRecordLang
+                    );
+                    uploadErrors.push(errorText);
+                    await emitRestoreTargetProgress('github_repo', 'failed', errorText);
+                    return { target: 'github_repo', success: false, error: errorText };
+                }
+                await emitRestoreTargetProgress('github_repo', 'skipped');
+                return { target: 'github_repo', success: false, skipped: true };
             } catch (uploadError) {
-                uploadErrors.push(uploadError?.message || 'GitHub仓库上传失败');
+                const errorText = localizeRestoreRecordMessageText(
+                    uploadError?.message || (restoreRecordLang === 'en' ? 'GitHub repository upload failed' : 'GitHub仓库上传失败'),
+                    restoreRecordLang
+                );
+                uploadErrors.push(errorText);
+                await emitRestoreTargetProgress('github_repo', 'failed', errorText);
+                return { target: 'github_repo', success: false, error: errorText };
             }
-        }
+        };
 
         const tryLocalSnapshotUpload = async ({ forceEnable = false } = {}) => {
             try {
+                await emitRestoreTargetProgress('local', 'running');
                 const localResult = await uploadBookmarksToLocal(bookmarks, {
                     ...snapshotNaming,
                     overwriteMode: restoreRecordOverwriteMode,
@@ -4113,20 +4355,54 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                     snapshotFormat: snapshotBackupFormat,
                     ...(sharedSnapshotHtml ? { htmlContent: sharedSnapshotHtml } : {})
                 });
-                return localResult?.success !== false;
+                if (localResult?.success === false) {
+                    const errorText = localizeRestoreRecordMessageText(
+                        localResult?.error || (restoreRecordLang === 'en' ? 'Local snapshot backup failed' : '本地快照备份失败'),
+                        restoreRecordLang
+                    );
+                    uploadErrors.push(errorText);
+                    await emitRestoreTargetProgress('local', 'failed', errorText);
+                    return false;
+                }
+                await emitRestoreTargetProgress('local', 'success');
+                return true;
             } catch (uploadError) {
-                const suffix = forceEnable ? '（兜底）' : '';
-                uploadErrors.push(`本地快照备份失败${suffix}: ${uploadError?.message || '未知错误'}`);
+                const suffix = forceEnable
+                    ? (restoreRecordLang === 'en' ? ' (fallback)' : '（兜底）')
+                    : '';
+                const messageText = localizeRestoreRecordMessageText(
+                    uploadError?.message || (restoreRecordLang === 'en' ? 'Unknown error' : '未知错误'),
+                    restoreRecordLang
+                );
+                const errorText = restoreRecordLang === 'en'
+                    ? `Local snapshot backup failed${suffix}: ${messageText}`
+                    : `本地快照备份失败${suffix}: ${messageText}`;
+                uploadErrors.push(errorText);
+                await emitRestoreTargetProgress('local', 'failed', errorText);
                 return false;
             }
         };
 
+        const restoreRecordUploadTasks = [];
         if (!restoreRecordLocalOnly && localBackupConfigured) {
-            localSuccess = await tryLocalSnapshotUpload({ forceEnable: false });
-            if (!localSuccess) {
-                try { await new Promise(resolve => setTimeout(resolve, 120)); } catch (_) { }
+            restoreRecordUploadTasks.push((async () => {
                 localSuccess = await tryLocalSnapshotUpload({ forceEnable: false });
-            }
+                if (!localSuccess) {
+                    try { await new Promise(resolve => setTimeout(resolve, 120)); } catch (_) { }
+                    localSuccess = await tryLocalSnapshotUpload({ forceEnable: false });
+                }
+                return { target: 'local', success: localSuccess };
+            })());
+        }
+        if (!restoreRecordLocalOnly && githubRepoConfigured && githubRepoEnabled) {
+            restoreRecordUploadTasks.push(runGitHubSnapshotUpload());
+        }
+        if (!restoreRecordLocalOnly && webDAVConfigured && webDAVEnabled) {
+            restoreRecordUploadTasks.push(runWebDAVSnapshotUpload());
+        }
+
+        if (restoreRecordUploadTasks.length > 0) {
+            await Promise.all(restoreRecordUploadTasks);
         }
 
         if (!restoreRecordLocalOnly && !localSuccess && !webDAVSuccess && !githubRepoSuccess) {
@@ -4161,9 +4437,25 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             if (githubRepoSuccess) successfulBackupTargets.push('github_repo');
             if (localSuccess) successfulBackupTargets.push('local');
         }
+        const finalizedRestoreRecordTargetSummary = finalizeRestoreRecordTargetSummary(restoreRecordTargetSummary);
+        latestRestoreRecordTargetSummary = finalizedRestoreRecordTargetSummary;
+        await emitRestoreRecordTargetProgress({
+            restoreSessionId,
+            syncTime,
+            phase: 'snapshot',
+            status: restoreSyncDirection === 'none' && !restoreRecordLocalOnly ? 'failed' : 'success',
+            targetSummary: finalizedRestoreRecordTargetSummary,
+            localOnly: restoreRecordLocalOnly
+        });
 
         if (!restoreRecordLocalOnly && restoreSyncDirection === 'none') {
-            throw new Error(`恢复记录快照导出失败: ${restoreErrorMessage || '未能写入任何快照目标'}`);
+            const fatalPrefix = restoreRecordLang === 'en'
+                ? 'Failed to export restore-record snapshot'
+                : '恢复记录快照导出失败';
+            const fatalFallback = restoreRecordLang === 'en'
+                ? 'No snapshot target was written'
+                : '未能写入任何快照目标';
+            throw new Error(`${fatalPrefix}: ${restoreErrorMessage || fatalFallback}`);
         }
         await updateSyncStatus(
             restoreSyncDirection,
@@ -4194,12 +4486,8 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
 
             const targetRecord = syncHistory[targetIndex];
             if (targetRecord) {
-                const normalizedOverwriteMode = normalizedStrategy === 'merge'
-                    ? 'versioned'
-                    : sourceOverwriteMode;
-
                 targetRecord.type = 'restore';
-                targetRecord.overwriteMode = normalizedOverwriteMode;
+                targetRecord.overwriteMode = restoreRecordOverwriteMode;
                 if (note) targetRecord.note = note;
                 targetRecord.restoreInfo = {
                     sourceSeqNumber,
@@ -4208,6 +4496,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                     sourceFingerprint,
                     sourceSnapshotKey: sourceSnapshotKey || null,
                     sourceOverwriteMode,
+                    writeOverwriteMode: restoreRecordOverwriteMode,
                     strategy,
                     baselineTime,
                     comparisonGeneration: activeComparisonGeneration,
@@ -4282,8 +4571,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                     const restoreSlimmingSettings = await getBackupHistorySlimmingSettings();
                     const shouldRetainRestoreChangeData = shouldRetainBackupHistoryChangeData(restoreSlimmingSettings);
 
-                    if (normalizedStrategy === 'overwrite' || !shouldRetainRestoreChangeData) {
-                        // 覆盖恢复视为“基线重建事件”；同时恢复记录也遵循备份历史精简策略。
+                    if (!shouldRetainRestoreChangeData) {
                         const staleChangeDataKey = String(targetRecord?.changeDataKey || `changes_data_${syncTime}`).trim();
                         targetRecord.hasChangeData = false;
                         targetRecord.changeDataKey = '';
@@ -4349,10 +4637,12 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                 await browserAPI.storage.local.set({ syncHistory });
 
                 const runRestoreRecordPostArtifacts = async () => {
-                    const activeLang = await getCurrentLang();
-                    let restoreChangesArchiveResult = null;
+                    startBadgeBlink('...', '#FF9800', '#FFE0B2', 400);
+                    try {
+                        const activeLang = await getCurrentLang();
+                        let restoreChangesArchiveResult = null;
 
-                    if (baselineTree && finalCurrentTree) {
+                        if (baselineTree && finalCurrentTree) {
                         restoreChangesArchiveResult = await exportCurrentChangesArchiveToCloud({
                             syncTime,
                             fingerprint: snapshotNaming.fingerprint,
@@ -4407,21 +4697,24 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
                         });
                     }
 
-                    const versionedInfoLogResult = await syncVersionedInfoLogIfNeeded({
-                        lang: activeLang,
-                        overwriteMode: restoreRecordOverwriteMode,
-                        syncHistory,
-                        allowedTargets: infoLogAllowedTargets
-                    });
-                    collectBackupTargetWarningsFromSummary(
-                        versionedInfoLogResult?.targetSummary || null,
-                        'info_log',
-                        activeLang
-                    ).forEach((text) => {
-                        if (text && !uploadErrors.includes(text)) {
-                            uploadErrors.push(text);
-                        }
-                    });
+                        const versionedInfoLogResult = await syncVersionedInfoLogIfNeeded({
+                            lang: activeLang,
+                            overwriteMode: restoreRecordOverwriteMode,
+                            syncHistory,
+                            allowedTargets: infoLogAllowedTargets
+                        });
+                        collectBackupTargetWarningsFromSummary(
+                            versionedInfoLogResult?.targetSummary || null,
+                            'info_log',
+                            activeLang
+                        ).forEach((text) => {
+                            if (text && !uploadErrors.includes(text)) {
+                                uploadErrors.push(text);
+                            }
+                        });
+                    } finally {
+                        stopBadgeBlink();
+                    }
                 };
 
                 if (restoreRecordLocalOnly) {
@@ -4453,17 +4746,16 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             } catch (_) { }
         }
 
-        await updateBadgeAfterSync(true);
         if (shouldDeferRestorePostWork) {
             enqueueDeferredPostSyncArtifacts(async () => {
                 try {
                     await updateAndCacheAnalysis();
-                    await setBadge();
+                    await updateBadgeAfterSync(true);
                 } catch (_) { }
             });
         } else {
             await updateAndCacheAnalysis();
-            await setBadge();
+            await updateBadgeAfterSync(true);
         }
 
         try {
@@ -4478,9 +4770,15 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
             syncTime,
             strategy,
             overwriteBoundaryApplied,
+            restoreRecordTargetSummary: finalizedRestoreRecordTargetSummary,
+            restoreRecordLocalOnly,
             warning: uploadErrors.length > 0 ? uploadErrors.join('; ') : ''
         };
     } catch (error) {
+        stopBadgeBlink();
+        try {
+            await setBadge();
+        } catch (_) { }
         try {
             await browserAPI.storage.local.remove(['restoreBaselineSnapshot']);
         } catch (_) { }
@@ -4488,7 +4786,11 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
         return {
             success: false,
             error: error.message,
-            overwriteBoundaryApplied
+            overwriteBoundaryApplied,
+            restoreRecordTargetSummary: latestRestoreRecordTargetSummary
+                ? finalizeRestoreRecordTargetSummary(latestRestoreRecordTargetSummary)
+                : null,
+            restoreRecordLocalOnly: latestRestoreRecordLocalOnly
         };
     }
 }
@@ -10256,14 +10558,18 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                     restoreRecordSuccess,
                                     restoreRecordError: restoreRecordSuccess ? '' : String(restoreRecordResult?.error || 'Unknown error'),
                                     restoreRecordSyncTime: restoreRecordSuccess ? String(restoreRecordResult?.syncTime || '') : '',
-                                    restoreRecordWarning: restoreRecordSuccess ? String(restoreRecordResult?.warning || '') : ''
+                                    restoreRecordWarning: restoreRecordSuccess ? String(restoreRecordResult?.warning || '') : '',
+                                    restoreRecordTargetSummary: restoreRecordResult?.restoreRecordTargetSummary || null,
+                                    restoreRecordLocalOnly: restoreRecordResult?.restoreRecordLocalOnly === true
                                 };
                             } catch (restoreRecordError) {
                                 restoreRecordFields = {
                                     restoreRecordSuccess: false,
                                     restoreRecordError: restoreRecordError?.message || String(restoreRecordError),
                                     restoreRecordSyncTime: '',
-                                    restoreRecordWarning: ''
+                                    restoreRecordWarning: '',
+                                    restoreRecordTargetSummary: null,
+                                    restoreRecordLocalOnly: false
                                 };
                             }
                         }
@@ -16035,7 +16341,7 @@ async function exportCurrentChangesArchiveToCloud(options = {}) {
 }
 
 const WEBDAV_META_TIMEOUT_MS = 12000;
-const WEBDAV_PUT_TIMEOUT_MS = 30000;
+const WEBDAV_PUT_TIMEOUT_MS = 15000;
 const WEBDAV_MAX_RETRIES = 1;
 const WEBDAV_RETRY_BASE_DELAY_MS = 900;
 
@@ -21618,6 +21924,8 @@ async function continueRestoreRecoveryTransaction() {
             restoreRecordWarning: restoreRecordResult && restoreRecordResult.success === true
                 ? String(restoreRecordResult.warning || '')
                 : '',
+            restoreRecordTargetSummary: restoreRecordResult?.restoreRecordTargetSummary || null,
+            restoreRecordLocalOnly: restoreRecordResult?.restoreRecordLocalOnly === true,
             ...(executionResult || {})
         }
     } catch (error) {
@@ -26906,7 +27214,8 @@ async function listRemoteFiles(source, options = {}) {
                                 source: 'github',
                                 type: getSnapshotBackupCandidateType(inferredName),
                                 snapshotFolder: snapshotKey,
-                                folderPath
+                                folderPath,
+                                manifestMode: 'inferred'
                             });
                         }
                     }
@@ -30935,12 +31244,17 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             };
 
             const scannedRemoteFileLocatorSet = new Set();
+            const confirmedScannedRemoteFileLocatorSet = new Set();
             const scannedRemoteSnapshotKeySet = new Set();
 
             for (const item of candidates || []) {
                 const normalizedUrl = normalizeRemoteFileLocatorForCompare(item?.url || item?.fileUrl || '');
+                const manifestMode = String(item?.manifestMode || '').trim().toLowerCase();
                 if (normalizedUrl) {
                     scannedRemoteFileLocatorSet.add(normalizedUrl);
+                    if (manifestMode !== 'inferred') {
+                        confirmedScannedRemoteFileLocatorSet.add(normalizedUrl);
+                    }
                 }
 
                 const snapshotKey = String(parseSnapshotKeyFromText(item?.snapshotFolder || item?.folderPath || item?.name || '') || '')
@@ -30981,6 +31295,77 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 }
 
                 return false;
+            };
+
+            const isConfirmedScannedRemoteFileUrl = (url) => {
+                const normalizedUrl = normalizeRemoteFileLocatorForCompare(url);
+                return !!normalizedUrl && confirmedScannedRemoteFileLocatorSet.has(normalizedUrl);
+            };
+
+            const collectRestoreRefFileUrls = (restoreRef = {}) => ([
+                restoreRef?.fileUrl,
+                ...(Array.isArray(restoreRef?.fileCandidates) ? restoreRef.fileCandidates : [])
+            ]);
+
+            const filterRestoreCandidateUrlsBySourceType = (urls, sourceType) => {
+                const normalizedSourceType = String(sourceType || '').trim().toLowerCase();
+                const list = Array.isArray(urls) ? urls : [];
+                if (normalizedSourceType !== 'html' && normalizedSourceType !== 'json') return list;
+
+                const wantedRank = normalizedSourceType === 'html' ? 0 : 1;
+                const matched = list.filter((url) => getRestoreCandidateUrlRank(url) === wantedRank);
+                return matched.length > 0 ? matched : list;
+            };
+
+            const buildRemoteRestoreFileCandidates = ({
+                sourceType,
+                scannedRestoreRef,
+                indexRestoreRef,
+                preferConfirmedOnly = true,
+                allowFallback = true
+            } = {}) => {
+                const scannedCandidates = sortRestoreCandidateUrlsByPreference(collectRestoreRefFileUrls(scannedRestoreRef));
+                const indexCandidates = sortRestoreCandidateUrlsByPreference(collectRestoreRefFileUrls(indexRestoreRef));
+                if (preferConfirmedOnly) {
+                    const confirmedCandidates = sortRestoreCandidateUrlsByPreference([
+                        ...scannedCandidates.filter(isConfirmedScannedRemoteFileUrl),
+                        ...indexCandidates.filter(isConfirmedScannedRemoteFileUrl)
+                    ]);
+                    const typedConfirmedCandidates = filterRestoreCandidateUrlsBySourceType(confirmedCandidates, sourceType);
+                    if (typedConfirmedCandidates.length > 0) {
+                        return typedConfirmedCandidates;
+                    }
+                }
+
+                if (!allowFallback) return [];
+
+                return filterRestoreCandidateUrlsBySourceType(
+                    sortRestoreCandidateUrlsByPreference([
+                        ...scannedCandidates,
+                        ...indexCandidates
+                    ]),
+                    sourceType
+                );
+            };
+
+            const restrictIndexVersionToScannedFileCandidates = (version) => {
+                if (!version || typeof version !== 'object' || !version.restoreRef) return version;
+                const sourceType = version?.restoreRef?.sourceType || version?.sourceType || '';
+                const confirmedCandidates = buildRemoteRestoreFileCandidates({
+                    sourceType,
+                    scannedRestoreRef: null,
+                    indexRestoreRef: version.restoreRef,
+                    preferConfirmedOnly: true,
+                    allowFallback: false
+                });
+                if (!confirmedCandidates.length) return version;
+
+                version.restoreRef = {
+                    ...(version.restoreRef || {}),
+                    fileUrl: confirmedCandidates[0] || null,
+                    fileCandidates: confirmedCandidates
+                };
+                return version;
             };
 
             const findScannedHtmlVersionByIndex = (indexVersion) => {
@@ -31053,12 +31438,12 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                     ? new Date(Number(indexVersion.time)).toISOString()
                     : null;
                 const indexGroupMeta = indexVersion?.groupMeta || indexVersion?.restoreRef?.groupMeta || null;
-                const mergedFileCandidates = sortRestoreCandidateUrlsByPreference([
-                    scannedVersion?.restoreRef?.fileUrl,
-                    ...(Array.isArray(scannedVersion?.restoreRef?.fileCandidates) ? scannedVersion.restoreRef.fileCandidates : []),
-                    indexVersion?.restoreRef?.fileUrl,
-                    ...(Array.isArray(indexVersion?.restoreRef?.fileCandidates) ? indexVersion.restoreRef.fileCandidates : [])
-                ]);
+                const mergedFileCandidates = buildRemoteRestoreFileCandidates({
+                    sourceType: scannedVersion?.restoreRef?.sourceType || scannedVersion?.sourceType || '',
+                    scannedRestoreRef: scannedVersion?.restoreRef || null,
+                    indexRestoreRef: indexVersion?.restoreRef || null,
+                    preferConfirmedOnly: true
+                });
                 const preferredFileUrl = mergedFileCandidates[0] || null;
 
                 if (indexGroupMeta) {
@@ -31098,6 +31483,7 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 }
 
                 const normalizedIndexVersion = normalizeRestoreVersionMeta(indexVersion);
+                restrictIndexVersionToScannedFileCandidates(normalizedIndexVersion);
                 const indexVersionId = String(normalizedIndexVersion?.id || '').trim();
                 if (!indexVersionId || existingIds.has(indexVersionId)) {
                     continue;
@@ -33924,7 +34310,9 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdCount, lo
                     restoreRecordSuccess,
                     restoreRecordError: restoreRecordSuccess ? '' : String(restoreRecordResult?.error || 'Unknown error'),
                     restoreRecordSyncTime: restoreRecordSuccess ? String(restoreRecordResult?.syncTime || '') : '',
-                    restoreRecordWarning: restoreRecordSuccess ? String(restoreRecordResult?.warning || '') : ''
+                    restoreRecordWarning: restoreRecordSuccess ? String(restoreRecordResult?.warning || '') : '',
+                    restoreRecordTargetSummary: restoreRecordResult?.restoreRecordTargetSummary || null,
+                    restoreRecordLocalOnly: restoreRecordResult?.restoreRecordLocalOnly === true
                 };
             } else {
                 try {
