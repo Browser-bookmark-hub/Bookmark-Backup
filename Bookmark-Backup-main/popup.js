@@ -7903,6 +7903,21 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Time Frequency"
     };
 
+    const currentChangesJsonFormatLabelStrings = {
+        'zh_CN': "变化数据JSON",
+        'en': "Changes JSON"
+    };
+
+    const currentChangesJsonFormatCanvasStrings = {
+        'zh_CN': "画布",
+        'en': "Canvas"
+    };
+
+    const currentChangesJsonFormatApiStrings = {
+        'zh_CN': "原格式",
+        'en': "Original"
+    };
+
     const snapshotBackupFormatLabelStrings = {
         'zh_CN': "格式",
         'en': "Format"
@@ -7974,6 +7989,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const currentChangesArchiveModeHelpTitleStrings = { 'zh_CN': "视图模式说明", 'en': "View mode help" };
     const backupStrategyHelpAriaStrings = { 'zh_CN': "备份策略说明", 'en': "Backup strategy help" };
     const backupStrategyHelpTitleStrings = { 'zh_CN': "备份策略说明", 'en': "Backup strategy help" };
+    const currentChangesJsonFormatHelpAriaStrings = { 'zh_CN': "变化数据JSON说明", 'en': "Changes JSON help" };
+    const currentChangesJsonFormatHelpTitleStrings = { 'zh_CN': "变化数据JSON说明", 'en': "Changes JSON help" };
     const backupStrategyTitleStrings = { 'zh_CN': "策略", 'en': "Strategy" };
     // 恢复相关国际化字符串
     const syncRestoreTitleStrings = {
@@ -8448,6 +8465,9 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const backupModeAutoLabelText = backupModeAutoLabelStrings[lang] || backupModeAutoLabelStrings['zh_CN'];
     const backupModeManualLabelText = backupModeManualLabelStrings[lang] || backupModeManualLabelStrings['zh_CN'];
     const backupTimeLabelText = backupTimeLabelStrings[lang] || backupTimeLabelStrings['zh_CN'];
+    const currentChangesJsonFormatLabelText = currentChangesJsonFormatLabelStrings[lang] || currentChangesJsonFormatLabelStrings['zh_CN'];
+    const currentChangesJsonFormatCanvasText = currentChangesJsonFormatCanvasStrings[lang] || currentChangesJsonFormatCanvasStrings['zh_CN'];
+    const currentChangesJsonFormatApiText = currentChangesJsonFormatApiStrings[lang] || currentChangesJsonFormatApiStrings['zh_CN'];
     const snapshotBackupFormatLabelText = snapshotBackupFormatLabelStrings[lang] || snapshotBackupFormatLabelStrings['zh_CN'];
     const bookmarkOverwriteLabelText = bookmarkOverwriteLabelStrings[lang] || bookmarkOverwriteLabelStrings['zh_CN'];
     const backupModeLabelText = backupModeLabelStrings[lang] || backupModeLabelStrings['zh_CN'];
@@ -8470,6 +8490,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const currentChangesArchiveModeHelpTitleText = currentChangesArchiveModeHelpTitleStrings[lang] || currentChangesArchiveModeHelpTitleStrings['zh_CN'];
     const backupStrategyHelpAriaText = backupStrategyHelpAriaStrings[lang] || backupStrategyHelpAriaStrings['zh_CN'];
     const backupStrategyHelpTitleText = backupStrategyHelpTitleStrings[lang] || backupStrategyHelpTitleStrings['zh_CN'];
+    const currentChangesJsonFormatHelpAriaText = currentChangesJsonFormatHelpAriaStrings[lang] || currentChangesJsonFormatHelpAriaStrings['zh_CN'];
+    const currentChangesJsonFormatHelpTitleText = currentChangesJsonFormatHelpTitleStrings[lang] || currentChangesJsonFormatHelpTitleStrings['zh_CN'];
     const backupStrategyTitleText = backupStrategyTitleStrings[lang] || backupStrategyTitleStrings['zh_CN'];
     const syncRestoreTitleText = syncRestoreTitleStrings[lang] || syncRestoreTitleStrings['zh_CN'];
     const syncRestoreComingSoonText = syncRestoreComingSoonStrings[lang] || syncRestoreComingSoonStrings['zh_CN'];
@@ -8767,6 +8789,15 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const backupTimeLabelEl = document.getElementById('backupTimeLabel');
     if (backupTimeLabelEl) backupTimeLabelEl.textContent = backupTimeLabelText;
 
+    const currentChangesJsonFormatLabelEl = document.getElementById('currentChangesJsonFormatLabel');
+    if (currentChangesJsonFormatLabelEl) currentChangesJsonFormatLabelEl.textContent = currentChangesJsonFormatLabelText;
+
+    const currentChangesJsonFormatCanvasLabelEl = document.getElementById('currentChangesJsonFormatCanvasLabel');
+    if (currentChangesJsonFormatCanvasLabelEl) currentChangesJsonFormatCanvasLabelEl.textContent = currentChangesJsonFormatCanvasText;
+
+    const currentChangesJsonFormatApiLabelEl = document.getElementById('currentChangesJsonFormatApiLabel');
+    if (currentChangesJsonFormatApiLabelEl) currentChangesJsonFormatApiLabelEl.textContent = currentChangesJsonFormatApiText;
+
     const snapshotBackupFormatLabelEl = document.getElementById('snapshotBackupFormatLabel');
     if (snapshotBackupFormatLabelEl) snapshotBackupFormatLabelEl.textContent = snapshotBackupFormatLabelText;
 
@@ -8813,6 +8844,12 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     if (backupStrategyHelpBtn) {
         backupStrategyHelpBtn.setAttribute('aria-label', backupStrategyHelpAriaText);
         backupStrategyHelpBtn.setAttribute('title', backupStrategyHelpTitleText);
+    }
+
+    const currentChangesJsonFormatHelpBtn = document.getElementById('currentChangesJsonFormatHelpBtn');
+    if (currentChangesJsonFormatHelpBtn) {
+        currentChangesJsonFormatHelpBtn.setAttribute('aria-label', currentChangesJsonFormatHelpAriaText);
+        currentChangesJsonFormatHelpBtn.setAttribute('title', currentChangesJsonFormatHelpTitleText);
     }
 
     const syncRestoreHelpBtnEl = document.getElementById('syncRestoreHelpBtn');
@@ -9695,6 +9732,8 @@ function initializeBackupSettings() {
     const snapshotBackupSwitchWrap = snapshotBackupHeader
         ? snapshotBackupHeader.querySelector('.switch')
         : null;
+    const currentChangesJsonFormatCanvas = document.getElementById('currentChangesJsonFormatCanvas');
+    const currentChangesJsonFormatApi = document.getElementById('currentChangesJsonFormatApi');
     const overwriteVersioned = document.getElementById('overwriteVersioned');
     const overwriteOverwrite = document.getElementById('overwriteOverwrite');
 
@@ -9790,6 +9829,67 @@ function initializeBackupSettings() {
                 this.checked = true;
             }
             saveSnapshotBackupSettings();
+        });
+    }
+
+    function normalizeCurrentChangesJsonFormatControls() {
+        if (!currentChangesJsonFormatCanvas || !currentChangesJsonFormatApi) return;
+        if (currentChangesJsonFormatApi.checked) {
+            currentChangesJsonFormatCanvas.checked = false;
+        } else {
+            currentChangesJsonFormatCanvas.checked = true;
+            currentChangesJsonFormatApi.checked = false;
+        }
+    }
+
+    function collectCurrentChangesJsonFormat() {
+        return currentChangesJsonFormatApi?.checked ? 'api' : 'bookmark_canvas';
+    }
+
+    function saveCurrentChangesJsonFormatSetting() {
+        normalizeCurrentChangesJsonFormatControls();
+        chrome.storage.local.set({
+            currentChangesJsonFormat: collectCurrentChangesJsonFormat()
+        }, function () {
+            if (!chrome.runtime.lastError) {
+                showBackupStrategySavedFeedback();
+            }
+        });
+    }
+
+    chrome.storage.local.get(['currentChangesJsonFormat'], function (result) {
+        const format = String(result.currentChangesJsonFormat || '').trim().toLowerCase() === 'api'
+            ? 'api'
+            : 'bookmark_canvas';
+
+        if (currentChangesJsonFormatCanvas) currentChangesJsonFormatCanvas.checked = format === 'bookmark_canvas';
+        if (currentChangesJsonFormatApi) currentChangesJsonFormatApi.checked = format === 'api';
+
+        normalizeCurrentChangesJsonFormatControls();
+        chrome.storage.local.set({
+            currentChangesJsonFormat: collectCurrentChangesJsonFormat()
+        }, function () { });
+    });
+
+    if (currentChangesJsonFormatCanvas) {
+        currentChangesJsonFormatCanvas.addEventListener('change', function () {
+            if (this.checked) {
+                if (currentChangesJsonFormatApi) currentChangesJsonFormatApi.checked = false;
+            } else if (currentChangesJsonFormatApi && !currentChangesJsonFormatApi.checked) {
+                this.checked = true;
+            }
+            saveCurrentChangesJsonFormatSetting();
+        });
+    }
+
+    if (currentChangesJsonFormatApi) {
+        currentChangesJsonFormatApi.addEventListener('change', function () {
+            if (this.checked) {
+                if (currentChangesJsonFormatCanvas) currentChangesJsonFormatCanvas.checked = false;
+            } else if (currentChangesJsonFormatCanvas && !currentChangesJsonFormatCanvas.checked) {
+                this.checked = true;
+            }
+            saveCurrentChangesJsonFormatSetting();
         });
     }
 
@@ -10451,6 +10551,15 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
 
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
             return false;
+        }
+
+        if (
+            String(parsed?.format || '').toLowerCase() === 'bookmark-canvas-section' &&
+            String(parsed?.sectionType || '').toLowerCase() === 'temporary' &&
+            String(parsed?.tempKind || '').toLowerCase() === 'special' &&
+            Array.isArray(parsed?.items)
+        ) {
+            return true;
         }
 
         const source = String(parsed?._exportInfo?.source || '').toLowerCase();
@@ -20712,6 +20821,53 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    const currentChangesJsonFormatHelpBtn = document.getElementById('currentChangesJsonFormatHelpBtn');
+    let currentChangesJsonFormatHelpTooltip = null;
+
+    const removeCurrentChangesJsonFormatHelpTooltip = () => {
+        if (!currentChangesJsonFormatHelpTooltip) return;
+        const tooltipToRemove = currentChangesJsonFormatHelpTooltip;
+        currentChangesJsonFormatHelpTooltip = null;
+        tooltipToRemove.remove();
+    };
+
+    const showCurrentChangesJsonFormatHelpTooltip = () => {
+        if (currentChangesJsonFormatHelpTooltip || !currentChangesJsonFormatHelpBtn) return;
+
+        chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => {
+            const lang = res?.currentLang || res?.preferredLang || 'zh_CN';
+            const isEn = lang === 'en';
+            const bookmarkCanvasLink = `<a href="https://github.com/Browser-bookmark-hub/Bookmark-Canvas" target="_blank" rel="noopener noreferrer" style="color: var(--theme-link-color); font-weight: 700;">${isEn ? 'Bookmark Canvas' : '书签画布'}</a>`;
+
+            currentChangesJsonFormatHelpTooltip = buildHelpDialog({
+                width: 560,
+                title: isEn ? 'Changes JSON Guide' : '变化数据JSON说明',
+                close: removeCurrentChangesJsonFormatHelpTooltip,
+                contentHtml: `
+                    <div style="font-size: 11px; color: var(--theme-text-secondary); line-height: 1.58; padding: 8px 10px; background: var(--theme-bg-secondary); border-radius: 6px;">
+                        ${isEn
+                    ? `• This setting is global and only affects the Changes JSON export format, including manual exports from the HTML history page.<br>• Internal storage, backup history records, and API comparison data stay in the original extension format; Original exports the extension's native Changes JSON for exact restore, debugging, and compatibility with older exports.<br>• Canvas: exports a <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Canvas temporary section</span> JSON. This follows the export note pattern from Bookmark Record Recommend: JSON uses the ${bookmarkCanvasLink} temporary-section format.<br>• Canvas exports use "Current Changes" or "History Changes" labels, write the export time into descriptionMd, and express operations with tags: <span style="color: #16a34a; font-weight: 700;">+</span> added, <span style="color: #dc2626; font-weight: 700;">-</span> deleted, <span style="color: #2563eb; font-weight: 700;">&gt;&gt;</span> moved, <span style="color: #f97316; font-weight: 700;">~</span> modified.<br>• Imports remain compatible with both Original JSON and Canvas JSON, including cloud/local single-file and folder restore flows.`
+                    : `• 这个设置是全局的，只影响「变化数据 JSON」导出格式，也包括 HTML 页面里的手动导出。<br>• 内部存储、备份历史记录和 API 对比数据仍保持原格式；原格式会导出本扩展原生变化数据 JSON，适合精确恢复、排查问题和兼容旧导出文件。<br>• 画布：导出为 <span style="color: var(--theme-warning-color); font-weight: 700;">书签画布临时栏目</span> JSON。参考书签记录与推荐里的导出说明：JSON 使用 ${bookmarkCanvasLink} 的临时栏目格式。<br>• 画布导出会使用「当前变化 / 历史变化」栏目标签，把导出时间写入 descriptionMd，并用标签表达操作：<span style="color: #16a34a; font-weight: 700;">+</span> 新增、<span style="color: #dc2626; font-weight: 700;">-</span> 删除、<span style="color: #2563eb; font-weight: 700;">&gt;&gt;</span> 移动、<span style="color: #f97316; font-weight: 700;">~</span> 修改。<br>• 导入解析同时兼容原格式 JSON 和画布 JSON，云端/本地的单文件、文件夹恢复流程都会按同一套兼容解析处理。`}
+                    </div>
+                `
+            });
+
+            document.body.appendChild(currentChangesJsonFormatHelpTooltip);
+        });
+    };
+
+    if (currentChangesJsonFormatHelpBtn) {
+        currentChangesJsonFormatHelpBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (currentChangesJsonFormatHelpTooltip) {
+                removeCurrentChangesJsonFormatHelpTooltip();
+            } else {
+                showCurrentChangesJsonFormatHelpTooltip();
+            }
+        });
+    }
+
     const backupHistorySlimmingSettingsBtn = document.getElementById('backupHistorySlimmingSettingsBtn');
     const backupHistorySafetyCheckpointBtn = document.getElementById('backupHistorySafetyCheckpointBtn');
     const restoreSafetyCheckpointEntryBtn = document.getElementById('restoreSafetyCheckpointEntryBtn');
@@ -21975,4 +22131,3 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // popup 打开时不再额外延迟二次刷新，避免“计算中”重复闪动
 });
-
