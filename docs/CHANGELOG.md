@@ -7,6 +7,14 @@
 
 ---
 
+## v3.6.0
+
+- **本地备份静默升级**：将本地下载期间的静默控制迁移至 Chrome 推荐的 `downloads.ui` / `chrome.downloads.setUiOptions()` 接口，替代已废弃的 `downloads.shelf` / `setShelfEnabled()`；下载完成、失败或后台恢复时会主动还原下载 UI，并可按自动、手动及其他备份场景分别配置。
+- **网页快照高亮工具与 Markdown 优化**：调整辅助面板中的高亮工具交互，完善 Markdown 文本的格式处理与刷新逻辑，减少下划线、删除线等样式在导出内容中的残留。
+- **Markdown 正文目录定位**：网页快照中的 Markdown 正文刷新后，目录和正文定位会更稳定地对应到目标位置。
+- **界面与设置体验**：精简设置改为自动保存；补充辅助面板说明，修复工具按钮在不同页面中的兼容性，并进行其他细节 UI 调整。
+- **可维护性整理**：重组多个核心 JavaScript 文件的注释与分区，补充索引辅助文件以便 AI 与开发者定位代码；同时清理拆分遗留的无用 JavaScript 文件。
+
 ## v3.5.0
 
 - **网页快照深度增强**：
@@ -134,6 +142,14 @@
 
 ---
 
+## v3.6.0
+
+- **Local-backup download UI upgrade**: migrated temporary download-UI suppression to Chrome's recommended `downloads.ui` / `chrome.downloads.setUiOptions()` APIs, replacing deprecated `downloads.shelf` / `setShelfEnabled()` calls. The download UI is restored after completion, errors, or background recovery, with separate scopes for automatic, manual, and other backup flows.
+- **Web Snapshot highlighter and Markdown improvements**: refined highlighter interactions in the helper panel and improved Markdown formatting and refresh handling, including cleanup of residual underline and strikethrough styles.
+- **Markdown body table-of-contents navigation**: after Markdown content refreshes, table-of-contents jumps more reliably locate the intended body section.
+- **UI and settings refinements**: streamlined settings now save automatically; added helper-panel guidance, fixed tool-button compatibility across pages, and polished other UI details.
+- **Maintainability cleanup**: reorganized comments and sections across core JavaScript files, added navigation aids for AI/developer code lookup, and removed obsolete JavaScript left over from the file split.
+
 ## v3.5.0
 
 - **Enhanced Web Snapshot**:
@@ -252,4 +268,4 @@
 -   **🌟 Backup Check Records - Notes Feature**:
     -   Added a "Time and Notes" column allowing each record to have notes (recommended under 20 characters, in two lines).
     -   Notes are entered separately via the UI, avoiding interference with existing features.
-    -   Notes are included in exported txt records. 
+-   Notes are included in exported txt records.
