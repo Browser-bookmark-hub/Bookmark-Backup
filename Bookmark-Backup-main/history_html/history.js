@@ -24532,6 +24532,252 @@ function initExportChangesModal() {
     }
 }
 
+function normalizeCurrentChangesJsonExportFormatManual(value) {
+    return String(value || '').trim().toLowerCase() === 'api'
+        ? 'api'
+        : 'bookmark_canvas';
+}
+
+async function getCurrentChangesJsonExportFormatSettingManual() {
+    try {
+        const result = await new Promise((resolve) => {
+            if (!browserAPI?.storage?.local) {
+                resolve({});
+                return;
+            }
+            browserAPI.storage.local.get(['currentChangesJsonFormat'], resolve);
+        });
+        return normalizeCurrentChangesJsonExportFormatManual(result?.currentChangesJsonFormat);
+    } catch (_) {
+        return 'bookmark_canvas';
+    }
+}
+
+function isBookmarkCanvasSectionPayloadManual(payload) {
+    return !!(payload && typeof payload === 'object' && !Array.isArray(payload)
+        && String(payload.format || '').trim().toLowerCase() === 'bookmark-canvas-section'
+        && String(payload.sectionType || '').trim().toLowerCase() === 'temporary'
+        && Array.isArray(payload.items));
+}
+
+function buildBookmarkCanvasSectionIdFromLabelManual(label) {
+    const fallback = '当前变化';
+    const safeLabel = String(label || fallback)
+        .trim()
+        .replace(/[^A-Za-z0-9\u4e00-\u9fff_-]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    return `temp-section-${safeLabel || fallback}`;
+}
+
+function buildBookmarkCanvasExportDateKeyManual(date = new Date()) {
+    const d = date instanceof Date && Number.isFinite(date.getTime()) ? date : new Date();
+    return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function createBookmarkCanvasExportTokenManual(length = 7) {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const size = Math.max(1, Number(length) || 7);
+    const bytes = new Uint8Array(size);
+    try {
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+            crypto.getRandomValues(bytes);
+        } else {
+            for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+        }
+    } catch (_) {
+        for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    return Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+}
+
+function createBookmarkCanvasExportItemIdManual(createdAt) {
+    return `tempId_${buildBookmarkCanvasExportDateKeyManual(createdAt)}_hash_${createBookmarkCanvasExportTokenManual(7)}`;
+}
+
+function inferCurrentChangesTypeFromTitlePrefixManual(title) {
+    const text = String(title || '').trim();
+    if (text.startsWith('[+]')) return 'added';
+    if (text.startsWith('[-]')) return 'deleted';
+    if (text.startsWith('[~>>]') || text.startsWith('[~↔]')) return 'modified+moved';
+    if (text.startsWith('[~]')) return 'modified';
+    if (text.startsWith('[>>]') || text.startsWith('[↔]')) return 'moved';
+    return '';
+}
+
+function stripCurrentChangesTitlePrefixForCanvasManual(title) {
+    return String(title || '')
+        .replace(/^\[(?:~>>|~↔|\+|-|~|>>|↔)\]\s*/, '')
+        .trim();
+}
+
+function getCurrentChangesCanvasTagsManual(changeType) {
+    const parts = String(changeType || '')
+        .split('+')
+        .map(part => part.trim().toLowerCase())
+        .filter(Boolean);
+    const tags = [];
+    const push = (color, text) => {
+        if (tags.some(tag => tag.color === color && tag.text === text)) return;
+        tags.push({ color, text });
+    };
+    if (parts.includes('added')) push('green', '+');
+    if (parts.includes('deleted')) push('red', '-');
+    if (parts.includes('modified')) push('orange', '~');
+    if (parts.includes('moved')) push('blue', '>>');
+    return tags;
+}
+
+function isCurrentChangesArtifactMetaNodeForCanvasManual(node) {
+    const title = String(node?.title || '').trim().toLowerCase();
+    if (!title) return false;
+    const url = typeof node?.url === 'string' ? String(node.url || '').trim() : '';
+    if (url && url !== 'about:blank') return false;
+    if (title.includes('前缀说明') || title.includes('prefix legend')) return true;
+    return url === 'about:blank' && (
+        title.includes('操作统计')
+        || title.includes('operation counts')
+        || title.includes('导出时间')
+        || title.includes('export time')
+        || title.includes('备份时间')
+        || title.includes('backup time')
+        || title.includes('备注:')
+        || title.includes('note:')
+    );
+}
+
+function convertCurrentChangesNodeToBookmarkCanvasItemManual(node, context) {
+    if (!node || typeof node !== 'object') return null;
+    if (isCurrentChangesArtifactMetaNodeForCanvasManual(node)) return null;
+
+    const rawUrl = typeof node.url === 'string' ? String(node.url || '').trim() : '';
+    if (rawUrl === 'about:blank') return null;
+
+    const children = Array.isArray(node.children)
+        ? node.children
+            .map(child => convertCurrentChangesNodeToBookmarkCanvasItemManual(child, context))
+            .filter(Boolean)
+        : [];
+    const isFolder = String(node.type || '').trim().toLowerCase() === 'folder'
+        || (!rawUrl && Array.isArray(node.children));
+    const rawTitle = String(node.title || '').trim();
+    const changeType = String(node.changeType || '').trim() || inferCurrentChangesTypeFromTitlePrefixManual(rawTitle);
+    const title = stripCurrentChangesTitlePrefixForCanvasManual(rawTitle) || rawTitle || (context.isZh ? '(无标题)' : '(Untitled)');
+    if (!title && !rawUrl && children.length === 0) return null;
+
+    const item = {
+        id: createBookmarkCanvasExportItemIdManual(context.createdAt),
+        sectionId: context.sectionId,
+        title,
+        url: isFolder ? '' : rawUrl,
+        type: isFolder ? 'folder' : 'bookmark',
+        children
+    };
+
+    const existingTags = Array.isArray(node.tags)
+        ? node.tags
+            .filter(tag => tag && typeof tag === 'object')
+            .map(tag => ({
+                color: String(tag.color || '').trim().toLowerCase(),
+                text: String(tag.text || '').trim()
+            }))
+            .filter(tag => tag.color && tag.text)
+        : [];
+    const tags = [];
+    [...existingTags, ...getCurrentChangesCanvasTagsManual(changeType)].forEach(tag => {
+        if (tags.some(itemTag => itemTag.color === tag.color && itemTag.text === tag.text)) return;
+        tags.push(tag);
+    });
+    if (tags.length > 0) item.tags = tags;
+
+    if (typeof node.note === 'string' && node.note.trim()) {
+        item.note = node.note.trim();
+        if (typeof node.noteColor === 'string' && node.noteColor.trim()) {
+            item.noteColor = node.noteColor.trim().toLowerCase();
+        }
+    }
+
+    return item;
+}
+
+function buildCurrentChangesCanvasDescriptionManual({ note, exportDate, isZh }) {
+    const lines = [];
+    const noteText = String(note || '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .join(' / ');
+    if (noteText) {
+        lines.push(noteText);
+    } else {
+        lines.push(isZh
+            ? '标签说明: [+]新增  [-]删除  [~]修改  [>>]移动'
+            : 'Tag legend: [+]Added  [-]Deleted  [~]Modified  [>>]Moved');
+    }
+    const date = exportDate instanceof Date && Number.isFinite(exportDate.getTime()) ? exportDate : new Date();
+    lines.push(`${isZh ? '导出时间' : 'Export Time'}: ${date.toLocaleString(isZh ? 'zh-CN' : 'en-US')}`);
+    return lines.join('\n');
+}
+
+function convertCurrentChangesPayloadToBookmarkCanvasSectionManual(payload, options = {}) {
+    if (isBookmarkCanvasSectionPayloadManual(payload)) return payload;
+    const source = String(payload?._exportInfo?.source || '').trim().toLowerCase();
+    const isHistory = options.sectionKind === 'history' || source.includes('history');
+    const isZh = options.lang === 'zh_CN' || (!options.lang && currentLang === 'zh_CN');
+    const label = String(options.label || (isHistory ? '历史变化' : '当前变化')).trim();
+    const sectionId = buildBookmarkCanvasSectionIdFromLabelManual(label);
+    const exportInfo = payload?._exportInfo && typeof payload._exportInfo === 'object' ? payload._exportInfo : {};
+    const exportDate = new Date(String(options.exportDate || exportInfo.exportDate || exportInfo.exportTime || new Date().toISOString()));
+    const safeExportDate = Number.isFinite(exportDate.getTime()) ? exportDate : new Date();
+    const context = {
+        sectionId,
+        createdAt: safeExportDate,
+        isZh
+    };
+    const items = (Array.isArray(payload?.children) ? payload.children : [])
+        .filter(node => !isCurrentChangesArtifactMetaNodeForCanvasManual(node))
+        .map(node => convertCurrentChangesNodeToBookmarkCanvasItemManual(node, context))
+        .filter(Boolean);
+
+    return {
+        format: 'bookmark-canvas-section',
+        schemaVersion: 2,
+        sectionType: 'temporary',
+        id: sectionId,
+        label,
+        title: String(options.title || payload?.title || (isZh ? '书签变化导出' : 'Bookmark Changes Export')).trim(),
+        tempKind: 'special',
+        source: 'file-import',
+        descriptionMd: buildCurrentChangesCanvasDescriptionManual({
+            note: options.note || exportInfo.note || '',
+            exportDate: safeExportDate,
+            isZh
+        }),
+        items
+    };
+}
+
+async function maybeConvertCurrentChangesJsonContentForExportManual(content, options = {}) {
+    const jsonFormat = await getCurrentChangesJsonExportFormatSettingManual();
+    if (jsonFormat !== 'bookmark_canvas') return content;
+
+    let payload = content;
+    if (typeof content === 'string') {
+        try {
+            payload = JSON.parse(content);
+        } catch (_) {
+            return content;
+        }
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return content;
+
+    return convertCurrentChangesPayloadToBookmarkCanvasSectionManual(payload, {
+        ...options,
+        jsonFormat,
+        lang: currentLang === 'zh_CN' ? 'zh_CN' : 'en'
+    });
+}
+
 // 执行导出
 async function executeExportChanges() {
     const modal = document.getElementById('exportChangesModal');
@@ -24740,6 +24986,12 @@ async function executeExportChanges() {
                     ? suggestedName
                     : buildCurrentChangesManualExportFallbackLeafName({ mode, format: 'json', exportTime: exportIsoTime }));
             }
+            content = await maybeConvertCurrentChangesJsonContentForExportManual(content, {
+                label: isHistoryExport ? '历史变化' : '当前变化',
+                sectionKind: isHistoryExport ? 'history' : 'current',
+                note: isHistoryExport ? (currentExportHistoryRecord?.note || '') : '',
+                exportDate: exportIsoTime
+            });
             // 如果是 JSON 格式，content 是对象，需要 stringify
             if (typeof content === 'object') {
                 content = JSON.stringify(content, null, 2);
@@ -28577,9 +28829,15 @@ async function startGlobalExport() {
                                 snapshotKey: naming.snapshotKey
                             };
                             const changesLeafName = naming.changesLeafNames.json;
+                            const exportChangesJson = await maybeConvertCurrentChangesJsonContentForExportManual(enrichedChangesJson, {
+                                label: '历史变化',
+                                sectionKind: 'history',
+                                note: record.note || '',
+                                exportDate: enrichedChangesJson._exportInfo?.exportDate || new Date().toISOString()
+                            });
                             files.push({
                                 name: `${recordFolderPath}/${changesLeafName}`,
-                                data: new TextEncoder().encode(JSON.stringify(enrichedChangesJson, null, 2))
+                                data: new TextEncoder().encode(JSON.stringify(exportChangesJson, null, 2))
                             });
                             if (!manualExportRecord.changesPathsByMode[mode]) {
                                 manualExportRecord.changesPathsByMode[mode] = {};

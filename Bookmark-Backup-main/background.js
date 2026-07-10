@@ -13554,8 +13554,234 @@ function normalizeCurrentChangesArchiveSettings(settings = {}) {
 
     const formats = [format || 'html'];
     const modes = [mode || 'collection'];
+    const jsonFormat = normalizeCurrentChangesJsonExportFormat(settings.currentChangesJsonFormat);
 
-    return { enabled, formats, modes };
+    return { enabled, formats, modes, jsonFormat };
+}
+
+function normalizeCurrentChangesJsonExportFormat(value) {
+    return String(value || '').trim().toLowerCase() === 'api'
+        ? 'api'
+        : 'bookmark_canvas';
+}
+
+function isBookmarkCanvasSectionPayload(payload) {
+    return !!(payload && typeof payload === 'object' && !Array.isArray(payload)
+        && String(payload.format || '').trim().toLowerCase() === 'bookmark-canvas-section'
+        && String(payload.sectionType || '').trim().toLowerCase() === 'temporary'
+        && Array.isArray(payload.items));
+}
+
+function buildBookmarkCanvasSectionIdFromLabel(label) {
+    const fallback = '当前变化';
+    const safeLabel = String(label || fallback)
+        .trim()
+        .replace(/[^A-Za-z0-9\u4e00-\u9fff_-]/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    return `temp-section-${safeLabel || fallback}`;
+}
+
+function buildBookmarkCanvasExportDateKey(date = new Date()) {
+    const d = date instanceof Date && Number.isFinite(date.getTime()) ? date : new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+}
+
+function createBookmarkCanvasExportToken(length = 7) {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const size = Math.max(1, Number(length) || 7);
+    const bytes = new Uint8Array(size);
+    try {
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+            crypto.getRandomValues(bytes);
+        } else {
+            for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+        }
+    } catch (_) {
+        for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+    }
+    return Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+}
+
+function createBookmarkCanvasExportItemId(createdAt) {
+    return `tempId_${buildBookmarkCanvasExportDateKey(createdAt)}_hash_${createBookmarkCanvasExportToken(7)}`;
+}
+
+function inferCurrentChangesTypeFromTitlePrefix(title) {
+    const text = String(title || '').trim();
+    if (text.startsWith('[+]')) return 'added';
+    if (text.startsWith('[-]')) return 'deleted';
+    if (text.startsWith('[~>>]') || text.startsWith('[~↔]')) return 'modified+moved';
+    if (text.startsWith('[~]')) return 'modified';
+    if (text.startsWith('[>>]') || text.startsWith('[↔]')) return 'moved';
+    return '';
+}
+
+function stripCurrentChangesTitlePrefixForCanvas(title) {
+    return String(title || '')
+        .replace(/^\[(?:~>>|~↔|\+|-|~|>>|↔)\]\s*/, '')
+        .trim();
+}
+
+function getCurrentChangesCanvasTags(changeType) {
+    const parts = String(changeType || '')
+        .split('+')
+        .map(part => part.trim().toLowerCase())
+        .filter(Boolean);
+    const tags = [];
+    const push = (color, text) => {
+        if (tags.some(tag => tag.color === color && tag.text === text)) return;
+        tags.push({ color, text });
+    };
+    if (parts.includes('added')) push('green', '+');
+    if (parts.includes('deleted')) push('red', '-');
+    if (parts.includes('modified')) push('orange', '~');
+    if (parts.includes('moved')) push('blue', '>>');
+    return tags;
+}
+
+function isCurrentChangesArtifactMetaNodeForCanvas(node) {
+    const title = String(node?.title || '').trim().toLowerCase();
+    if (!title) return false;
+    const url = typeof node?.url === 'string' ? String(node.url || '').trim() : '';
+    if (url && url !== 'about:blank') return false;
+    if (title.includes('前缀说明') || title.includes('prefix legend')) return true;
+    return url === 'about:blank' && (
+        title.includes('操作统计')
+        || title.includes('operation counts')
+        || title.includes('导出时间')
+        || title.includes('export time')
+        || title.includes('备份时间')
+        || title.includes('backup time')
+        || title.includes('备注:')
+        || title.includes('note:')
+    );
+}
+
+function convertCurrentChangesNodeToBookmarkCanvasItem(node, context) {
+    if (!node || typeof node !== 'object') return null;
+    if (isCurrentChangesArtifactMetaNodeForCanvas(node)) return null;
+
+    const rawUrl = typeof node.url === 'string' ? String(node.url || '').trim() : '';
+    if (rawUrl === 'about:blank') return null;
+
+    const children = Array.isArray(node.children)
+        ? node.children
+            .map(child => convertCurrentChangesNodeToBookmarkCanvasItem(child, context))
+            .filter(Boolean)
+        : [];
+    const isFolder = String(node.type || '').trim().toLowerCase() === 'folder'
+        || (!rawUrl && Array.isArray(node.children));
+    const rawTitle = String(node.title || '').trim();
+    const inferredChangeType = String(node.changeType || '').trim() || inferCurrentChangesTypeFromTitlePrefix(rawTitle);
+    const title = stripCurrentChangesTitlePrefixForCanvas(rawTitle) || rawTitle || (context.isZh ? '(无标题)' : '(Untitled)');
+    if (!title && !rawUrl && children.length === 0) return null;
+
+    const item = {
+        id: createBookmarkCanvasExportItemId(context.createdAt),
+        sectionId: context.sectionId,
+        title,
+        url: isFolder ? '' : rawUrl,
+        type: isFolder ? 'folder' : 'bookmark',
+        children
+    };
+
+    const existingTags = Array.isArray(node.tags)
+        ? node.tags
+            .filter(tag => tag && typeof tag === 'object')
+            .map(tag => ({
+                color: String(tag.color || '').trim().toLowerCase(),
+                text: String(tag.text || '').trim()
+            }))
+            .filter(tag => tag.color && tag.text)
+        : [];
+    const changeTags = getCurrentChangesCanvasTags(inferredChangeType);
+    const tags = [];
+    [...existingTags, ...changeTags].forEach(tag => {
+        if (tags.some(itemTag => itemTag.color === tag.color && itemTag.text === tag.text)) return;
+        tags.push(tag);
+    });
+    if (tags.length > 0) item.tags = tags;
+
+    if (typeof node.note === 'string' && node.note.trim()) {
+        item.note = node.note.trim();
+        if (typeof node.noteColor === 'string' && node.noteColor.trim()) {
+            item.noteColor = node.noteColor.trim().toLowerCase();
+        }
+    }
+
+    return item;
+}
+
+function buildCurrentChangesCanvasDescription({ note, exportDate, isZh }) {
+    const lines = [];
+    const noteText = String(note || '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .join(' / ');
+    if (noteText) {
+        lines.push(noteText);
+    } else {
+        lines.push(isZh
+            ? '标签说明: [+]新增  [-]删除  [~]修改  [>>]移动'
+            : 'Tag legend: [+]Added  [-]Deleted  [~]Modified  [>>]Moved');
+    }
+
+    const date = exportDate instanceof Date && Number.isFinite(exportDate.getTime())
+        ? exportDate
+        : new Date();
+    lines.push(`${isZh ? '导出时间' : 'Export Time'}: ${date.toLocaleString(isZh ? 'zh-CN' : 'en-US')}`);
+    return lines.join('\n');
+}
+
+function convertCurrentChangesPayloadToBookmarkCanvasSection(payload, options = {}) {
+    if (isBookmarkCanvasSectionPayload(payload)) return payload;
+    const source = String(payload?._exportInfo?.source || '').trim().toLowerCase();
+    const isHistory = options.sectionKind === 'history' || source.includes('history');
+    const isZh = options.lang === 'zh_CN' || (!options.lang && /[\u4e00-\u9fff]/.test(String(payload?.title || '')));
+    const label = String(options.label || (isHistory ? '历史变化' : '当前变化')).trim();
+    const sectionId = buildBookmarkCanvasSectionIdFromLabel(label);
+    const exportInfo = payload?._exportInfo && typeof payload._exportInfo === 'object' ? payload._exportInfo : {};
+    const exportDate = new Date(String(options.exportDate || exportInfo.exportDate || exportInfo.exportTime || new Date().toISOString()));
+    const safeExportDate = Number.isFinite(exportDate.getTime()) ? exportDate : new Date();
+    const context = {
+        sectionId,
+        createdAt: safeExportDate,
+        isZh
+    };
+    const children = Array.isArray(payload?.children) ? payload.children : [];
+    const primaryNodes = children.filter(node => !isCurrentChangesArtifactMetaNodeForCanvas(node));
+    const items = primaryNodes
+        .map(node => convertCurrentChangesNodeToBookmarkCanvasItem(node, context))
+        .filter(Boolean);
+
+    return {
+        format: 'bookmark-canvas-section',
+        schemaVersion: 2,
+        sectionType: 'temporary',
+        id: sectionId,
+        label,
+        title: String(options.title || payload?.title || (isZh ? '书签变化导出' : 'Bookmark Changes Export')).trim(),
+        tempKind: 'special',
+        source: 'file-import',
+        descriptionMd: buildCurrentChangesCanvasDescription({
+            note: options.note || exportInfo.note || '',
+            exportDate: safeExportDate,
+            isZh
+        }),
+        items
+    };
+}
+
+function prepareCurrentChangesJsonPayloadForExport(payload, options = {}) {
+    if (normalizeCurrentChangesJsonExportFormat(options.jsonFormat) !== 'bookmark_canvas') {
+        return payload;
+    }
+    return convertCurrentChangesPayloadToBookmarkCanvasSection(payload, options);
 }
 
 const CURRENT_CHANGES_PREVIEW_EXPANDED_STATE_KEY_PREFIX = 'currentChangesPreviewExpandedState:';
@@ -15236,7 +15462,7 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
     }
     const normalizedStats = buildRestoreStats(diffStats);
 
-    const settings = await browserAPI.storage.local.get(['currentChangesArchiveFormats', 'currentChangesArchiveModes', 'currentChangesArchiveEnabled']);
+    const settings = await browserAPI.storage.local.get(['currentChangesArchiveFormats', 'currentChangesArchiveModes', 'currentChangesArchiveEnabled', 'currentChangesJsonFormat']);
     const archiveSettings = normalizeCurrentChangesArchiveSettings(settings);
 
     if (typeof forceEnabled === 'boolean') {
@@ -15414,6 +15640,14 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
         };
 
         const payloadText = JSON.stringify(exportPayload, null, 2);
+        const jsonExportPayload = prepareCurrentChangesJsonPayloadForExport(exportPayload, {
+            jsonFormat: archiveSettings.jsonFormat,
+            label: '当前变化',
+            sectionKind: 'current',
+            lang,
+            exportDate: exportPayload._exportInfo?.exportDate || new Date().toISOString()
+        });
+        const jsonPayloadText = JSON.stringify(jsonExportPayload, null, 2);
 
         if (archiveSettings.formats.includes('json')) {
             const leaf = buildCurrentChangesArtifactLeafName({ naming, mode: exportMode, format: 'json', lang });
@@ -15421,7 +15655,7 @@ async function buildCurrentChangesSnapshotArtifacts({ localBookmarks, syncTime, 
                 mode: exportMode,
                 format: 'json',
                 leafName: leaf,
-                content: payloadText,
+                content: jsonPayloadText,
                 contentType: 'application/json;charset=utf-8',
                 stats: normalizedStats
             });
@@ -33075,7 +33309,87 @@ function normalizeCurrentChangesArtifactNodesForRestore(nodes) {
         .filter(node => isCurrentChangesArtifactImportableTreeNode(node));
 }
 
+function inferCurrentChangesTypeFromCanvasTags(tags) {
+    const list = Array.isArray(tags) ? tags : [];
+    const tagTexts = new Set(
+        list
+            .filter(tag => tag && typeof tag === 'object')
+            .map(tag => String(tag.text || '').trim())
+            .filter(Boolean)
+    );
+    const parts = [];
+    if (tagTexts.has('+') || tagTexts.has('[+]')) parts.push('added');
+    if (tagTexts.has('-') || tagTexts.has('[-]')) parts.push('deleted');
+    if (tagTexts.has('~') || tagTexts.has('[~]')) parts.push('modified');
+    if (tagTexts.has('>>') || tagTexts.has('[>>]') || tagTexts.has('↔') || tagTexts.has('[↔]')) parts.push('moved');
+    return parts.join('+');
+}
+
+function getCurrentChangesRestoreTitlePrefix(changeType) {
+    const parts = String(changeType || '').split('+').map(part => part.trim()).filter(Boolean);
+    if (parts.includes('added')) return '[+] ';
+    if (parts.includes('deleted')) return '[-] ';
+    if (parts.includes('modified') && parts.includes('moved')) return '[~>>] ';
+    if (parts.includes('modified')) return '[~] ';
+    if (parts.includes('moved')) return '[>>] ';
+    return '';
+}
+
+function normalizeBookmarkCanvasSectionItemForRestore(item) {
+    if (!item || typeof item !== 'object') return null;
+
+    const rawUrl = typeof item.url === 'string' ? String(item.url || '').trim() : '';
+    const childList = Array.isArray(item.children)
+        ? item.children
+            .map(child => normalizeBookmarkCanvasSectionItemForRestore(child))
+            .filter(Boolean)
+        : [];
+    const isFolder = String(item.type || '').trim().toLowerCase() === 'folder'
+        || (!rawUrl && Array.isArray(item.children));
+    const changeType = String(item.changeType || '').trim()
+        || inferCurrentChangesTypeFromCanvasTags(item.tags)
+        || inferCurrentChangesTypeFromTitlePrefix(item.title);
+    const cleanTitle = stripCurrentChangesTitlePrefixForCanvas(item.title) || String(item.title || rawUrl || '').trim();
+    const prefix = getCurrentChangesRestoreTitlePrefix(changeType);
+    const title = cleanTitle
+        ? (prefix && !inferCurrentChangesTypeFromTitlePrefix(cleanTitle) ? `${prefix}${cleanTitle}` : cleanTitle)
+        : (rawUrl || '(Untitled)');
+
+    if (!title && !rawUrl && childList.length === 0) return null;
+
+    const node = {
+        title,
+        ...(item.sourceId != null ? { id: String(item.sourceId) } : (item.id != null ? { id: String(item.id) } : {})),
+        ...(changeType ? { changeType } : {})
+    };
+
+    if (isFolder) {
+        node.children = childList;
+        node.type = 'folder';
+    } else if (rawUrl && rawUrl !== 'about:blank') {
+        node.url = rawUrl;
+        node.type = 'bookmark';
+    } else if (childList.length > 0) {
+        node.children = childList;
+        node.type = 'folder';
+    } else {
+        node.children = [];
+        node.type = 'folder';
+    }
+
+    return node;
+}
+
 function buildCurrentChangesArtifactTreeForRestore(payload) {
+    if (isBookmarkCanvasSectionPayload(payload)) {
+        return {
+            title: 'root',
+            children: (Array.isArray(payload.items) ? payload.items : [])
+                .map(item => normalizeBookmarkCanvasSectionItemForRestore(item))
+                .filter(Boolean)
+        };
+    }
+
     const rootChildrenRaw = Array.isArray(payload?.children) ? payload.children : [];
     const primaryNodes = rootChildrenRaw.filter(node => !isCurrentChangesArtifactMetaNode(node));
 
@@ -34653,4 +34967,3 @@ browserAPI.runtime.onInstalled.addListener(async (details) => {
 // =================================================================================
 // IX. 顶层初始化：活跃时间追踪/点击记录已剔除
 // =================================================================================
-
