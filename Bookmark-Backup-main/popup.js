@@ -11700,6 +11700,7 @@ function showRestoreModal(versions, source) {
     };
     const parseVersionTimeMs = (version) => {
         const candidates = [
+            version?.changesArtifactDisplayTimeMs,
             version?.recordTime,
             version?.restoreRef?.recordTime,
             version?.time,
@@ -13883,6 +13884,90 @@ function showRestoreModal(versions, source) {
         return pairs;
     };
 
+    const parseRestoreTimeCandidateMs = (value) => {
+        if (value == null || value === '') return null;
+
+        const dateMs = new Date(value).getTime();
+        if (Number.isFinite(dateMs)) return dateMs;
+
+        const numericMs = Number(value);
+        if (Number.isFinite(numericMs) && numericMs > 0) return numericMs;
+
+        return null;
+    };
+
+    const resolveChangesArtifactEntryForDisplayRow = (artifact, mode, format) => {
+        if (!artifact || typeof artifact !== 'object') return null;
+
+        const requestedMode = normalizeMergeViewMode(mode);
+        const requestedFormat = normalizeMergeViewFormat(format);
+        const preferredMode = normalizeMergeViewMode(artifact.preferredMode || artifact.mode);
+        const preferredFormat = normalizeMergeViewFormat(artifact.preferredFormat || artifact.format);
+        const modeFormats = artifact.modeFormats && typeof artifact.modeFormats === 'object'
+            ? artifact.modeFormats
+            : null;
+
+        if (modeFormats) {
+            const modeCandidates = [requestedMode, preferredMode, 'simple', 'detailed', 'collection'].filter(Boolean);
+            const formatCandidates = [requestedFormat, preferredFormat, 'json', 'html'].filter(Boolean);
+            for (const modeCandidate of modeCandidates) {
+                const byFormat = modeFormats[modeCandidate];
+                if (!byFormat || typeof byFormat !== 'object') continue;
+                for (const formatCandidate of formatCandidates) {
+                    const entry = byFormat[formatCandidate];
+                    if (entry && typeof entry === 'object') return entry;
+                }
+            }
+        }
+
+        const modes = artifact.modes && typeof artifact.modes === 'object'
+            ? artifact.modes
+            : null;
+        if (modes) {
+            const modeCandidates = [requestedMode, preferredMode, ...Object.keys(modes).map(normalizeMergeViewMode)]
+                .filter(Boolean);
+            const seen = new Set();
+            for (const modeCandidate of modeCandidates) {
+                if (seen.has(modeCandidate)) continue;
+                seen.add(modeCandidate);
+                const entry = modes[modeCandidate];
+                if (entry && typeof entry === 'object') return entry;
+            }
+        }
+
+        return artifact;
+    };
+
+    const resolveChangesArtifactDisplayTimeMeta = (version, mode, format) => {
+        const restoreRef = version?.restoreRef || {};
+        const artifact = restoreRef?.changesArtifact;
+        if (!artifact || typeof artifact !== 'object') return null;
+
+        const entry = resolveChangesArtifactEntryForDisplayRow(artifact, mode, format);
+        const candidates = [
+            entry?.lastModifiedMs,
+            entry?.lastModified,
+            entry?.recordTime,
+            entry?.time,
+            entry?.displayTime,
+            artifact?.lastModifiedMs,
+            artifact?.lastModified,
+            restoreRef?.lastModifiedMs,
+            restoreRef?.lastModified
+        ];
+
+        for (const candidate of candidates) {
+            const ms = parseRestoreTimeCandidateMs(candidate);
+            if (!Number.isFinite(ms)) continue;
+            return {
+                timeMs: ms,
+                displayTime: formatTime(new Date(ms))
+            };
+        }
+
+        return null;
+    };
+
     const buildChangesDisplayVersions = (list, rowKind = 'changes_mode') => {
         const items = Array.isArray(list) ? list : [];
         const displayVersions = [];
@@ -13904,8 +13989,14 @@ function showRestoreModal(versions, source) {
             ).trim() || `overwrite-${versionIndex}`;
 
             entries.forEach(({ mode, format }, modeIndex) => {
+                const timeMeta = resolveChangesArtifactDisplayTimeMeta(version, mode, format);
                 displayVersions.push({
                     ...version,
+                    ...(timeMeta ? {
+                        changesArtifactDisplayTimeMs: timeMeta.timeMs,
+                        time: timeMeta.timeMs,
+                        displayTime: timeMeta.displayTime
+                    } : {}),
                     displaySelectionKey: `${baseKey}::${mode}::${format || 'auto'}::${modeIndex}`,
                     forcedMergeViewMode: mode,
                     forcedMergeViewFormat: format || '',
