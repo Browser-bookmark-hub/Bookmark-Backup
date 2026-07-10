@@ -123,6 +123,7 @@ const POPUP_BACKUP_PROGRESS_TARGET_ORDER = Object.freeze({
     github_repo: 1,
     webdav: 2
 });
+let popupActiveRestoreProgressSessionId = '';
 let backupHistorySlimmingState = {
     saveSnapshotData: true,
     saveChangeData: true
@@ -135,6 +136,14 @@ let openLatestSafetyCheckpointDialogRef = null;
 // =============================================================================
 // 辅助函数 (Helper Functions)
 // =============================================================================
+
+function normalizePopupLanguage(lang = '', fallback = 'zh_CN') {
+    const raw = String(lang || '').trim().toLowerCase().replace('_', '-');
+    if (raw.startsWith('en')) return 'en';
+    if (raw.startsWith('zh')) return 'zh_CN';
+    const fallbackRaw = String(fallback || '').trim().toLowerCase().replace('_', '-');
+    return fallbackRaw.startsWith('en') ? 'en' : 'zh_CN';
+}
 
 function normalizeHistoryDeleteWarnValue(rawValue, fallbackValue) {
     const parsed = parseInt(rawValue, 10);
@@ -1246,7 +1255,7 @@ async function callBackgroundFunction(action, data = {}, options = {}) {
 async function getPopupPreferredLang() {
     return await new Promise(resolve => {
         chrome.storage.local.get(['currentLang', 'preferredLang'], (result) => {
-            resolve(result.currentLang || result.preferredLang || 'zh_CN');
+            resolve(normalizePopupLanguage(result.preferredLang || result.currentLang || window.currentLang || 'zh_CN'));
         });
     });
 }
@@ -5023,46 +5032,43 @@ function updateBookmarkCountDisplay(passedLang) {
                 statusCard.classList.add('auto-mode');
                 statusCard.classList.remove('manual-mode');
                 // --- 自动同步模式 ---
-                // 1. 更新 "当前数量/结构:" (Details)
-                chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
-                    if (!isCurrentRequest()) {
-                        return;
-                    }
 
-                    if (backupResponse && backupResponse.success && backupResponse.stats) {
-                        const currentBookmarkCount = backupResponse.stats.bookmarkCount || 0;
-                        const currentFolderCount = backupResponse.stats.folderCount || 0;
-                        let quantityText = '';
-                        if (currentLang === 'en') {
-                            const bmDisplayTerm = "BKM";
-                            const fldDisplayTerm = "FLD";
-                            quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary);">${currentBookmarkCount} ${bmDisplayTerm}<span style="display:inline-block; width:6px;"></span>,<span style="display:inline-block; width:6px;"></span>${currentFolderCount} ${fldDisplayTerm}</span>`;
-                        } else {
-                            quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary); display: flex; justify-content: center; align-items: baseline;">
-                                                <span style="padding-right: 2px;">${currentBookmarkCount}&nbsp;${i18nBookmarksLabel}</span>
-                                                <span>,</span>
-                                                <span style="padding-left: 2px;">${currentFolderCount}&nbsp;${i18nFoldersLabel}</span>
-                                            </span>`;
-                        }
-                        if (bookmarkCountSpan) {
-                            bookmarkCountSpan.innerHTML = quantityText;
-                        }
-                    } else {
-                        if (bookmarkCountSpan) {
-                            bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-text-secondary);">${currentLang === 'en' ? 'Counts unavailable' : '数量暂无法获取'}</span>`;
-                        }
-                    }
-                });
-
-                // 2. 更新 "上次变动" 区域 - 根据备份模式和变化状态显示不同内容
+                // 1. 获取自动备份设置
                 chrome.storage.local.get(['autoBackupTimerSettings'], (result) => {
                     const backupMode = result.autoBackupTimerSettings?.backupMode || 'regular';
 
+                    // 2. 单次查询当前备份统计，同时更新数量和变动区域
                     chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
                         if (!isCurrentRequest()) {
                             return;
                         }
 
+                        // 更新 "当前数量/结构:" (Details)
+                        if (backupResponse && backupResponse.success && backupResponse.stats) {
+                            const currentBookmarkCount = backupResponse.stats.bookmarkCount || 0;
+                            const currentFolderCount = backupResponse.stats.folderCount || 0;
+                            let quantityText = '';
+                            if (currentLang === 'en') {
+                                const bmDisplayTerm = "BKM";
+                                const fldDisplayTerm = "FLD";
+                                quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary);">${currentBookmarkCount} ${bmDisplayTerm}<span style="display:inline-block; width:6px;"></span>,<span style="display:inline-block; width:6px;"></span>${currentFolderCount} ${fldDisplayTerm}</span>`;
+                            } else {
+                                quantityText = `<span style="font-weight: bold; color: var(--theme-text-primary); display: flex; justify-content: center; align-items: baseline;">
+                                                    <span style="padding-right: 2px;">${currentBookmarkCount}&nbsp;${i18nBookmarksLabel}</span>
+                                                    <span>,</span>
+                                                    <span style="padding-left: 2px;">${currentFolderCount}&nbsp;${i18nFoldersLabel}</span>
+                                                </span>`;
+                            }
+                            if (bookmarkCountSpan) {
+                                bookmarkCountSpan.innerHTML = quantityText;
+                            }
+                        } else {
+                            if (bookmarkCountSpan) {
+                                bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-text-secondary);">${currentLang === 'en' ? 'Counts unavailable' : '数量暂无法获取'}</span>`;
+                            }
+                        }
+
+                        // 更新 "上次变动" 区域 - 根据备份模式和变化状态显示不同内容
                         let statusText = '';
 
                         if (backupMode === 'realtime') {
@@ -5073,10 +5079,10 @@ function updateBookmarkCountDisplay(passedLang) {
                             applyStatusCardDisplay({ html: buildStatusCardMessageHTML(statusText), hasChanges: false });
                             return;
                         } else if (backupMode === 'regular' || backupMode === 'specific' || backupMode === 'both') {
-                            // 常规时间/特定时间：使用和手动备份完全一致的差异计算逻辑
+                            // 常规时间/特定时间：使用和手动备份完全一致的差异计算逻辑，传入 recentLimit: 20
                             Promise.all([
                                 new Promise((resolve, reject) => {
-                                    chrome.runtime.sendMessage({ action: "getSyncHistory" }, response => {
+                                    chrome.runtime.sendMessage({ action: "getSyncHistory", recentLimit: 20 }, response => {
                                         if (response && response.success) resolve(response.syncHistory || []);
                                         else reject(new Error(response?.error || '获取备份历史失败'));
                                     });
@@ -5230,7 +5236,7 @@ function updateBookmarkCountDisplay(passedLang) {
                         });
                     }),
                     new Promise((resolve, reject) => {
-                        chrome.runtime.sendMessage({ action: "getSyncHistory" }, response => {
+                        chrome.runtime.sendMessage({ action: "getSyncHistory", recentLimit: 20 }, response => {
                             if (response && response.success) resolve(response.syncHistory || []);
                             else reject(new Error(response?.error || '获取备份历史失败'));
                         });
@@ -5900,7 +5906,7 @@ function isPopupTrackedBackupProgressVisible(progress) {
 
 function getPopupBackupProgressTargetLabel(targetKey, lang = 'zh_CN') {
     const normalizedKey = String(targetKey || '').trim().toLowerCase();
-    const isEn = lang === 'en';
+    const isEn = normalizePopupLanguage(lang) === 'en';
     if (normalizedKey === 'local') return isEn ? 'Local' : '本地';
     if (normalizedKey === 'github_repo') return isEn ? 'Cloud 2' : '云端2';
     if (normalizedKey === 'webdav') return isEn ? 'Cloud 1' : '云端1';
@@ -5908,7 +5914,7 @@ function getPopupBackupProgressTargetLabel(targetKey, lang = 'zh_CN') {
 }
 
 function getPopupBackupProgressTexts(progress, lang = 'zh_CN') {
-    const isEn = lang === 'en';
+    const isEn = normalizePopupLanguage(lang) === 'en';
     const kind = String(progress?.kind || '').trim().toLowerCase();
     const phase = String(progress?.phase || '').trim().toLowerCase();
     const totalTargets = Math.max(0, Number(progress?.totalTargets) || 0);
@@ -5958,6 +5964,156 @@ function sortPopupBackupProgressTargetKeys(targetKeys = []) {
         if (leftRank !== rightRank) return leftRank - rightRank;
         return leftKey.localeCompare(rightKey);
     });
+}
+
+function normalizePopupRestoreTargetStatus(bucket) {
+    const directStatus = String(bucket?.status || '').trim().toLowerCase();
+    if (['pending', 'running', 'success', 'failed', 'skipped'].includes(directStatus)) {
+        return directStatus;
+    }
+    if (bucket?.success === true) return 'success';
+    if (bucket?.attempted === true && Number(bucket?.failureCount || 0) > 0) return 'failed';
+    return 'skipped';
+}
+
+function buildPopupRestoreTargetStatusLine(summary, lang = 'zh_CN') {
+    if (!summary || typeof summary !== 'object') return '';
+    const normalizedLang = normalizePopupLanguage(lang);
+    const isEn = normalizedLang === 'en';
+    const statusTextMap = {
+        pending: isEn ? 'wait' : '等待',
+        running: isEn ? 'writing' : '进行中',
+        success: isEn ? 'ok' : '成功',
+        failed: isEn ? 'fail' : '失败',
+        skipped: isEn ? 'skip' : '跳过'
+    };
+    const keys = sortPopupBackupProgressTargetKeys(['local', 'github_repo', 'webdav']);
+    const parts = keys.map((targetKey) => {
+        const bucket = summary[targetKey] && typeof summary[targetKey] === 'object'
+            ? summary[targetKey]
+            : null;
+        const status = normalizePopupRestoreTargetStatus(bucket);
+        const label = getPopupBackupProgressTargetLabel(targetKey, normalizedLang);
+        const statusText = statusTextMap[status] || statusTextMap.skipped;
+        return isEn ? `${label} ${statusText}` : `${label}${statusText}`;
+    });
+    return isEn
+        ? parts.join(' · ')
+        : `恢复记录写出：${parts.join('、')}`;
+}
+
+function localizePopupRestoreRecordMessageText(text, lang = 'zh_CN') {
+    const raw = String(text || '').trim();
+    if (normalizePopupLanguage(lang) !== 'en' || !raw) return raw;
+
+    return raw
+        .replace(/云端1\(WebDAV\)/g, 'Cloud 1 (WebDAV)')
+        .replace(/云端2\(GitHub仓库\)/g, 'Cloud 2 (GitHub Repo)')
+        .replace(/本地 当前变化归档/g, 'Local current-changes archive')
+        .replace(/本地 备份历史log/g, 'Local backup-history log')
+        .replace(/WebDAV上传失败/g, 'WebDAV upload failed')
+        .replace(/WebDAV 信息未配置/g, 'WebDAV is not configured')
+        .replace(/WebDAV连接超时或网络异常，请检查地址、网络与服务器状态/g, 'WebDAV connection timed out or the network failed. Check the address, network, and server status.')
+        .replace(/GitHub仓库上传失败/g, 'GitHub repository upload failed')
+        .replace(/GitHub Token 未配置/g, 'GitHub token is not configured')
+        .replace(/仓库未配置/g, 'Repository is not configured')
+        .replace(/GitHub 仓库已禁用/g, 'GitHub repository is disabled')
+        .replace(/上传到 GitHub 仓库失败/g, 'Failed to upload to GitHub repository')
+        .replace(/本地快照备份失败（兜底）/g, 'Local snapshot backup failed (fallback)')
+        .replace(/本地快照备份失败/g, 'Local snapshot backup failed')
+        .replace(/本地备份未启用或路径未配置/g, 'Local backup is disabled or the path is not configured')
+        .replace(/本地下载被中断/g, 'Local download was interrupted')
+        .replace(/恢复记录快照导出失败/g, 'Failed to export restore-record snapshot')
+        .replace(/未能写入任何快照目标/g, 'No snapshot target was written')
+        .replace(/当前变化归档未完成，请检查网络或远端服务状态。/g, 'current-changes archive did not finish. Check network or remote service status.')
+        .replace(/备份历史log未完成，请检查网络或远端服务状态。/g, 'backup-history log did not finish. Check network or remote service status.')
+        .replace(/备份历史log已跳过，因为当前变化归档未完整成功。/g, 'backup-history log was skipped because current-changes archive was incomplete.')
+        .replace(/恢复记录的当前变化归档已跳过，因为恢复基线或当前树不可用。/g, 'Restore current-changes archive was skipped because the restore baseline or current tree is unavailable.')
+        .replace(/未知错误/g, 'Unknown error');
+}
+
+function getPopupRestoreProgressElements() {
+    const container = document.getElementById('restoreMainProgress');
+    const textEl = document.getElementById('restoreMainProgressText');
+    const percentEl = document.getElementById('restoreMainProgressPercent');
+    const fillEl = document.getElementById('restoreMainProgressFill');
+    return { container, textEl, percentEl, fillEl };
+}
+
+function setPopupRestoreProgress(percent, text, state = 'running') {
+    const { container, textEl, percentEl, fillEl } = getPopupRestoreProgressElements();
+    if (!container || !textEl || !percentEl || !fillEl) return;
+
+    const normalizedPercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+    const normalizedState = ['running', 'success', 'warning', 'error'].includes(String(state || '').trim().toLowerCase())
+        ? String(state || '').trim().toLowerCase()
+        : 'running';
+
+    container.hidden = false;
+    container.classList.remove('success', 'warning', 'error');
+    if (normalizedState !== 'running') {
+        container.classList.add(normalizedState);
+    }
+    textEl.textContent = String(text || '');
+    percentEl.textContent = `${normalizedPercent}%`;
+    fillEl.style.width = `${normalizedPercent}%`;
+}
+
+function hidePopupRestoreProgress() {
+    const { container, textEl, percentEl, fillEl } = getPopupRestoreProgressElements();
+    if (!container) return;
+    container.hidden = true;
+    container.classList.remove('success', 'warning', 'error');
+    if (textEl) textEl.textContent = '';
+    if (percentEl) percentEl.textContent = '0%';
+    if (fillEl) fillEl.style.width = '0%';
+}
+
+function getPopupRestoreTargetProgressPercent(summary, status = '') {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    if (normalizedStatus === 'success') return 96;
+    if (normalizedStatus === 'failed') return 92;
+
+    const buckets = summary && typeof summary === 'object'
+        ? ['local', 'github_repo', 'webdav']
+            .map((targetKey) => summary[targetKey])
+            .filter((bucket) => {
+                if (!bucket || typeof bucket !== 'object') return false;
+                const bucketStatus = normalizePopupRestoreTargetStatus(bucket);
+                return bucketStatus !== 'skipped';
+            })
+        : [];
+    if (!buckets.length) return 72;
+
+    const completed = buckets.filter((bucket) => {
+        const bucketStatus = normalizePopupRestoreTargetStatus(bucket);
+        return bucketStatus === 'success' || bucketStatus === 'failed';
+    }).length;
+    const running = buckets.some((bucket) => normalizePopupRestoreTargetStatus(bucket) === 'running') ? 0.5 : 0;
+    return 64 + Math.round(((completed + running) / buckets.length) * 28);
+}
+
+async function handlePopupRestoreRecordTargetProgress(message = {}) {
+    const sessionId = String(message.restoreSessionId || '').trim();
+    if (!popupActiveRestoreProgressSessionId || !sessionId || sessionId !== popupActiveRestoreProgressSessionId) {
+        return;
+    }
+    let lang = 'zh_CN';
+    try {
+        lang = normalizePopupLanguage(await getPopupPreferredLang());
+    } catch (_) { }
+    if (!popupActiveRestoreProgressSessionId || sessionId !== popupActiveRestoreProgressSessionId) {
+        return;
+    }
+    const line = buildPopupRestoreTargetStatusLine(message.targetSummary, lang);
+    if (!line) return;
+    const status = String(message.status || '').trim().toLowerCase();
+    const state = status === 'failed' ? 'error' : 'running';
+    setPopupRestoreProgress(
+        getPopupRestoreTargetProgressPercent(message.targetSummary, status),
+        line,
+        state
+    );
 }
 
 function buildStatusCardProgressHTML(progress, lang = 'zh_CN') {
@@ -7389,7 +7545,7 @@ function checkUrlParams() {
  */
 async function initializeLanguageSwitcher() {
     const langToggleButton = document.getElementById('lang-toggle-btn');
-    let currentLang = 'zh_CN'; // 默认值
+    const POPUP_PREFERRED_LANG_CACHE_KEY = 'popupPreferredLangCache';
 
     const detectDefaultLang = () => {
         try {
@@ -7400,27 +7556,51 @@ async function initializeLanguageSwitcher() {
         }
     };
 
+    const getInitialLang = () => {
+        try {
+            const cached = localStorage.getItem(POPUP_PREFERRED_LANG_CACHE_KEY);
+            if (cached === 'en' || cached === 'zh_CN') return cached;
+        } catch (_) { }
+        return detectDefaultLang();
+    };
+
+    let currentLang = getInitialLang();
+    let appliedLang = '';
+
+    const applyLanguageNow = async (lang) => {
+        const normalizedLang = normalizePopupLanguage(lang);
+        currentLang = normalizedLang;
+        window.currentLang = normalizedLang;
+        document.documentElement.setAttribute('lang', normalizedLang === 'en' ? 'en' : 'zh');
+        try {
+            localStorage.setItem(POPUP_PREFERRED_LANG_CACHE_KEY, normalizedLang);
+        } catch (_) { }
+        if (appliedLang !== normalizedLang) {
+            await applyLocalizedContent(normalizedLang);
+            appliedLang = normalizedLang;
+        }
+    };
+
+    await applyLanguageNow(currentLang);
+
     try {
         // 直接从存储中获取已设置的语言偏好
         const result = await new Promise(resolve => chrome.storage.local.get('preferredLang', resolve));
 
         if (result.preferredLang) {
-            currentLang = result.preferredLang;
+            currentLang = normalizePopupLanguage(result.preferredLang);
         } else {
-            currentLang = detectDefaultLang();
             try {
                 await chrome.storage.local.set({ preferredLang: currentLang });
             } catch (e) {
             }
         }
 
-        window.currentLang = currentLang;
-        document.documentElement.setAttribute('lang', currentLang === 'en' ? 'en' : 'zh');
-        await applyLocalizedContent(currentLang);
+        await applyLanguageNow(currentLang);
     } catch (e) {
-        window.currentLang = 'zh_CN';
-        document.documentElement.setAttribute('lang', 'zh'); // Fallback
-        await applyLocalizedContent('zh_CN'); // Fallback
+        if (!appliedLang) {
+            await applyLanguageNow('zh_CN');
+        }
     }
 
     if (langToggleButton) {
@@ -7428,8 +7608,9 @@ async function initializeLanguageSwitcher() {
             currentLang = (currentLang === 'zh_CN') ? 'en' : 'zh_CN';
             try {
                 await chrome.storage.local.set({ preferredLang: currentLang });
-                window.currentLang = currentLang;
-                document.documentElement.setAttribute('lang', currentLang === 'en' ? 'en' : 'zh');
+                try {
+                    localStorage.setItem(POPUP_PREFERRED_LANG_CACHE_KEY, currentLang);
+                } catch (_) { }
 
                 const result = await chrome.storage.local.get(['initialized']);
                 if (result.initialized === true) {
@@ -7444,7 +7625,7 @@ async function initializeLanguageSwitcher() {
             } catch (e) {
             }
 
-            await applyLocalizedContent(currentLang);
+            await applyLanguageNow(currentLang);
             updateSyncHistory(currentLang); // Pass currentLang
             // updateBookmarkCountDisplay is called by applyLocalizedContent via updateLastSyncInfo
 
@@ -11440,6 +11621,8 @@ function showRestoreModal(versions, source) {
     const searchButton = resetBtn(searchBtn);
     const cancelButton = resetBtn(cancelBtn);
     const closeButton = resetBtn(closeBtn);
+    hidePopupRestoreProgress();
+    popupActiveRestoreProgressSessionId = '';
 
     const allVersions = Array.isArray(versions) ? versions : [];
     let restoreSearchQuery = '';
@@ -13160,7 +13343,7 @@ function showRestoreModal(versions, source) {
     const getPreferredLang = () => new Promise(resolve => {
         try {
             chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => {
-                resolve(res?.currentLang || res?.preferredLang || 'zh_CN');
+                resolve(normalizePopupLanguage(res?.preferredLang || res?.currentLang || window.currentLang || 'zh_CN'));
             });
         } catch (_) {
             resolve('zh_CN');
@@ -15606,6 +15789,8 @@ function showRestoreModal(versions, source) {
     };
 
     const closeModal = () => {
+        hidePopupRestoreProgress();
+        popupActiveRestoreProgressSessionId = '';
         clearRestoreModalSessionCaches();
         modal.style.display = 'none';
         setRestoreModalScrollTopButtonsHidden(false);
@@ -17305,6 +17490,7 @@ function showRestoreModal(versions, source) {
                 ? confirmResult.preflight
                 : null;
             const restoreSessionId = `restore_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            popupActiveRestoreProgressSessionId = restoreSessionId;
             const lang = await getPreferredLang();
             const isEn = lang === 'en';
             const selectedFolderType = detectRestoreFolderType(selectedVersion);
@@ -17404,6 +17590,13 @@ function showRestoreModal(versions, source) {
 
             let appliedStrategy = normalizeRestoreStrategyValue(strategy);
             let patchFallbackUsed = false;
+            setPopupRestoreProgress(
+                12,
+                isEn
+                    ? 'Restore is running...'
+                    : '恢复执行中...',
+                'running'
+            );
             let restoreRes = await callBackgroundFunction('restoreSelectedVersion', restorePayload);
             if (isRestoreRecoveryLockedResponse(restoreRes)) {
                 return;
@@ -17478,24 +17671,53 @@ function showRestoreModal(versions, source) {
                         ? `SUCCESS: Import merge completed. Created ${restoreRes.created || 0} nodes under “${restoreRes.importedFolderTitle || 'Imported'}”.`
                         : `成功：导入合并完成。在“${restoreRes.importedFolderTitle || '导入'}”下创建 ${restoreRes.created || 0} 个节点。`;
                 })();
+                const restoreTargetStatusLine = buildPopupRestoreTargetStatusLine(
+                    restoreRes?.restoreRecordTargetSummary,
+                    lang
+                );
+                const restoreRecordErrorText = localizePopupRestoreRecordMessageText(
+                    restoreRes?.restoreRecordError || (isEn ? 'Unknown error' : '未知错误'),
+                    lang
+                );
+                const restoreRecordWarningText = localizePopupRestoreRecordMessageText(
+                    restoreRes?.restoreRecordWarning || '',
+                    lang
+                );
+                if (restoreRes?.restoreRecordSuccess === false) {
+                    setPopupRestoreProgress(
+                        100,
+                        (isEn ? 'Restore completed, but failed to create restore history: ' : '恢复已完成，但写入恢复记录失败：')
+                        + restoreRecordErrorText
+                        + (restoreTargetStatusLine ? (isEn ? `; ${restoreTargetStatusLine}` : `；${restoreTargetStatusLine}`) : ''),
+                        'error'
+                    );
+                } else {
+                    const restoreRecordStatusParts = [];
+                    if (restoreTargetStatusLine) {
+                        restoreRecordStatusParts.push(restoreTargetStatusLine);
+                    }
+                    if (restoreRecordWarningText) {
+                        restoreRecordStatusParts.push(
+                            (isEn ? 'Warnings: ' : '告警：') + restoreRecordWarningText
+                        );
+                    }
+                    if (restoreRecordStatusParts.length > 0) {
+                        setPopupRestoreProgress(
+                            100,
+                            restoreRecordStatusParts.join(isEn ? '; ' : '；'),
+                            restoreRecordWarningText ? 'warning' : 'success'
+                        );
+                    } else {
+                        setPopupRestoreProgress(
+                            100,
+                            isEn ? 'Restore completed.' : '恢复完成。',
+                            'success'
+                        );
+                    }
+                }
                 alert(msg);
                 closeModal();
                 schedulePopupHistoryRefresh(80);
-                if (restoreRes?.restoreRecordSuccess === false) {
-                    showStatus(
-                        (isEn ? 'Restore completed, but failed to create restore history: ' : '恢复已完成，但写入恢复记录失败：')
-                        + (restoreRes?.restoreRecordError || (isEn ? 'Unknown error' : '未知错误')),
-                        'error',
-                        5000
-                    );
-                } else if (restoreRes?.restoreRecordWarning) {
-                    showStatus(
-                        (isEn ? 'Restore history completed with warnings: ' : '恢复记录已写入，但有告警：')
-                        + restoreRes.restoreRecordWarning,
-                        'info',
-                        5200
-                    );
-                }
 
                 // Restore is equivalent to “first backup”: enter main UI without extra initialization
                 try {
@@ -17533,13 +17755,18 @@ function showRestoreModal(versions, source) {
                 } catch (_) { }
             } else {
                 promptRestoreRecoveryTransactionFromPopup();
-                alert(`${isEn ? 'Failed: ' : '失败：'}${formatRestoreUiError(restoreRes, lang)}`);
+                const failedMessage = `${isEn ? 'Failed: ' : '失败：'}${formatRestoreUiError(restoreRes, lang)}`;
+                setPopupRestoreProgress(100, failedMessage, 'error');
+                alert(failedMessage);
             }
         } catch (e) {
             promptRestoreRecoveryTransactionFromPopup();
             const errorLang = cachedLang || (await getPreferredLang());
-            alert(`${errorLang === 'en' ? 'Error: ' : '错误：'}${formatRestoreUiError(e, errorLang)}`);
+            const errorMessage = `${errorLang === 'en' ? 'Error: ' : '错误：'}${formatRestoreUiError(e, errorLang)}`;
+            setPopupRestoreProgress(100, errorMessage, 'error');
+            alert(errorMessage);
         } finally {
+            popupActiveRestoreProgressSessionId = '';
             if (activeRestoreLocalPayloadToken) {
                 await releaseRestoreLocalPayloadToken(activeRestoreLocalPayloadToken);
                 activeRestoreLocalPayloadToken = '';
@@ -20310,6 +20537,8 @@ function showEditPendingRemarkDialog() {
 // =============================================================================
 
 document.addEventListener('DOMContentLoaded', function () {
+    initializeLanguageSwitcher().catch(() => { });
+
     window.addEventListener('resize', syncInitRightColumnHeights);
 
     const leftPanel = document.querySelector('.stacked-settings');
@@ -20459,13 +20688,9 @@ document.addEventListener('DOMContentLoaded', function () {
             refreshBackupHistorySlimmingSettings();
             refreshLatestSafetyCheckpointStatus();
             initScrollToTopButton(); // 初始化滚动按钮
-
-            // 恢复自动滚动逻辑
-            // 使用setTimeout确保DOM更新和渲染完成后再滚动
-            setTimeout(() => {
-                // 需求：每次点击插件图标后，直接定位至「定位A」（无动画）
+            try {
                 scrollToPositionA('auto');
-            }, 0); // 将延迟时间降为0，立即执行
+            } catch (_) { }
 
         }
 
@@ -21658,7 +21883,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 监听来自后台的书签变化消息和获取变化描述请求
     chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
-        if (message && message.action === "bookmarkChanged") {
+        if (message && message.action === "restoreRecordTargetProgress") {
+            handlePopupRestoreRecordTargetProgress(message);
+            sendResponse({ success: true });
+            return true;
+        } else if (message && message.action === "bookmarkChanged") {
             // 仅在首次变脏/恢复后触发状态卡片刷新，避免每次书签事件都重算
             if (message.dirtyBecameTrue === true || message.source === 'restore' || message.forceRefresh === true) {
                 scheduleBookmarkCountDisplayRefresh({ delay: 120 });
@@ -22202,13 +22431,6 @@ document.addEventListener('DOMContentLoaded', function () {
             return true;
         }
     });
-
-    // Call initialization when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeLanguageSwitcher);
-    } else {
-        initializeLanguageSwitcher();
-    }
 
     // 初始化 preBackupRemark 监听和渲染
     const preBackupRemarkContainer = document.getElementById('preBackupRemarkContainer');

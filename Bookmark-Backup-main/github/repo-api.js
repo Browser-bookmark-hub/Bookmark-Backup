@@ -1,6 +1,6 @@
 const GITHUB_API_BASE_URL = 'https://api.github.com';
 const GITHUB_API_VERSION = '2022-11-28';
-const GITHUB_REQUEST_TIMEOUT_MS = 20000;
+const GITHUB_REQUEST_TIMEOUT_MS = 15000;
 const githubRepoWriteQueues = new Map();
 
 function buildGitHubAuthHeader(token) {
@@ -257,7 +257,11 @@ async function githubRequestJson(url, { method = 'GET', headers = {}, body, _ret
       timeoutError.status = 408;
       timeoutError.code = 'GITHUB_REQUEST_TIMEOUT';
       timeoutError.cause = error;
-      console.error('[githubRequestJson] 请求超时:', method, url, timeoutError);
+      if (method === 'PUT') {
+        console.warn('[githubRequestJson] PUT 请求超时 (GitHub 端通常已写入成功):', method, url, timeoutError);
+      } else {
+        console.error('[githubRequestJson] 请求超时:', method, url, timeoutError);
+      }
       throw timeoutError;
     }
     console.error('[githubRequestJson] 请求失败:', method, url, error);

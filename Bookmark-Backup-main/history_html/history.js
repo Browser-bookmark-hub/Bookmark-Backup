@@ -50,6 +50,15 @@ try {
 } catch (e) { }
 
 window.currentLang = currentLang; // 暴露给其他模块使用
+
+function normalizeHistoryLanguage(lang = '', fallback = 'zh_CN') {
+    const raw = String(lang || '').trim().toLowerCase().replace('_', '-');
+    if (raw.startsWith('en')) return 'en';
+    if (raw.startsWith('zh')) return 'zh_CN';
+    const fallbackRaw = String(fallback || '').trim().toLowerCase().replace('_', '-');
+    return fallbackRaw.startsWith('en') ? 'en' : 'zh_CN';
+}
+
 // 允许外部页面限制可用视图（拆分插件时使用）
 const DEFAULT_VIEWS = ['current-changes', 'history', 'dev-1'];
 const ALLOWED_VIEWS = (Array.isArray(window.__ALLOWED_VIEWS) && window.__ALLOWED_VIEWS.length)
@@ -1973,6 +1982,7 @@ const FaviconCache = {
 
 // 浏览器 API 兼容性
 const browserAPI = (typeof chrome !== 'undefined') ? chrome : browser;
+let activeHistoryRestoreProgressSessionId = '';
 
 function sendHistoryRuntimeMessage(payload) {
     return new Promise((resolve) => {
@@ -10638,6 +10648,94 @@ function setRestoreProgress(percent, text) {
     if (textEl && typeof text === 'string') textEl.textContent = text;
 }
 
+function getHistoryRestoreTargetLabel(targetKey, lang = currentLang) {
+    const isZh = normalizeHistoryLanguage(lang, currentLang) === 'zh_CN';
+    const normalizedKey = String(targetKey || '').trim().toLowerCase();
+    if (normalizedKey === 'local') return isZh ? '本地' : 'Local';
+    if (normalizedKey === 'github_repo') return isZh ? '云端2' : 'Cloud 2';
+    if (normalizedKey === 'webdav') return isZh ? '云端1' : 'Cloud 1';
+    return normalizedKey || (isZh ? '目标' : 'Target');
+}
+
+function normalizeHistoryRestoreTargetStatus(bucket) {
+    const directStatus = String(bucket?.status || '').trim().toLowerCase();
+    if (['pending', 'running', 'success', 'failed', 'skipped'].includes(directStatus)) {
+        return directStatus;
+    }
+    if (bucket?.success === true) return 'success';
+    if (bucket?.attempted === true && Number(bucket?.failureCount || 0) > 0) return 'failed';
+    return 'skipped';
+}
+
+function buildHistoryRestoreTargetStatusLine(summary, lang = currentLang) {
+    if (!summary || typeof summary !== 'object') return '';
+    const normalizedLang = normalizeHistoryLanguage(lang, currentLang);
+    const isZh = normalizedLang === 'zh_CN';
+    const statusTextMap = {
+        pending: isZh ? '等待' : 'wait',
+        running: isZh ? '进行中' : 'writing',
+        success: isZh ? '成功' : 'ok',
+        failed: isZh ? '失败' : 'fail',
+        skipped: isZh ? '跳过' : 'skip'
+    };
+    const parts = ['local', 'github_repo', 'webdav'].map((targetKey) => {
+        const bucket = summary[targetKey] && typeof summary[targetKey] === 'object'
+            ? summary[targetKey]
+            : null;
+        const status = normalizeHistoryRestoreTargetStatus(bucket);
+        const label = getHistoryRestoreTargetLabel(targetKey, normalizedLang);
+        const statusText = statusTextMap[status] || statusTextMap.skipped;
+        return isZh ? `${label}${statusText}` : `${label} ${statusText}`;
+    });
+    return isZh
+        ? `恢复记录写出：${parts.join('、')}`
+        : parts.join(' · ');
+}
+
+function localizeHistoryRestoreRecordMessageText(text, lang = currentLang) {
+    const raw = String(text || '').trim();
+    if (normalizeHistoryLanguage(lang, currentLang) !== 'en' || !raw) return raw;
+
+    return raw
+        .replace(/云端1\(WebDAV\)/g, 'Cloud 1 (WebDAV)')
+        .replace(/云端2\(GitHub仓库\)/g, 'Cloud 2 (GitHub Repo)')
+        .replace(/本地 当前变化归档/g, 'Local current-changes archive')
+        .replace(/本地 备份历史log/g, 'Local backup-history log')
+        .replace(/WebDAV上传失败/g, 'WebDAV upload failed')
+        .replace(/WebDAV 信息未配置/g, 'WebDAV is not configured')
+        .replace(/WebDAV连接超时或网络异常，请检查地址、网络与服务器状态/g, 'WebDAV connection timed out or the network failed. Check the address, network, and server status.')
+        .replace(/GitHub仓库上传失败/g, 'GitHub repository upload failed')
+        .replace(/GitHub Token 未配置/g, 'GitHub token is not configured')
+        .replace(/仓库未配置/g, 'Repository is not configured')
+        .replace(/GitHub 仓库已禁用/g, 'GitHub repository is disabled')
+        .replace(/上传到 GitHub 仓库失败/g, 'Failed to upload to GitHub repository')
+        .replace(/本地快照备份失败（兜底）/g, 'Local snapshot backup failed (fallback)')
+        .replace(/本地快照备份失败/g, 'Local snapshot backup failed')
+        .replace(/本地备份未启用或路径未配置/g, 'Local backup is disabled or the path is not configured')
+        .replace(/本地下载被中断/g, 'Local download was interrupted')
+        .replace(/恢复记录快照导出失败/g, 'Failed to export restore-record snapshot')
+        .replace(/未能写入任何快照目标/g, 'No snapshot target was written')
+        .replace(/当前变化归档未完成，请检查网络或远端服务状态。/g, 'current-changes archive did not finish. Check network or remote service status.')
+        .replace(/备份历史log未完成，请检查网络或远端服务状态。/g, 'backup-history log did not finish. Check network or remote service status.')
+        .replace(/备份历史log已跳过，因为当前变化归档未完整成功。/g, 'backup-history log was skipped because current-changes archive was incomplete.')
+        .replace(/恢复记录的当前变化归档已跳过，因为恢复基线或当前树不可用。/g, 'Restore current-changes archive was skipped because the restore baseline or current tree is unavailable.')
+        .replace(/未知错误/g, 'Unknown error');
+}
+
+function handleHistoryRestoreRecordTargetProgress(message = {}) {
+    const sessionId = String(message.restoreSessionId || '').trim();
+    if (!activeHistoryRestoreProgressSessionId || !sessionId || sessionId !== activeHistoryRestoreProgressSessionId) {
+        return;
+    }
+    const line = buildHistoryRestoreTargetStatusLine(message.targetSummary, currentLang);
+    if (!line) return;
+    const status = String(message.status || '').trim().toLowerCase();
+    const percent = status === 'success'
+        ? 96
+        : (status === 'failed' ? 92 : 88);
+    setRestoreProgress(percent, line);
+}
+
 function setRestoreDiffBarVisible(visible) {
     const bar = document.getElementById('restoreDiffBar');
     if (bar) bar.style.display = visible ? 'flex' : 'none';
@@ -13874,6 +13972,7 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
     let appliedStrategy = preflightResolvedStrategy;
     let patchFallbackUsed = false;
     const restoreSessionId = `restore_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    activeHistoryRestoreProgressSessionId = restoreSessionId;
 
     try {
         try {
@@ -13999,7 +14098,17 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
             throw new Error(`Unknown restore strategy: ${strategy}`);
         }
 
-        setRestoreProgress(100, isZh ? '恢复完成！' : 'Restore completed!');
+        const restoreTargetStatusLine = buildHistoryRestoreTargetStatusLine(
+            result?.restoreRecordTargetSummary,
+            currentLang
+        );
+        const restoreCompleteText = isZh ? '恢复完成！' : 'Restore completed!';
+        setRestoreProgress(
+            100,
+            restoreTargetStatusLine
+                ? `${restoreCompleteText} ${restoreTargetStatusLine}`
+                : restoreCompleteText
+        );
 
         let successMsg = isZh ? '恢复成功！' : 'Restore successful!';
         const preflightSummary = summarizeChangeMap(preflightInfo && preflightInfo.changeMap ? preflightInfo.changeMap : new Map());
@@ -14042,14 +14151,15 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
 
         showToast(successMsg);
         if (result?.restoreRecordSuccess === false) {
-            const errText = String(result?.restoreRecordError || '');
+            const errText = localizeHistoryRestoreRecordMessageText(result?.restoreRecordError || '', currentLang);
             showToast(currentLang === 'zh_CN'
-                ? `恢复记录创建失败${errText ? `：${errText}` : ''}`
-                : `Failed to create restore record${errText ? `: ${errText}` : ''}`);
+                ? `恢复记录创建失败${errText ? `：${errText}` : ''}${restoreTargetStatusLine ? `；${restoreTargetStatusLine}` : ''}`
+                : `Failed to create restore record${errText ? `: ${errText}` : ''}${restoreTargetStatusLine ? `; ${restoreTargetStatusLine}` : ''}`);
         } else if (result?.restoreRecordWarning) {
+            const warningText = localizeHistoryRestoreRecordMessageText(result.restoreRecordWarning, currentLang);
             showToast(currentLang === 'zh_CN'
-                ? `恢复记录已写入，但有告警：${result.restoreRecordWarning}`
-                : `Restore history completed with warnings: ${result.restoreRecordWarning}`);
+                ? `恢复记录已写入，但有告警：${warningText}${restoreTargetStatusLine ? `；${restoreTargetStatusLine}` : ''}`
+                : `Restore history completed with warnings: ${warningText}${restoreTargetStatusLine ? `; ${restoreTargetStatusLine}` : ''}`);
         }
 
         setTimeout(async () => {
@@ -14084,6 +14194,9 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
             }
         } catch (_) { }
     } finally {
+        if (activeHistoryRestoreProgressSessionId === restoreSessionId) {
+            activeHistoryRestoreProgressSessionId = '';
+        }
         try {
             await browserAPI.runtime.sendMessage({ action: 'setBookmarkRestoringFlag', value: false });
         } catch (_) { }
@@ -14455,6 +14568,8 @@ async function executeMergeRestore(bookmarkTree, options = {}) {
             restoreRecordError: response.restoreRecordError || '',
             restoreRecordWarning: response.restoreRecordWarning || '',
             restoreRecordSyncTime: response.restoreRecordSyncTime || '',
+            restoreRecordTargetSummary: response.restoreRecordTargetSummary || null,
+            restoreRecordLocalOnly: response.restoreRecordLocalOnly === true,
             sourceType: useChangesView ? 'changes' : 'snapshot',
             viewMode: useChangesView ? viewMode : 'snapshot'
         };
@@ -22099,7 +22214,7 @@ function setupRealtimeMessageListener() {
     if (messageListenerRegistered) return;
     messageListenerRegistered = true;
 
-    browserAPI.runtime.onMessage.addListener((message) => {
+    browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!message || !message.action) return;
 
         if (message.action === 'analysisUpdated') {
@@ -22108,6 +22223,11 @@ function setupRealtimeMessageListener() {
                 return;
             }
             handleAnalysisUpdatedMessage(message);
+        } else if (message.action === 'restoreRecordTargetProgress') {
+            handleHistoryRestoreRecordTargetProgress(message);
+            if (typeof sendResponse === 'function') {
+                sendResponse({ success: true });
+            }
         } else if (message.action === 'clearFaviconCache') {
             // 书签URL被修改，清除favicon缓存（静默）
             if (message.url) {

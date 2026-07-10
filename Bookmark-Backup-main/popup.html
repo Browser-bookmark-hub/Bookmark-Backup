@@ -4659,8 +4659,75 @@
             border-top: 1px solid var(--theme-border-primary);
             background-color: var(--theme-bg-primary);
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
             align-items: center;
+            gap: 12px;
+        }
+
+        .restore-modal-progress {
+            flex: 1 1 220px;
+            max-width: 330px;
+            min-width: 180px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .restore-modal-progress[hidden] {
+            display: none !important;
+        }
+
+        .restore-modal-progress-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .restore-modal-progress-text {
+            min-width: 0;
+            color: var(--theme-text-secondary);
+            font-size: 11px;
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .restore-modal-progress-percent {
+            flex: 0 0 auto;
+            color: var(--theme-text-secondary);
+            font-size: 10px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .restore-modal-progress-track {
+            height: 5px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: var(--theme-bg-secondary);
+            border: 1px solid var(--theme-border-primary);
+        }
+
+        .restore-modal-progress-fill {
+            width: 0%;
+            height: 100%;
+            border-radius: inherit;
+            background: var(--theme-accent-color);
+            transition: width 0.18s ease;
+        }
+
+        .restore-modal-progress.success .restore-modal-progress-fill {
+            background: var(--theme-success-color, #10b981);
+        }
+
+        .restore-modal-progress.warning .restore-modal-progress-fill {
+            background: var(--theme-warning-color, #f59e0b);
+        }
+
+        .restore-modal-progress.error .restore-modal-progress-fill {
+            background: var(--theme-error-color, #ef4444);
         }
 
         .restore-modal-actions {
@@ -7344,6 +7411,15 @@
             </div>
 
             <div class="restore-modal-footer">
+                <div id="restoreMainProgress" class="restore-modal-progress" hidden aria-live="polite">
+                    <div class="restore-modal-progress-head">
+                        <span id="restoreMainProgressText" class="restore-modal-progress-text"></span>
+                        <span id="restoreMainProgressPercent" class="restore-modal-progress-percent">0%</span>
+                    </div>
+                    <div class="restore-modal-progress-track">
+                        <div id="restoreMainProgressFill" class="restore-modal-progress-fill"></div>
+                    </div>
+                </div>
                 <div class="restore-modal-actions">
                     <div id="restoreInlineSearchWrap" class="restore-inline-search" hidden>
                         <input id="restoreInlineSearchInput" class="restore-inline-search-input" type="text" autocomplete="off">
