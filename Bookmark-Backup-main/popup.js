@@ -10067,6 +10067,7 @@ function initializeBackupSettings() {
     function collectCurrentChangesArchiveModes() {
         if (currentChangesArchiveModeCollection?.checked) return ['collection'];
         if (currentChangesArchiveModeDetailed?.checked) return ['detailed'];
+        if (currentChangesArchiveModeSimple?.checked) return ['simple'];
         return ['collection'];
     }
 
