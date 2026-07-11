@@ -10316,9 +10316,46 @@ a.tree-label.tree-bookmark-link:hover {
     color: var(--text-primary);
 }
 
+@keyframes warning-breath {
+    0% {
+        background: rgba(255, 193, 7, 0.16);
+        border-color: rgba(255, 193, 7, 0.44);
+        box-shadow: 0 0 0 0px rgba(255, 193, 7, 0.2);
+    }
+    50% {
+        background: rgba(255, 193, 7, 0.32);
+        border-color: rgba(255, 193, 7, 0.85);
+        box-shadow: 0 0 4px 2px rgba(255, 193, 7, 0.35);
+    }
+    100% {
+        background: rgba(255, 193, 7, 0.16);
+        border-color: rgba(255, 193, 7, 0.44);
+        box-shadow: 0 0 0 0px rgba(255, 193, 7, 0.2);
+    }
+}
+
+@keyframes danger-breath {
+    0% {
+        background: rgba(244, 67, 54, 0.14);
+        border-color: rgba(244, 67, 54, 0.4);
+        box-shadow: 0 0 0 0px rgba(244, 67, 54, 0.2);
+    }
+    50% {
+        background: rgba(244, 67, 54, 0.28);
+        border-color: rgba(244, 67, 54, 0.8);
+        box-shadow: 0 0 5px 3px rgba(244, 67, 54, 0.3);
+    }
+    100% {
+        background: rgba(244, 67, 54, 0.14);
+        border-color: rgba(244, 67, 54, 0.4);
+        box-shadow: 0 0 0 0px rgba(244, 67, 54, 0.2);
+    }
+}
+
 #clearBackupHistoryBtn.history-delete-warning {
     background: rgba(255, 193, 7, 0.16);
     border-color: rgba(255, 193, 7, 0.44);
+    animation: warning-breath 2s infinite ease-in-out;
 }
 
 #clearBackupHistoryBtn.history-delete-warning i {
@@ -10328,6 +10365,8 @@ a.tree-label.tree-bookmark-link:hover {
 #clearBackupHistoryBtn.history-delete-warning:hover {
     background: rgba(255, 193, 7, 0.24);
     border-color: rgba(255, 193, 7, 0.56);
+    animation: none;
+    box-shadow: 0 2px 6px rgba(255, 193, 7, 0.3);
 }
 
 #clearBackupHistoryBtn.history-delete-warning:hover i {
@@ -10337,6 +10376,7 @@ a.tree-label.tree-bookmark-link:hover {
 #clearBackupHistoryBtn.history-delete-danger {
     background: rgba(244, 67, 54, 0.14);
     border-color: rgba(244, 67, 54, 0.4);
+    animation: danger-breath 1.5s infinite ease-in-out;
 }
 
 #clearBackupHistoryBtn.history-delete-danger i {
@@ -10346,6 +10386,8 @@ a.tree-label.tree-bookmark-link:hover {
 #clearBackupHistoryBtn.history-delete-danger:hover {
     background: rgba(244, 67, 54, 0.22);
     border-color: rgba(244, 67, 54, 0.54);
+    animation: none;
+    box-shadow: 0 2px 6px rgba(244, 67, 54, 0.3);
 }
 
 #clearBackupHistoryBtn.history-delete-danger:hover i {
