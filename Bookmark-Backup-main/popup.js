@@ -3849,15 +3849,15 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         if (currentLang === 'en') {
             headerHTML = `
                 <div class="header-item header-action">No.</div>
-                <div class="header-item header-time" style="flex: 1; text-align: center;">Time & Notes</div>
-                <div class="header-item header-count" style="flex: 1; text-align: center;">Quantity & Structure</div>
+                <div class="header-item header-time" style="flex: 1.25; text-align: center;">Time & Notes</div>
+                <div class="header-item header-count" style="flex: 0.75; text-align: center;">Quantity & Structure</div>
                 <div class="header-item header-ops">Ops</div>
             `;
         } else {
             headerHTML = `
                 <div class="header-item header-action">序号</div>
-                <div class="header-item header-time" style="flex: 1; text-align: center;">时间与备注</div>
-                <div class="header-item header-count" style="flex: 1; text-align: center;">数量与结构</div>
+                <div class="header-item header-time" style="flex: 1.25; text-align: center;">时间与备注</div>
+                <div class="header-item header-count" style="flex: 0.75; text-align: center;">数量与结构</div>
                 <div class="header-item header-ops">操作</div>
             `;
         }
@@ -4304,8 +4304,8 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 }
 
                 // 只保留两栏的样式
-                let timeColStyle = "flex: 1; text-align: center;";
-                let qtyColStyle = "flex: 1; text-align: center;";
+                let timeColStyle = "flex: 1.25; text-align: center;";
+                let qtyColStyle = "flex: 0.75; text-align: center;";
 
                 // 详情按钮：序号按钮 + 跳转图标
                 const detailsBtn = recordCapabilities.canExpand
