@@ -1045,82 +1045,113 @@
                 </button>
             </div>
             <div class="modal-body" style="padding: 16px 20px;">
-                <p id="clearBackupHistoryModalDesc"
-                    style="font-size: 14px; color: var(--text-primary); margin: 0 0 14px 0;">
-                    拖动进度条选择要删除的记录。
+                <p id="clearBackupHistoryModalDesc" class="clear-history-modal-desc">
+                    管理插件内部备份历史记录，不会删除云端或本地导出的备份文件。
                 </p>
 
-                <!-- 删除范围选择区域 -->
-                <div id="clearBackupHistoryOptions"
-                    style="border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">
-
-                    <!-- 双滑块范围选择器 -->
-                    <div id="clearHistoryRangeContainer" class="range-slider-container">
-                        <!-- 滑块轨道容器 -->
-                        <div id="clearHistoryRangeTrack" class="range-slider-track">
-                            <div id="clearHistoryVersionSegments" class="clear-history-version-segments">
-                                <div id="clearHistoryVersionSegmentV3"
-                                    class="clear-history-version-segment clear-history-version-segment-v3"></div>
-                                <div id="clearHistoryVersionSegmentLegacy"
-                                    class="clear-history-version-segment clear-history-version-segment-legacy"></div>
+                <div id="clearBackupHistoryOptions" class="clear-history-section-stack">
+                    <section class="clear-history-section clear-history-manual-section">
+                        <div class="clear-history-section-header">
+                            <div>
+                                <div id="clearHistoryManualSectionTitle" class="clear-history-section-title">手动删除</div>
+                                <div id="clearHistoryManualSectionDesc" class="clear-history-section-desc">拖动范围选择要删除的记录。</div>
                             </div>
-                            <!-- 选中区域高亮 -->
-                            <div id="clearHistoryRangeHighlight" class="range-slider-highlight"></div>
-                            <div id="clearHistoryVersionBoundary" class="clear-history-version-boundary"></div>
+                            <button class="modal-btn danger clear-history-primary-action" id="clearBackupHistoryConfirmBtn">确认删除</button>
                         </div>
 
-                        <!-- 左滑块（起始序号） -->
-                        <input type="range" id="clearHistoryRangeMin" class="range-slider-input" min="1" max="100"
-                            value="1">
+                        <div id="clearHistoryRangeContainer" class="range-slider-container">
+                            <div id="clearHistoryRangeTrack" class="range-slider-track">
+                                <div id="clearHistoryVersionSegments" class="clear-history-version-segments">
+                                    <div id="clearHistoryVersionSegmentV3"
+                                        class="clear-history-version-segment clear-history-version-segment-v3"></div>
+                                    <div id="clearHistoryVersionSegmentLegacy"
+                                        class="clear-history-version-segment clear-history-version-segment-legacy"></div>
+                                </div>
+                                <div id="clearHistoryRangeHighlight" class="range-slider-highlight"></div>
+                                <div id="clearHistoryVersionBoundary" class="clear-history-version-boundary"></div>
+                            </div>
 
-                        <!-- 右滑块（结束序号） -->
-                        <input type="range" id="clearHistoryRangeMax" class="range-slider-input" min="1" max="100"
-                            value="50">
+                            <input type="range" id="clearHistoryRangeMin" class="range-slider-input" min="1" max="100"
+                                value="1">
+                            <input type="range" id="clearHistoryRangeMax" class="range-slider-input" min="1" max="100"
+                                value="50">
 
-                        <!-- 序号刻度 -->
-                        <div id="clearHistoryRangeLabels" class="range-slider-labels">
-                            <span id="clearHistoryMinSeqLabel">1</span>
-                            <span id="clearHistoryMaxSeqLabel">100</span>
+                            <div id="clearHistoryRangeLabels" class="range-slider-labels">
+                                <span id="clearHistoryMinSeqLabel">1</span>
+                                <span id="clearHistoryMaxSeqLabel">100</span>
+                            </div>
+
+                            <div id="clearHistoryRangeMinBubble" class="range-slider-bubble">1</div>
+                            <div id="clearHistoryRangeMaxBubble" class="range-slider-bubble">1</div>
                         </div>
 
-                        <div id="clearHistoryRangeMinBubble" class="range-slider-bubble">1</div>
-                        <div id="clearHistoryRangeMaxBubble" class="range-slider-bubble">1</div>
-                    </div>
+                        <div id="clearHistoryProgressLegend" class="clear-history-progress-legend">
+                            <span class="clear-history-progress-legend-item">
+                                <span class="clear-history-progress-dot clear-history-progress-dot-v3"></span>
+                                <span id="clearHistoryProgressV3Text">v3.0 0 条</span>
+                            </span>
+                            <span class="clear-history-progress-legend-item">
+                                <span class="clear-history-progress-dot clear-history-progress-dot-legacy"></span>
+                                <span id="clearHistoryProgressLegacyText">v2.1 0 条</span>
+                            </span>
+                        </div>
+                        <div id="clearHistoryVersionWarning" class="clear-history-version-warning"></div>
 
-                    <div id="clearHistoryProgressLegend" class="clear-history-progress-legend">
-                        <span class="clear-history-progress-legend-item">
-                            <span class="clear-history-progress-dot clear-history-progress-dot-v3"></span>
-                            <span id="clearHistoryProgressV3Text">v3.0 0 条</span>
-                        </span>
-                        <span class="clear-history-progress-legend-item">
-                            <span class="clear-history-progress-dot clear-history-progress-dot-legacy"></span>
-                            <span id="clearHistoryProgressLegacyText">v2.1 0 条</span>
-                        </span>
-                    </div>
-                    <div id="clearHistoryVersionWarning" class="clear-history-version-warning"></div>
+                        <div id="clearHistorySelectionDisplay" class="clear-history-selection-display">
+                            <span class="clear-history-selection-text">
+                                <span id="clearHistorySelectionLabel">将删除条目</span>
+                                <span id="clearHistorySelectionRange" class="clear-history-selection-range">1-50</span>
+                                <span id="clearHistorySelectionCount" class="clear-history-selection-count">（共 50 条）</span>
+                            </span>
+                        </div>
 
-                    <!-- 选中范围显示 -->
-                    <div id="clearHistorySelectionDisplay" style="text-align: center; margin-top: 8px;">
-                        <span style="font-size: 13px; color: var(--text-secondary);">
-                            <span id="clearHistorySelectionLabel">将删除序号</span>
-                            <span id="clearHistorySelectionRange"
-                                style="font-weight: 600; color: var(--error);">1-50</span>
-                            <span id="clearHistorySelectionCount" style="color: var(--text-secondary);">（共 50 条）</span>
-                        </span>
-                    </div>
+                        <div id="clearHistoryPreview" class="clear-history-preview">
+                            <span>
+                                <i class="fas fa-info-circle"></i>
+                                <span id="clearHistoryPreviewText">当前共 0 条记录，将删除 0 条</span>
+                            </span>
+                        </div>
+                    </section>
 
-                    <!-- 预览删除数量 -->
-                    <div id="clearHistoryPreview"
-                        style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-color);">
-                        <span style="font-size: 12px; color: var(--text-tertiary);">
-                            <i class="fas fa-info-circle" style="margin-right: 4px;"></i>
-                            <span id="clearHistoryPreviewText">当前共 0 条记录，将删除 0 条</span>
-                        </span>
-                    </div>
+                    <section id="clearHistoryAutoCleanupPanel" class="clear-history-section clear-history-auto-cleanup-panel">
+                        <div class="clear-history-section-header">
+                            <div>
+                                <div id="clearHistoryAutoSectionTitle" class="clear-history-section-title">自动清理</div>
+                                <div id="historyAutoCleanupHint" class="clear-history-section-desc">
+                                    启用后，记录数达到“阈值 + 触发清理条数”时会在后台截取到阈值。仅清理插件内部备份历史记录。
+                                </div>
+                            </div>
+                            <label class="clear-history-auto-cleanup-toggle" for="historyAutoCleanupEnabled">
+                                <span class="clear-history-switch">
+                                    <input type="checkbox" id="historyAutoCleanupEnabled">
+                                    <span class="clear-history-switch-track"></span>
+                                </span>
+                            </label>
+                        </div>
+                        <div id="historyAutoCleanupFields" class="clear-history-auto-cleanup-fields">
+                            <label class="clear-history-auto-cleanup-item" for="historyAutoCleanupThreshold">
+                                <span id="historyAutoCleanupThresholdText">阈值/保留最新</span>
+                                <input id="historyAutoCleanupThreshold" class="clear-history-threshold-input" type="number"
+                                    min="10" max="999999" step="1" value="30" inputmode="numeric" disabled>
+                            </label>
+                            <label class="clear-history-auto-cleanup-item" for="historyAutoCleanupBatchSize">
+                                <span id="historyAutoCleanupBatchText">触发清理条数</span>
+                                <input id="historyAutoCleanupBatchSize" class="clear-history-threshold-input" type="number"
+                                    min="1" max="999999" step="1" value="5" inputmode="numeric" disabled>
+                            </label>
+                        </div>
+                    </section>
 
-                    <div id="clearHistoryWarningThresholdPanel" class="clear-history-threshold-panel">
-                        <div id="clearHistoryWarningThresholdTitle" class="clear-history-threshold-title">
-                            删除按钮颜色提醒阈值
+                    <section id="clearHistoryWarningThresholdPanel" class="clear-history-section clear-history-threshold-panel">
+                        <div class="clear-history-section-header">
+                            <div>
+                                <div id="clearHistoryWarningThresholdTitle" class="clear-history-section-title">
+                                    删除按钮颜色提醒阈值
+                                </div>
+                                <div id="clearHistoryWarnThresholdHint" class="clear-history-section-desc">
+                                    默认 25 / 50，可手动修改。
+                                </div>
+                            </div>
                         </div>
                         <div class="clear-history-threshold-row">
                             <label class="clear-history-threshold-item" for="clearHistoryWarnYellowInput">
@@ -1134,16 +1165,7 @@
                                     max="999999" step="1" inputmode="numeric">
                             </label>
                         </div>
-                        <div id="clearHistoryWarnThresholdHint" class="clear-history-threshold-hint">
-                            默认 50 / 100，可手动修改。
-                        </div>
-                    </div>
-                </div>
-
-                <div class="modal-footer"
-                    style="margin-top: 14px; display: flex; justify-content: flex-end; gap: 10px;">
-                    <button class="modal-btn" id="clearBackupHistoryCancelBtn">取消</button>
-                    <button class="modal-btn danger" id="clearBackupHistoryConfirmBtn">确认删除</button>
+                    </section>
                 </div>
             </div>
         </div>

@@ -81,8 +81,14 @@ let historyBackupHistorySlimmingSettings = {
     saveSnapshotData: true,
     saveChangeData: true
 };
+let historyBackupHistoryAutoCleanupSettings = {
+    enabled: false,
+    threshold: 30,
+    batchSize: 5
+};
 let historyLatestSafetyCheckpoint = null;
 let historyBackupHistorySlimmingSettingsLoaded = false;
+let historyBackupHistoryAutoCleanupSettingsLoaded = false;
 
 // 旧的 localStorage 键前缀（用于迁移）
 const HISTORY_DETAIL_MODE_PREFIX = 'historyDetailMode:';
@@ -93,6 +99,17 @@ function normalizeHistoryBackupHistorySlimmingSettings(rawSettings = {}) {
     return {
         saveSnapshotData: settings.saveSnapshotData !== false,
         saveChangeData: settings.saveChangeData !== false
+    };
+}
+
+function normalizeHistoryBackupHistoryAutoCleanupSettings(rawSettings = {}) {
+    const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    const threshold = Math.max(10, Math.min(999999, Math.floor(Number(settings.threshold) || 30)));
+    const batchSizeRaw = Math.floor(Number(settings.batchSize) || 5);
+    return {
+        enabled: settings.enabled === true,
+        threshold,
+        batchSize: Math.max(1, Math.min(threshold, batchSizeRaw))
     };
 }
 
@@ -368,8 +385,8 @@ const HISTORY_DELETE_WARN_SETTING_KEYS = {
     red: 'backupHistoryDeleteWarnRedThreshold'
 };
 const HISTORY_DELETE_WARN_DEFAULTS = {
-    yellow: 50,
-    red: 100
+    yellow: 25,
+    red: 50
 };
 const HISTORY_DELETE_WARN_MIN = 1;
 const HISTORY_DELETE_WARN_MAX = 999999;
@@ -427,13 +444,16 @@ function applyHistoryDeleteButtonWarningState(recordCount = historyDeleteWarnRec
     const btn = document.getElementById('clearBackupHistoryBtn');
     if (!btn) return;
 
-    btn.classList.remove('history-delete-warning', 'history-delete-danger');
+    btn.classList.remove('history-delete-warning', 'history-delete-danger', 'history-delete-auto-cleanup');
 
     const warnLevel = getHistoryDeleteWarnLevel(historyDeleteWarnRecordCount, historyDeleteWarnThresholds);
     if (warnLevel === 'warning') {
         btn.classList.add('history-delete-warning');
     } else if (warnLevel === 'danger') {
         btn.classList.add('history-delete-danger');
+    }
+    if (historyBackupHistoryAutoCleanupSettings.enabled === true) {
+        btn.classList.add('history-delete-auto-cleanup');
     }
 
     const baseTitle = (i18n && i18n.clearBackupHistoryTooltip && i18n.clearBackupHistoryTooltip[currentLang])
@@ -2734,6 +2754,14 @@ function applyLanguage() {
     if (clearBackupHistoryModalDesc) clearBackupHistoryModalDesc.textContent = i18n.clearBackupHistoryModalDesc[currentLang];
 
     // 删除选项控件
+    const clearHistoryManualSectionTitle = document.getElementById('clearHistoryManualSectionTitle');
+    if (clearHistoryManualSectionTitle) clearHistoryManualSectionTitle.textContent = i18n.clearHistoryManualSectionTitle[currentLang];
+    const clearHistoryManualSectionDesc = document.getElementById('clearHistoryManualSectionDesc');
+    if (clearHistoryManualSectionDesc) clearHistoryManualSectionDesc.textContent = i18n.clearHistoryManualSectionDesc[currentLang];
+    const clearHistoryAutoSectionTitle = document.getElementById('clearHistoryAutoSectionTitle');
+    if (clearHistoryAutoSectionTitle) clearHistoryAutoSectionTitle.textContent = i18n.clearHistoryAutoSectionTitle[currentLang];
+    const clearHistorySelectionLabel = document.getElementById('clearHistorySelectionLabel');
+    if (clearHistorySelectionLabel) clearHistorySelectionLabel.textContent = i18n.clearHistorySelectionLabel[currentLang];
     const clearHistoryModePercentLabel = document.getElementById('clearHistoryModePercentLabel');
     if (clearHistoryModePercentLabel) clearHistoryModePercentLabel.textContent = i18n.clearHistoryModePercentLabel[currentLang];
     const clearHistoryModeCountLabel = document.getElementById('clearHistoryModeCountLabel');
@@ -2753,8 +2781,6 @@ function applyLanguage() {
     const clearHistoryWarnThresholdHint = document.getElementById('clearHistoryWarnThresholdHint');
     if (clearHistoryWarnThresholdHint) clearHistoryWarnThresholdHint.textContent = i18n.clearHistoryWarnThresholdHint[currentLang];
 
-    const clearBackupHistoryCancelBtn = document.getElementById('clearBackupHistoryCancelBtn');
-    if (clearBackupHistoryCancelBtn) clearBackupHistoryCancelBtn.textContent = i18n.clearBackupHistoryCancelBtn[currentLang];
     const clearBackupHistoryConfirmBtn = document.getElementById('clearBackupHistoryConfirmBtn');
     if (clearBackupHistoryConfirmBtn) clearBackupHistoryConfirmBtn.textContent = i18n.clearBackupHistoryConfirmBtn[currentLang];
     const historySlimmingSettingsBtn = document.getElementById('historySlimmingSettingsBtn');
@@ -2783,7 +2809,16 @@ function applyLanguage() {
     if (historySlimmingSaveSnapshotDataText) historySlimmingSaveSnapshotDataText.textContent = i18n.historySlimmingSaveSnapshotData[currentLang];
     const historySlimmingSaveChangeDataText = document.getElementById('historySlimmingSaveChangeDataText');
     if (historySlimmingSaveChangeDataText) historySlimmingSaveChangeDataText.textContent = i18n.historySlimmingSaveChangeData[currentLang];
+    const historyAutoCleanupEnabledText = document.getElementById('historyAutoCleanupEnabledText');
+    if (historyAutoCleanupEnabledText) historyAutoCleanupEnabledText.textContent = i18n.clearHistoryAutoCleanupToggleLabel[currentLang];
+    const historyAutoCleanupThresholdText = document.getElementById('historyAutoCleanupThresholdText');
+    if (historyAutoCleanupThresholdText) historyAutoCleanupThresholdText.textContent = i18n.historyAutoCleanupThreshold[currentLang];
+    const historyAutoCleanupBatchText = document.getElementById('historyAutoCleanupBatchText');
+    if (historyAutoCleanupBatchText) historyAutoCleanupBatchText.textContent = i18n.historyAutoCleanupBatch[currentLang];
+    const historyAutoCleanupHint = document.getElementById('historyAutoCleanupHint');
+    if (historyAutoCleanupHint) historyAutoCleanupHint.textContent = i18n.historyAutoCleanupHint[currentLang];
     syncHistorySlimmingSettingsModalUi();
+    syncHistoryAutoCleanupSettingsUi();
 
     const historySafetyCheckpointModalTitle = document.getElementById('historySafetyCheckpointModalTitle');
     if (historySafetyCheckpointModalTitle) historySafetyCheckpointModalTitle.textContent = i18n.historySafetyCheckpointTitle[currentLang];
@@ -3075,7 +3110,6 @@ function initClearBackupHistoryModal() {
     const btn = document.getElementById('clearBackupHistoryBtn');
     const modal = document.getElementById('clearBackupHistoryModal');
     const closeBtn = document.getElementById('clearBackupHistoryModalClose');
-    const cancelBtn = document.getElementById('clearBackupHistoryCancelBtn');
     const confirmBtn = document.getElementById('clearBackupHistoryConfirmBtn');
 
     // 二次确认弹窗
@@ -3100,6 +3134,10 @@ function initClearBackupHistoryModal() {
     const previewTextEl = document.getElementById('clearHistoryPreviewText');
     const warnYellowInput = document.getElementById('clearHistoryWarnYellowInput');
     const warnRedInput = document.getElementById('clearHistoryWarnRedInput');
+    const autoCleanupEnabled = document.getElementById('historyAutoCleanupEnabled');
+    const autoCleanupThreshold = document.getElementById('historyAutoCleanupThreshold');
+    const autoCleanupBatchSize = document.getElementById('historyAutoCleanupBatchSize');
+    const autoCleanupFields = document.getElementById('historyAutoCleanupFields');
     const versionWarning = document.getElementById('clearHistoryVersionWarning');
     const versionSegmentV3 = document.getElementById('clearHistoryVersionSegmentV3');
     const versionSegmentLegacy = document.getElementById('clearHistoryVersionSegmentLegacy');
@@ -3116,6 +3154,7 @@ function initClearBackupHistoryModal() {
     let pendingDeleteCount = 0;
     let pendingDeleteEntries = [];
     let clearHistoryActiveThumb = 'max'; // 'min' | 'max'
+    let isSavingAutoCleanupSettings = false;
 
     const syncDeleteWarningThresholdInputs = () => {
         if (warnYellowInput) warnYellowInput.value = String(historyDeleteWarnThresholds.yellow);
@@ -3123,6 +3162,34 @@ function initClearBackupHistoryModal() {
             const minRed = Math.min(HISTORY_DELETE_WARN_MAX, historyDeleteWarnThresholds.yellow + 1);
             warnRedInput.min = String(minRed);
             warnRedInput.value = String(Math.max(minRed, historyDeleteWarnThresholds.red));
+        }
+    };
+
+    const setAutoCleanupInputsSavingState = (isSaving) => {
+        const enabled = !!(autoCleanupEnabled && autoCleanupEnabled.checked);
+        if (autoCleanupEnabled) autoCleanupEnabled.disabled = isSaving;
+        [autoCleanupThreshold, autoCleanupBatchSize].forEach((input) => {
+            if (input) input.disabled = isSaving || !enabled;
+        });
+    };
+
+    const commitAutoCleanupSettings = async () => {
+        if (isSavingAutoCleanupSettings) return;
+        isSavingAutoCleanupSettings = true;
+        setAutoCleanupInputsSavingState(true);
+        try {
+            const nextSettings = normalizeHistoryBackupHistoryAutoCleanupSettings({
+                enabled: autoCleanupEnabled ? autoCleanupEnabled.checked : historyBackupHistoryAutoCleanupSettings.enabled,
+                threshold: autoCleanupThreshold ? autoCleanupThreshold.value : historyBackupHistoryAutoCleanupSettings.threshold,
+                batchSize: autoCleanupBatchSize ? autoCleanupBatchSize.value : historyBackupHistoryAutoCleanupSettings.batchSize
+            });
+            const response = await saveHistoryBackupHistoryAutoCleanupSettings(nextSettings);
+            if (!(response && response.success)) {
+                syncHistoryAutoCleanupSettingsUi();
+            }
+        } finally {
+            isSavingAutoCleanupSettings = false;
+            setAutoCleanupInputsSavingState(false);
         }
     };
 
@@ -3255,12 +3322,12 @@ function initClearBackupHistoryModal() {
         if ((Number(summary.v3) || 0) > 0) {
             const v3Range = formatClearHistoryLocalRange(summary.v3Min, summary.v3Max);
             const v3Count = Number(summary.v3) || 0;
-            rows.push(isEn ? `v3.0 #${v3Range} (${v3Count})` : `v3.0 编号 ${v3Range}（${v3Count} 条）`);
+            rows.push(isEn ? `v3.0 group items ${v3Range} (${v3Count})` : `v3.0 当前组第 ${v3Range} 条（${v3Count} 条）`);
         }
         if ((Number(summary.legacy) || 0) > 0) {
             const legacyRange = formatClearHistoryLocalRange(summary.legacyMin, summary.legacyMax);
             const legacyCount = Number(summary.legacy) || 0;
-            rows.push(isEn ? `v2.1 #${legacyRange} (${legacyCount})` : `v2.1 编号 ${legacyRange}（${legacyCount} 条）`);
+            rows.push(isEn ? `v2.1 group items ${legacyRange} (${legacyCount})` : `v2.1 当前组第 ${legacyRange} 条（${legacyCount} 条）`);
         }
         return rows;
     };
@@ -3291,7 +3358,7 @@ function initClearBackupHistoryModal() {
         const min = summary?.[`${key}Min`];
         const max = summary?.[`${key}Max`];
         const rangeText = formatClearHistoryLocalRange(min, max);
-        return isEn ? `${label} #${rangeText} (${count})` : `${label} 编号 ${rangeText}（${count} 条）`;
+        return isEn ? `${label} group items ${rangeText} (${count})` : `${label} 当前组第 ${rangeText} 条（${count} 条）`;
     };
 
     const buildClearHistorySelectionText = (summary) => {
@@ -3587,6 +3654,8 @@ function initClearBackupHistoryModal() {
         if (maxSeqLabel) maxSeqLabel.textContent = getClearHistoryDisplayNumberForPosition(seqRange.min); // Right Label = Min
 
         syncDeleteWarningThresholdInputs();
+        syncHistoryAutoCleanupSettingsUi();
+        refreshHistoryBackupHistoryAutoCleanupSettings({ silent: true }).catch(() => { });
 
         modal.classList.add('show');
         // Must update after the modal is visible; otherwise container width can be 0 and bubbles won't render.
@@ -3787,11 +3856,6 @@ function initClearBackupHistoryModal() {
         closeBtn.setAttribute('data-listener-attached', 'true');
     }
 
-    if (cancelBtn && !cancelBtn.hasAttribute('data-listener-attached')) {
-        cancelBtn.addEventListener('click', closeClearModal);
-        cancelBtn.setAttribute('data-listener-attached', 'true');
-    }
-
     if (!modal.hasAttribute('data-listener-attached')) {
         modal.addEventListener('click', (e) => {
             if (e.target === modal) closeClearModal();
@@ -3860,6 +3924,34 @@ function initClearBackupHistoryModal() {
 
         warnRedInput.setAttribute('data-listener-attached', 'true');
     }
+
+    if (autoCleanupEnabled && !autoCleanupEnabled.hasAttribute('data-listener-attached')) {
+        autoCleanupEnabled.addEventListener('change', () => {
+            setAutoCleanupInputsSavingState(false);
+            commitAutoCleanupSettings();
+        });
+        autoCleanupEnabled.setAttribute('data-listener-attached', 'true');
+    }
+
+    const bindAutoCleanupNumberInput = (input) => {
+        if (!input || input.hasAttribute('data-listener-attached')) return;
+        const commitValue = () => {
+            commitAutoCleanupSettings().catch(() => { });
+        };
+        input.addEventListener('change', commitValue);
+        input.addEventListener('blur', commitValue);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commitValue();
+                input.blur();
+            }
+        });
+        input.setAttribute('data-listener-attached', 'true');
+    };
+
+    bindAutoCleanupNumberInput(autoCleanupThreshold);
+    bindAutoCleanupNumberInput(autoCleanupBatchSize);
 
     // 确认删除按钮 - 打开二次确认弹窗
     if (!confirmBtn.hasAttribute('data-listener-attached')) {
@@ -9299,7 +9391,7 @@ let currentHistoryPage = 1;
 const HISTORY_PAGE_SIZE = 10;
 
 let historyIndexMeta = {
-    totalRecords: 0,
+    totalRecords: null,
     totalPages: 1,
     v2ToV3HistoryDividerIndex: -1
 };
@@ -9359,7 +9451,8 @@ function resolveV2ToV3HistoryDividerIndexFromDisplayRecords(records) {
 
 async function fetchHistoryPageData(page = 1, pageSize = HISTORY_PAGE_SIZE) {
     const safePageSize = Math.max(1, Number(pageSize) || HISTORY_PAGE_SIZE);
-    const safePage = clampHistoryPage(page);
+    const rawPage = Number(page);
+    const safePage = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
 
     return await new Promise((resolve) => {
         let settled = false;
@@ -22899,6 +22992,21 @@ function syncHistorySlimmingSettingsModalUi() {
     }
 }
 
+function syncHistoryAutoCleanupSettingsUi() {
+    const autoCleanupEnabled = document.getElementById('historyAutoCleanupEnabled');
+    const autoCleanupFields = document.getElementById('historyAutoCleanupFields');
+    const autoCleanupThreshold = document.getElementById('historyAutoCleanupThreshold');
+    const autoCleanupBatchSize = document.getElementById('historyAutoCleanupBatchSize');
+    const autoCleanupSettings = normalizeHistoryBackupHistoryAutoCleanupSettings(historyBackupHistoryAutoCleanupSettings);
+    if (autoCleanupEnabled) autoCleanupEnabled.checked = autoCleanupSettings.enabled === true;
+    if (autoCleanupThreshold) autoCleanupThreshold.value = String(autoCleanupSettings.threshold);
+    if (autoCleanupBatchSize) autoCleanupBatchSize.value = String(autoCleanupSettings.batchSize);
+    if (autoCleanupFields) autoCleanupFields.style.display = 'grid';
+    [autoCleanupThreshold, autoCleanupBatchSize].forEach((input) => {
+        if (input) input.disabled = autoCleanupSettings.enabled !== true;
+    });
+}
+
 function getHistorySafetyCheckpointExportItems() {
     return Array.from(document.querySelectorAll('.history-safety-export-item'))
         .filter((input) => input && input.checked)
@@ -22970,6 +23078,19 @@ async function refreshHistoryBackupHistorySlimmingSettings({ silent = false } = 
     return response;
 }
 
+async function refreshHistoryBackupHistoryAutoCleanupSettings({ silent = false } = {}) {
+    const response = await sendHistoryRuntimeMessage({ action: 'getBackupHistoryAutoCleanupSettings' });
+    if (response && response.success && response.settings) {
+        historyBackupHistoryAutoCleanupSettings = normalizeHistoryBackupHistoryAutoCleanupSettings(response.settings);
+    } else {
+        historyBackupHistoryAutoCleanupSettings = normalizeHistoryBackupHistoryAutoCleanupSettings(historyBackupHistoryAutoCleanupSettings);
+    }
+    historyBackupHistoryAutoCleanupSettingsLoaded = true;
+    syncHistoryAutoCleanupSettingsUi();
+    applyHistoryDeleteButtonWarningState(historyDeleteWarnRecordCount);
+    return response;
+}
+
 async function saveHistoryBackupHistorySlimmingSettings(nextSettings) {
     const normalizedSettings = normalizeHistoryBackupHistorySlimmingSettings(nextSettings);
     const response = await sendHistoryRuntimeMessage({
@@ -22985,6 +23106,82 @@ async function saveHistoryBackupHistorySlimmingSettings(nextSettings) {
         showToast(i18n.historySlimmingSettingsSaveFailed[currentLang], 'error');
     }
     return response;
+}
+
+async function getHistoryTotalRecordsForAutoCleanup() {
+    const rawTotalFromMeta = historyIndexMeta?.totalRecords;
+    const totalFromMeta = Number(rawTotalFromMeta);
+    if (rawTotalFromMeta !== null && rawTotalFromMeta !== undefined && Number.isFinite(totalFromMeta) && totalFromMeta >= 0) return totalFromMeta;
+    const data = await fetchHistoryPageData(1, 1);
+    return Number.isFinite(Number(data?.totalRecords)) ? Math.max(0, Number(data.totalRecords)) : 0;
+}
+
+async function saveHistoryBackupHistoryAutoCleanupSettings(nextSettings) {
+    const normalizedSettings = normalizeHistoryBackupHistoryAutoCleanupSettings(nextSettings);
+    try {
+        let deletedByImmediateCleanup = 0;
+        if (normalizedSettings.enabled) {
+            const totalRecords = await getHistoryTotalRecordsForAutoCleanup();
+            if (totalRecords > normalizedSettings.threshold) {
+                const deleteCount = totalRecords - normalizedSettings.threshold;
+                const confirmMessage = i18n.historyAutoCleanupConfirm[currentLang](totalRecords, normalizedSettings.threshold, deleteCount);
+                if (!window.confirm(confirmMessage)) {
+                    return { success: false, cancelled: true };
+                }
+                const saveResponse = await sendHistoryRuntimeMessage({
+                    action: 'setBackupHistoryAutoCleanupSettings',
+                    settings: normalizedSettings
+                });
+                if (!(saveResponse && saveResponse.success)) {
+                    throw new Error(saveResponse?.error || i18n.historyAutoCleanupSettingsSaveFailed[currentLang]);
+                }
+                historyBackupHistoryAutoCleanupSettings = normalizeHistoryBackupHistoryAutoCleanupSettings(saveResponse.settings);
+                historyBackupHistoryAutoCleanupSettingsLoaded = true;
+                applyHistoryDeleteButtonWarningState(historyDeleteWarnRecordCount);
+
+                const deleteResponse = await sendHistoryRuntimeMessage({
+                    action: 'clearSyncHistoryPartial',
+                    deleteCount
+                });
+                if (!(deleteResponse && deleteResponse.success)) {
+                    throw new Error(deleteResponse?.error || i18n.historyAutoCleanupSettingsSaveFailed[currentLang]);
+                }
+                deletedByImmediateCleanup = Number.isFinite(Number(deleteResponse.deleted))
+                    ? Number(deleteResponse.deleted)
+                    : deleteCount;
+                await new Promise((resolve) => {
+                    browserAPI.storage.local.get(['syncHistory'], (data) => {
+                        syncHistory = Array.isArray(data?.syncHistory) ? data.syncHistory : [];
+                        resolve();
+                    });
+                });
+                await refreshHistoryIndexPage({ page: 1 });
+                currentHistoryPage = 1;
+                renderHistoryView();
+                syncHistoryAutoCleanupSettingsUi();
+                showToast(i18n.historyAutoCleanupDeleted[currentLang](deletedByImmediateCleanup));
+                return { success: true, settings: historyBackupHistoryAutoCleanupSettings, deleted: deletedByImmediateCleanup };
+            }
+        }
+
+        const response = await sendHistoryRuntimeMessage({
+            action: 'setBackupHistoryAutoCleanupSettings',
+            settings: normalizedSettings
+        });
+        if (response && response.success) {
+            historyBackupHistoryAutoCleanupSettings = normalizeHistoryBackupHistoryAutoCleanupSettings(response.settings);
+            historyBackupHistoryAutoCleanupSettingsLoaded = true;
+            syncHistoryAutoCleanupSettingsUi();
+            applyHistoryDeleteButtonWarningState(historyDeleteWarnRecordCount);
+            showToast(i18n.historyAutoCleanupSettingsSaved[currentLang]);
+        } else {
+            throw new Error(response?.error || i18n.historyAutoCleanupSettingsSaveFailed[currentLang]);
+        }
+        return response;
+    } catch (error) {
+        showToast(`${i18n.historyAutoCleanupSettingsSaveFailed[currentLang]}: ${error?.message || ''}`.trim(), 'error');
+        return { success: false, error: error?.message || String(error) };
+    }
 }
 
 async function refreshLatestSafetyCheckpointStatus({ silent = false } = {}) {
@@ -29825,6 +30022,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 初始化导出变化模态框
     initExportChangesModal();
     refreshHistoryBackupHistorySlimmingSettings({ silent: true }).catch(() => { });
+    refreshHistoryBackupHistoryAutoCleanupSettings({ silent: true }).catch(() => { });
     refreshLatestSafetyCheckpointStatus({ silent: true }).catch(() => { });
     // 初始化全局导出功能
     initGlobalExport();

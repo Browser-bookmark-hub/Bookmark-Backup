@@ -90,6 +90,12 @@ const DEFAULT_BACKUP_HISTORY_SLIMMING_SETTINGS = Object.freeze({
     saveSnapshotData: true,
     saveChangeData: true
 });
+const BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS_KEY = 'backupHistoryAutoCleanup';
+const DEFAULT_BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS = Object.freeze({
+    enabled: false,
+    threshold: 30,
+    batchSize: 5
+});
 const BACKUP_PROGRESS_FINAL_STATE_LINGER_MS = 1600;
 const BACKUP_PROGRESS_SUCCESS_HIDE_DELAY_MS = 80;
 const ANALYSIS_QUICK_REOPEN_CACHE_MS = 2000;
@@ -456,6 +462,35 @@ async function setBackupHistorySlimmingSettings(rawSettings = {}) {
     });
     await browserAPI.storage.local.set({
         [BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]: nextSettings
+    });
+    return nextSettings;
+}
+
+function normalizeBackupHistoryAutoCleanupSettings(rawSettings = null) {
+    const source = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    const threshold = Math.max(10, Math.min(999999, Math.floor(Number(source.threshold) || DEFAULT_BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS.threshold)));
+    const batchSizeRaw = Math.floor(Number(source.batchSize) || DEFAULT_BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS.batchSize);
+    return {
+        enabled: source.enabled === true,
+        threshold,
+        batchSize: Math.max(1, Math.min(threshold, batchSizeRaw))
+    };
+}
+
+async function getBackupHistoryAutoCleanupSettings() {
+    const store = await browserAPI.storage.local.get([BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS_KEY]);
+    return normalizeBackupHistoryAutoCleanupSettings(store?.[BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS_KEY]);
+}
+
+async function setBackupHistoryAutoCleanupSettings(rawSettings = {}) {
+    const current = await getBackupHistoryAutoCleanupSettings();
+    const source = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    const nextSettings = normalizeBackupHistoryAutoCleanupSettings({
+        ...current,
+        ...source
+    });
+    await browserAPI.storage.local.set({
+        [BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS_KEY]: nextSettings
     });
     return nextSettings;
 }
@@ -2841,13 +2876,123 @@ async function migrateV2RecordOnlyHistory() {
     }
 }
 
-async function removeBackupDataByTimes(times) {
-    const keys = (Array.isArray(times) ? times : [])
-        .filter(t => t !== undefined && t !== null && String(t).trim() !== '')
-        .flatMap(t => [`backup_data_${t}`, `changes_data_${t}`]);
+function collectBackupHistoryDataKeysForRecords(records) {
+    const keys = new Set();
+    for (const record of Array.isArray(records) ? records : []) {
+        const time = String(record?.time || '').trim();
+        if (time) {
+            keys.add(`backup_data_${time}`);
+            keys.add(`changes_data_${time}`);
+        }
+        const changeDataKey = String(record?.changeDataKey || '').trim();
+        if (changeDataKey) keys.add(changeDataKey);
+    }
+    return Array.from(keys).filter(Boolean);
+}
+
+async function removeBackupDataByRecords(records) {
+    const keys = collectBackupHistoryDataKeysForRecords(records);
     if (keys.length > 0) {
         await browserAPI.storage.local.remove(keys);
     }
+}
+
+async function buildCachedRecordFromDeletedHistory(deletedRecords = [], remainingHistory = []) {
+    if (!Array.isArray(remainingHistory) || remainingHistory.length === 0) return null;
+    const records = Array.isArray(deletedRecords) ? deletedRecords : [];
+
+    for (let i = records.length - 1; i >= 0; i--) {
+        const candidate = records[i];
+        if (!candidate || candidate.status !== 'success') continue;
+        if (!(candidate.bookmarkTree || candidate.hasData)) continue;
+
+        let tree = candidate.bookmarkTree;
+        if (!tree && candidate.hasData) {
+            const treeKey = `backup_data_${candidate.time}`;
+            const treeData = await browserAPI.storage.local.get([treeKey]);
+            tree = treeData[treeKey];
+        }
+        if (tree) {
+            return {
+                bookmarkTree: tree,
+                bookmarkStats: candidate.bookmarkStats,
+                time: candidate.time,
+                comparisonGeneration: normalizeBookmarkComparisonGeneration(
+                    candidate?.comparisonGeneration,
+                    BOOKMARK_COMPARISON_INITIAL_GENERATION
+                )
+            };
+        }
+    }
+
+    return null;
+}
+
+async function deleteOldestSyncHistoryRecords(syncHistory, deleteCount) {
+    const list = Array.isArray(syncHistory) ? syncHistory : [];
+    const requestedDeleteCount = Math.floor(Number(deleteCount) || 0);
+
+    if (list.length === 0 || requestedDeleteCount <= 0) {
+        return {
+            syncHistory: list,
+            deletedRecords: [],
+            deleted: 0,
+            remaining: list.length,
+            cachedRecord: null,
+            shouldRemoveCachedRecord: list.length === 0
+        };
+    }
+
+    const actualDeleteCount = Math.min(requestedDeleteCount, list.length);
+    const deletedRecords = list.slice(0, actualDeleteCount);
+    const remainingHistory = list.slice(actualDeleteCount);
+    const cachedRecord = await buildCachedRecordFromDeletedHistory(deletedRecords, remainingHistory);
+
+    return {
+        syncHistory: remainingHistory,
+        deletedRecords,
+        deleted: actualDeleteCount,
+        remaining: remainingHistory.length,
+        cachedRecord,
+        shouldRemoveCachedRecord: remainingHistory.length === 0 && !cachedRecord
+    };
+}
+
+async function applyBackupHistoryAutoCleanupToHistory(syncHistory, rawSettings = null) {
+    const settings = normalizeBackupHistoryAutoCleanupSettings(rawSettings);
+    const list = Array.isArray(syncHistory) ? syncHistory : [];
+    if (!settings.enabled) {
+        return {
+            syncHistory: list,
+            deleted: 0,
+            remaining: list.length,
+            settings,
+            cleanupApplied: false,
+            cachedRecord: null,
+            shouldRemoveCachedRecord: false
+        };
+    }
+
+    const triggerCount = settings.threshold + settings.batchSize;
+    if (list.length < triggerCount) {
+        return {
+            syncHistory: list,
+            deleted: 0,
+            remaining: list.length,
+            settings,
+            cleanupApplied: false,
+            cachedRecord: null,
+            shouldRemoveCachedRecord: false
+        };
+    }
+
+    const deleteCount = Math.max(0, list.length - settings.threshold);
+    const result = await deleteOldestSyncHistoryRecords(list, deleteCount);
+    return {
+        ...result,
+        settings,
+        cleanupApplied: result.deleted > 0
+    };
 }
 
 // =================================================================================
@@ -4636,6 +4781,13 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
 
                 syncHistory[targetIndex] = targetRecord;
                 await browserAPI.storage.local.set({ syncHistory });
+                if (normalizedStrategy === 'overwrite') {
+                    try {
+                        await browserAPI.storage.local.set({
+                            [HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY]: syncTime
+                        });
+                    } catch (_) { }
+                }
 
                 const runRestoreRecordPostArtifacts = async () => {
                     startBadgeBlink('...', '#FF9800', '#FFE0B2', 400);
@@ -11981,6 +12133,16 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 .then(settings => sendResponse({ success: true, settings }))
                 .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
             return true;
+        } else if (message.action === "getBackupHistoryAutoCleanupSettings") {
+            getBackupHistoryAutoCleanupSettings()
+                .then(settings => sendResponse({ success: true, settings }))
+                .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
+            return true;
+        } else if (message.action === "setBackupHistoryAutoCleanupSettings") {
+            setBackupHistoryAutoCleanupSettings(message.settings)
+                .then(settings => sendResponse({ success: true, settings }))
+                .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
+            return true;
         } else if (message.action === "getLatestSafetyCheckpointStatus") {
             getLatestSafetyCheckpointStatus()
                 .then(result => sendResponse(result))
@@ -12272,11 +12434,6 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         }
                     }
 
-                    // 清理所有分离存储的备份数据
-                    try {
-                        await removeBackupDataByTimes(syncHistory.map(r => r.time));
-                    } catch (_) { }
-
                     // 清空历史并保存缓存记录
                     const updates = { syncHistory: [] };
                     if (cachedRecord) {
@@ -12289,6 +12446,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     if (!cachedRecord) {
                         await browserAPI.storage.local.remove(['cachedRecordAfterClear']);
                     }
+                    try {
+                        await removeBackupDataByRecords(syncHistory);
+                    } catch (_) { }
 
                     await clearHistoryOverwriteRevertMarker();
                     await resetBookmarkComparisonGenerationState();
@@ -12323,61 +12483,23 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     }
 
-                    // 计算实际要删除的数量（不能超过总数）
-                    const actualDeleteCount = Math.min(deleteCount, syncHistory.length);
-
-                    // 保留最新的记录（删除最旧的）
-                    const remainingHistory = syncHistory.slice(actualDeleteCount);
-
-                    // 如果删除后还有记录，找到第一条有效的书签树作为对比基准
-                    let cachedRecord = null;
-                    if (remainingHistory.length > 0) {
-                        // 找最后一条被删除的记录中有书签树的，作为新的对比基准
-                        const deletedRecords = syncHistory.slice(0, actualDeleteCount);
-                        for (let i = deletedRecords.length - 1; i >= 0; i--) {
-                            const candidate = deletedRecords[i];
-                            if (candidate.status === 'success' && (candidate.bookmarkTree || candidate.hasData)) {
-                                let tree = candidate.bookmarkTree;
-                                if (!tree && candidate.hasData) {
-                                    const treeKey = `backup_data_${candidate.time}`;
-                                    const treeData = await browserAPI.storage.local.get([treeKey]);
-                                    tree = treeData[treeKey];
-                                }
-                                if (tree) {
-                                    cachedRecord = {
-                                        bookmarkTree: tree,
-                                        bookmarkStats: candidate.bookmarkStats,
-                                        time: candidate.time,
-                                        comparisonGeneration: normalizeBookmarkComparisonGeneration(
-                                            candidate?.comparisonGeneration,
-                                            BOOKMARK_COMPARISON_INITIAL_GENERATION
-                                        )
-                                    };
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    // 清理被删除记录对应的分离存储数据
-                    try {
-                        const deletedRecords = syncHistory.slice(0, actualDeleteCount);
-                        await removeBackupDataByTimes(deletedRecords.map(r => r.time));
-                    } catch (_) { }
+                    const deleteResult = await deleteOldestSyncHistoryRecords(syncHistory, deleteCount);
+                    const remainingHistory = deleteResult.syncHistory;
 
                     // 更新存储
                     const updates = { syncHistory: remainingHistory };
-                    if (cachedRecord) {
-                        updates.cachedRecordAfterClear = cachedRecord;
+                    if (deleteResult.cachedRecord) {
+                        updates.cachedRecordAfterClear = deleteResult.cachedRecord;
                     }
                     await browserAPI.storage.local.set(updates);
 
                     // 如果删除后没有记录，也要更新 cachedRecordAfterClear
-                    if (remainingHistory.length === 0 && cachedRecord) {
-                        await browserAPI.storage.local.set({ cachedRecordAfterClear: cachedRecord });
-                    } else if (remainingHistory.length === 0 && !cachedRecord) {
+                    if (deleteResult.shouldRemoveCachedRecord) {
                         await browserAPI.storage.local.remove(['cachedRecordAfterClear']);
                     }
+                    try {
+                        await removeBackupDataByRecords(deleteResult.deletedRecords);
+                    } catch (_) { }
                     await syncHistoryOverwriteRevertMarkerWithHistory(remainingHistory);
                     if (remainingHistory.length === 0) {
                         await resetBookmarkComparisonGenerationState();
@@ -12385,7 +12507,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                     sendResponse({
                         success: true,
-                        deleted: actualDeleteCount,
+                        deleted: deleteResult.deleted,
                         remaining: remainingHistory.length
                     });
                 } catch (error) {
@@ -12417,11 +12539,6 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const updates = { syncHistory: syncHistory };
 
                     const setPromise = browserAPI.storage.local.set(updates);
-                    const removeDataPromise = (async () => {
-                        try {
-                            await removeBackupDataByTimes(deletedRecords.map(r => r.time));
-                        } catch (_) { }
-                    })();
                     const removePromise = syncHistory.length === 0
                         ? Promise.all([
                             browserAPI.storage.local.remove(['cachedRecordAfterClear']),
@@ -12430,8 +12547,11 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         ])
                         : Promise.resolve();
 
-                    Promise.all([setPromise, removePromise, removeDataPromise])
+                    Promise.all([setPromise, removePromise])
                         .then(async () => {
+                            try {
+                                await removeBackupDataByRecords(deletedRecords);
+                            } catch (_) { }
                             await syncHistoryOverwriteRevertMarkerWithHistory(syncHistory);
                             sendResponse({ success: true });
                         })
@@ -12456,17 +12576,13 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             browserAPI.storage.local.get(['syncHistory'], (data) => {
                 let syncHistory = data.syncHistory || [];
                 const initialLength = syncHistory.length;
+                const deletedRecords = syncHistory.filter(item => timesToDelete.includes(String(item.time)));
 
                 syncHistory = syncHistory.filter(item => !timesToDelete.includes(String(item.time)));
 
                 const updates = { syncHistory: syncHistory };
 
                 const setPromise = browserAPI.storage.local.set(updates);
-                const removeDataPromise = (async () => {
-                    try {
-                        await removeBackupDataByTimes(timesToDelete);
-                    } catch (_) { }
-                })();
                 const removePromise = syncHistory.length === 0
                     ? Promise.all([
                         browserAPI.storage.local.remove(['cachedRecordAfterClear']),
@@ -12475,8 +12591,11 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     ])
                     : Promise.resolve();
 
-                Promise.all([setPromise, removePromise, removeDataPromise])
+                Promise.all([setPromise, removePromise])
                     .then(async () => {
+                        try {
+                            await removeBackupDataByRecords(deletedRecords);
+                        } catch (_) { }
                         await syncHistoryOverwriteRevertMarkerWithHistory(syncHistory);
                         const deleted = initialLength - syncHistory.length;
                         sendResponse({ success: true, deleted, remaining: syncHistory.length });
@@ -20498,7 +20617,10 @@ async function appendRestoreRecoveryFailureHistoryRecord(options = {}) {
         || `${sessionId}:${operationKind}:${actionType}:${phase}:${errorCode}`
     ).trim()
 
-    const store = await browserAPI.storage.local.get(['syncHistory'])
+    const store = await browserAPI.storage.local.get([
+        'syncHistory',
+        BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS_KEY
+    ])
     const syncHistory = Array.isArray(store?.syncHistory) ? store.syncHistory : []
     const duplicated = syncHistory.some((record) => {
         if (!record || typeof record !== 'object') return false
@@ -20572,8 +20694,28 @@ async function appendRestoreRecoveryFailureHistoryRecord(options = {}) {
         }
     }
 
-    syncHistory.push(nextRecord)
-    await browserAPI.storage.local.set({ syncHistory })
+    const autoCleanupResult = await applyBackupHistoryAutoCleanupToHistory(
+        [...syncHistory, nextRecord],
+        store?.[BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS_KEY]
+    )
+    const updates = { syncHistory: autoCleanupResult.syncHistory }
+    if (autoCleanupResult.cachedRecord) {
+        updates.cachedRecordAfterClear = autoCleanupResult.cachedRecord
+    }
+    await browserAPI.storage.local.set(updates)
+    if (autoCleanupResult.shouldRemoveCachedRecord) {
+        try {
+            await browserAPI.storage.local.remove(['cachedRecordAfterClear'])
+        } catch (_) { }
+    }
+    if (autoCleanupResult.deleted > 0) {
+        try {
+            await removeBackupDataByRecords(autoCleanupResult.deletedRecords)
+        } catch (_) { }
+        try {
+            await syncHistoryOverwriteRevertMarkerWithHistory(autoCleanupResult.syncHistory)
+        } catch (_) { }
+    }
     return {
         success: true,
         recordTime: time,
@@ -23903,7 +24045,7 @@ async function updateBookmarks(bookmarksData) {
 async function updateSyncStatus(direction, time, status = 'success', errorMessage = '', syncType = 'auto', autoBackupReason = null, snapshotFingerprint = '', options = {}) {
     try {
         const postSyncWarnings = [];
-        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'overwrite', lastBookmarkChangeTime = 0, [BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]: rawBackupHistorySlimming = null, [BOOKMARK_COMPARISON_GENERATION_KEY]: storedComparisonGeneration = BOOKMARK_COMPARISON_INITIAL_GENERATION, pendingRemark = '' } = await browserAPI.storage.local.get([
+        const { syncHistory = [], lastBookmarkData = null, lastSyncOperations = {}, preferredLang = 'zh_CN', currentLang = '', recentMovedIds = [], recentModifiedIds = [], recentAddedIds = [], overwriteMode = 'overwrite', lastBookmarkChangeTime = 0, [BACKUP_HISTORY_SLIMMING_SETTINGS_KEY]: rawBackupHistorySlimming = null, [BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS_KEY]: rawBackupHistoryAutoCleanup = null, [BOOKMARK_COMPARISON_GENERATION_KEY]: storedComparisonGeneration = BOOKMARK_COMPARISON_INITIAL_GENERATION, pendingRemark = '' } = await browserAPI.storage.local.get([
             'syncHistory',
             'lastBookmarkData',
             'lastSyncOperations',
@@ -23915,6 +24057,7 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
             'overwriteMode',
             'lastBookmarkChangeTime',
             BACKUP_HISTORY_SLIMMING_SETTINGS_KEY,
+            BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS_KEY,
             BOOKMARK_COMPARISON_GENERATION_KEY,
             'pendingRemark'
         ]);
@@ -24321,6 +24464,11 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         // 已移除：书签树20条限制清理（现在所有记录都保留完整的书签树数据）
         // 已移除：100条记录自动导出并清理前50条的功能（用户可手动管理历史记录）
 
+        const autoCleanupResult = await applyBackupHistoryAutoCleanupToHistory(
+            currentSyncHistory,
+            rawBackupHistoryAutoCleanup
+        );
+        currentSyncHistory = autoCleanupResult.syncHistory;
         let historyToStore = currentSyncHistory;
 
         const updateData = {
@@ -24334,6 +24482,9 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
                 timestamp: time
             }
         };
+        if (autoCleanupResult.cachedRecord) {
+            updateData.cachedRecordAfterClear = autoCleanupResult.cachedRecord;
+        }
 
         if (status === 'success' &&
             (direction === 'upload' || direction === 'webdav' || direction === 'github_repo' || direction === 'gist' || direction === 'cloud' || direction === 'webdav_github_local' || direction === 'webdav_local' || direction === 'github_repo_local' || direction === 'gist_local' || direction === 'cloud_local' || direction === 'local' || direction === 'both')) {
@@ -24341,6 +24492,24 @@ async function updateSyncStatus(direction, time, status = 'success', errorMessag
         }
 
         await browserAPI.storage.local.set(updateData);
+        if (autoCleanupResult.shouldRemoveCachedRecord) {
+            try {
+                await browserAPI.storage.local.remove(['cachedRecordAfterClear']);
+            } catch (_) { }
+        }
+        if (autoCleanupResult.deleted > 0) {
+            try {
+                await removeBackupDataByRecords(autoCleanupResult.deletedRecords);
+            } catch (_) { }
+            try {
+                await syncHistoryOverwriteRevertMarkerWithHistory(historyToStore);
+            } catch (_) { }
+            if (historyToStore.length === 0) {
+                try {
+                    await resetBookmarkComparisonGenerationState();
+                } catch (_) { }
+            }
+        }
 
         if (status === 'success') {
             try {

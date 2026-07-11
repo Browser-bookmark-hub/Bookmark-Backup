@@ -108,14 +108,17 @@ const HISTORY_DELETE_WARN_SETTING_KEYS = {
 };
 const HISTORY_OVERWRITE_REVERT_MARKER_TIME_KEY = 'historyOverwriteRevertMarkerTime';
 const HISTORY_DELETE_WARN_DEFAULTS = {
-    yellow: 50,
-    red: 100
+    yellow: 25,
+    red: 50
 };
 const HISTORY_DELETE_WARN_MIN = 1;
 const HISTORY_DELETE_WARN_MAX = 999999;
 
 let popupHistoryDeleteWarnThresholds = { ...HISTORY_DELETE_WARN_DEFAULTS };
-window.__popupHistoryTotalRecords = window.__popupHistoryTotalRecords || 0;
+window.__popupHistoryTotalRecordsLoaded = window.__popupHistoryTotalRecordsLoaded === true;
+if (!window.__popupHistoryTotalRecordsLoaded) {
+    window.__popupHistoryTotalRecords = null;
+}
 const ACTIVE_BACKUP_PROGRESS_KEY = 'activeBackupProgress';
 const POPUP_BACKUP_PROGRESS_FINAL_STATE_LINGER_MS = 1600;
 const POPUP_BACKUP_PROGRESS_TARGET_ORDER = Object.freeze({
@@ -128,6 +131,11 @@ let popupActiveRestoreProgressSessionId = '';
 let backupHistorySlimmingState = {
     saveSnapshotData: true,
     saveChangeData: true
+};
+let backupHistoryAutoCleanupState = {
+    enabled: false,
+    threshold: 30,
+    batchSize: 5
 };
 let backupHistorySlimmingStateLoaded = false;
 let latestSafetyCheckpointState = null;
@@ -342,6 +350,17 @@ function normalizeBackupHistorySlimmingSettings(rawSettings) {
     };
 }
 
+function normalizeBackupHistoryAutoCleanupSettings(rawSettings) {
+    const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    const threshold = Math.max(10, Math.min(999999, Math.floor(Number(settings.threshold) || 30)));
+    const batchSizeRaw = Math.floor(Number(settings.batchSize) || 5);
+    return {
+        enabled: settings.enabled === true,
+        threshold,
+        batchSize: Math.max(1, Math.min(threshold, batchSizeRaw))
+    };
+}
+
 function getPopupHistoryRecordCapabilities(record = {}) {
     const explicit = record?.capabilities && typeof record.capabilities === 'object'
         ? record.capabilities
@@ -369,6 +388,10 @@ function getBackupHistorySlimmingSettingsSnapshot() {
         saveSnapshotData: backupHistorySlimmingState.saveSnapshotData !== false,
         saveChangeData: backupHistorySlimmingState.saveChangeData !== false
     };
+}
+
+function getBackupHistoryAutoCleanupSettingsSnapshot() {
+    return normalizeBackupHistoryAutoCleanupSettings(backupHistoryAutoCleanupState);
 }
 
 function getBackupHistorySlimmingButtonState(settings = backupHistorySlimmingState) {
@@ -735,6 +758,90 @@ async function refreshBackupHistorySlimmingSettings() {
     return snapshot;
 }
 
+async function refreshBackupHistoryAutoCleanupSettings() {
+    try {
+        const response = await callBackgroundFunction('getBackupHistoryAutoCleanupSettings');
+        if (response && response.success) {
+            const normalized = normalizeBackupHistoryAutoCleanupSettings(response.settings);
+            backupHistoryAutoCleanupState = normalized;
+            applyPopupDeleteHistoryButtonWarningState(Number(window.__popupHistoryTotalRecords) || 0);
+            return normalized;
+        }
+    } catch (error) {
+        console.warn('获取备份历史自动清理设置失败:', error);
+    }
+    backupHistoryAutoCleanupState = getBackupHistoryAutoCleanupSettingsSnapshot();
+    applyPopupDeleteHistoryButtonWarningState(Number(window.__popupHistoryTotalRecords) || 0);
+    return backupHistoryAutoCleanupState;
+}
+
+async function getPopupBackupHistoryTotalRecordsForCleanup() {
+    const cachedTotal = Number(window.__popupHistoryTotalRecords);
+    if (window.__popupHistoryTotalRecordsLoaded === true && Number.isFinite(cachedTotal) && cachedTotal >= 0) return cachedTotal;
+    try {
+        const response = await callBackgroundFunction('getSyncHistory', {
+            paged: true,
+            page: 1,
+            pageSize: 1
+        }, { timeoutMs: 1800 });
+        if (response && response.success && Number.isFinite(Number(response.totalRecords))) {
+            return Math.max(0, Number(response.totalRecords));
+        }
+    } catch (_) { }
+    return 0;
+}
+
+async function persistBackupHistoryAutoCleanupSettings(nextSettings, opts = {}) {
+    const normalized = normalizeBackupHistoryAutoCleanupSettings(nextSettings);
+    const lang = normalizePopupLanguage(opts.lang || await getPopupPreferredLang());
+    const isEn = lang === 'en';
+    try {
+        if (normalized.enabled) {
+            const totalRecords = await getPopupBackupHistoryTotalRecordsForCleanup();
+            if (totalRecords > normalized.threshold) {
+                const deleteCount = totalRecords - normalized.threshold;
+                const ok = window.confirm(isEn
+                    ? `There are ${totalRecords} backup history records. Enabling auto cleanup will keep the newest ${normalized.threshold} records and delete the oldest ${deleteCount}. Continue?`
+                    : `当前已有 ${totalRecords} 条备份历史。启用自动清理后将保留最新 ${normalized.threshold} 条，并删除最旧的 ${deleteCount} 条。是否继续？`);
+                if (!ok) return false;
+
+                const saveResponse = await callBackgroundFunction('setBackupHistoryAutoCleanupSettings', { settings: normalized });
+                if (!(saveResponse && saveResponse.success)) {
+                    throw new Error(saveResponse?.error || '保存失败');
+                }
+                backupHistoryAutoCleanupState = normalizeBackupHistoryAutoCleanupSettings(saveResponse.settings);
+                applyPopupDeleteHistoryButtonWarningState(totalRecords, lang);
+
+                const deleteResponse = await callBackgroundFunction('clearSyncHistoryPartial', { deleteCount });
+                if (!(deleteResponse && deleteResponse.success)) {
+                    throw new Error(deleteResponse?.error || '自动清理失败');
+                }
+                updateSyncHistory(lang, { refreshLastSyncInfo: false });
+                showStatus(isEn
+                    ? `Auto cleanup saved. Deleted ${deleteResponse.deleted || deleteCount} old records.`
+                    : `自动清理已保存，已删除 ${deleteResponse.deleted || deleteCount} 条旧记录。`, 'success', 2600);
+                return true;
+            }
+        }
+
+        const response = await callBackgroundFunction('setBackupHistoryAutoCleanupSettings', { settings: normalized });
+        if (response && response.success) {
+            backupHistoryAutoCleanupState = normalizeBackupHistoryAutoCleanupSettings(response.settings);
+            applyPopupDeleteHistoryButtonWarningState(Number(window.__popupHistoryTotalRecords) || 0, lang);
+            if (opts.silent !== true) {
+                showStatus(isEn ? 'Auto cleanup settings saved' : '自动清理设置已保存', 'success', 2200);
+            }
+            return true;
+        }
+        throw new Error(response?.error || '保存失败');
+    } catch (error) {
+        if (opts.silent !== true) {
+            showStatus(`${isEn ? 'Failed to save auto cleanup settings' : '自动清理设置保存失败'}: ${error?.message || (isEn ? 'Unknown error' : '未知错误')}`, 'error', 3200);
+        }
+        return false;
+    }
+}
+
 async function persistBackupHistorySlimmingSettings(nextSettings, opts = {}) {
     const normalized = normalizeBackupHistorySlimmingSettings(nextSettings);
     try {
@@ -774,13 +881,16 @@ function applyPopupDeleteHistoryButtonWarningState(recordCount, lang = 'zh_CN') 
     const clearBtn = document.getElementById('clearHistoryBtn');
     if (!clearBtn) return;
 
-    clearBtn.classList.remove('history-delete-warning', 'history-delete-danger');
+    clearBtn.classList.remove('history-delete-warning', 'history-delete-danger', 'history-delete-auto-cleanup');
 
     const warnLevel = getHistoryDeleteWarnLevel(recordCount);
     if (warnLevel === 'warning') {
         clearBtn.classList.add('history-delete-warning');
     } else if (warnLevel === 'danger') {
         clearBtn.classList.add('history-delete-danger');
+    }
+    if (backupHistoryAutoCleanupState.enabled === true) {
+        clearBtn.classList.add('history-delete-auto-cleanup');
     }
 
     const isEn = lang === 'en';
@@ -3722,6 +3832,7 @@ function updateSyncHistory(passedLang, options = {}) { // Added passedLang param
             deleteWarnSettings?.[HISTORY_DELETE_WARN_SETTING_KEYS.red]
         );
         window.__popupHistoryTotalRecords = totalRecords;
+        window.__popupHistoryTotalRecordsLoaded = true;
         applyPopupDeleteHistoryButtonWarningState(totalRecords, currentLang);
 
         const historyList = document.getElementById('syncHistoryList');
@@ -20832,6 +20943,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 updateLastSyncInfo();
             }, 240);
             refreshBackupHistorySlimmingSettings();
+            refreshBackupHistoryAutoCleanupSettings();
             refreshLatestSafetyCheckpointStatus();
             initScrollToTopButton(); // 初始化滚动按钮
             try {
@@ -21347,6 +21459,12 @@ document.addEventListener('DOMContentLoaded', function () {
         title: lang === 'en' ? 'Compaction Settings' : '精简设置',
         snapshotLabel: lang === 'en' ? 'Save snapshot data' : '保存快照数据',
         changeLabel: lang === 'en' ? 'Save change data' : '保存变化数据',
+        autoCleanupLabel: lang === 'en' ? 'Auto cleanup' : '自动清理',
+        autoCleanupThresholdLabel: lang === 'en' ? 'Keep latest records' : '保留最新记录',
+        autoCleanupBatchLabel: lang === 'en' ? 'Cleanup batch' : '清理批量',
+        autoCleanupHint: lang === 'en'
+            ? 'When enabled, records are trimmed in the background after the count reaches keep + batch. This only removes internal backup history records.'
+            : '启用后，记录数达到“保留数 + 清理批量”时会在后台截取到保留数。仅清理插件内部备份历史记录。',
         noteText: lang === 'en'
             ? 'Choose which detailed history data to write to the <span style="color: #f97316; font-weight: 500;">extension\'s internal storage (chrome.storage)</span>. Unchecked data will not be saved to save <span style="color: #f97316; font-weight: 500;">browser</span> storage space.'
             : '选择写入<span style="color: #f97316; font-weight: 500;">插件内部存储（chrome.storage）</span>的历史详情数据。未勾选的数据将不会被保存，以节省<span style="color: #f97316; font-weight: 500;">浏览器</span>的存储空间。',
@@ -21356,7 +21474,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const openBackupHistorySlimmingSettingsDialog = async () => {
         const lang = await getPopupPreferredLang();
         const labels = getLocalizedSlimmingLabels(lang);
-        const currentState = await refreshBackupHistorySlimmingSettings();
+        const [currentState, currentAutoCleanupState] = await Promise.all([
+            refreshBackupHistorySlimmingSettings(),
+            refreshBackupHistoryAutoCleanupSettings()
+        ]);
 
         removeBackupHistorySlimmingSettingsDialog();
         backupHistorySlimmingSettingsDialog = buildHelpDialog({
@@ -21391,6 +21512,26 @@ document.addEventListener('DOMContentLoaded', function () {
                             </span>
                         </label>
                     </div>
+                    <div class="backup-history-secondary-note" style="display: flex; flex-direction: column; gap: 8px;">
+                        <label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer;">
+                            <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--theme-text-primary); font-weight: 600;">
+                                <i class="fas fa-broom"></i>
+                                <span>${escapeHtml(labels.autoCleanupLabel)}</span>
+                            </span>
+                            <input type="checkbox" id="backupHistoryAutoCleanupEnabled" ${currentAutoCleanupState.enabled ? 'checked' : ''}>
+                        </label>
+                        <div id="backupHistoryAutoCleanupFields" style="display: ${currentAutoCleanupState.enabled ? 'grid' : 'none'}; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--theme-text-secondary);">
+                                <span>${escapeHtml(labels.autoCleanupThresholdLabel)}</span>
+                                <input id="backupHistoryAutoCleanupThreshold" type="number" min="10" max="999999" step="1" value="${currentAutoCleanupState.threshold}" style="width: 100%; box-sizing: border-box;">
+                            </label>
+                            <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--theme-text-secondary);">
+                                <span>${escapeHtml(labels.autoCleanupBatchLabel)}</span>
+                                <input id="backupHistoryAutoCleanupBatchSize" type="number" min="1" max="999999" step="1" value="${currentAutoCleanupState.batchSize}" style="width: 100%; box-sizing: border-box;">
+                            </label>
+                        </div>
+                        <div style="font-size: 10.5px; line-height: 1.45; color: var(--theme-text-secondary);">${escapeHtml(labels.autoCleanupHint)}</div>
+                    </div>
                 </div>
             `
         });
@@ -21398,6 +21539,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const saveSnapshotInput = document.getElementById('backupHistorySlimmingDialogSaveSnapshotData');
         const saveChangeInput = document.getElementById('backupHistorySlimmingDialogSaveChangeData');
+        const autoCleanupEnabledInput = document.getElementById('backupHistoryAutoCleanupEnabled');
+        const autoCleanupFields = document.getElementById('backupHistoryAutoCleanupFields');
+        const autoCleanupThresholdInput = document.getElementById('backupHistoryAutoCleanupThreshold');
+        const autoCleanupBatchInput = document.getElementById('backupHistoryAutoCleanupBatchSize');
 
         const syncDialogInputsToState = (settings = backupHistorySlimmingState) => {
             const normalized = normalizeBackupHistorySlimmingSettings(settings);
@@ -21405,8 +21550,16 @@ document.addEventListener('DOMContentLoaded', function () {
             if (saveChangeInput) saveChangeInput.checked = normalized.saveChangeData === true;
         };
 
+        const syncAutoCleanupInputsToState = (settings = backupHistoryAutoCleanupState) => {
+            const normalized = normalizeBackupHistoryAutoCleanupSettings(settings);
+            if (autoCleanupEnabledInput) autoCleanupEnabledInput.checked = normalized.enabled === true;
+            if (autoCleanupThresholdInput) autoCleanupThresholdInput.value = String(normalized.threshold);
+            if (autoCleanupBatchInput) autoCleanupBatchInput.value = String(normalized.batchSize);
+            if (autoCleanupFields) autoCleanupFields.style.display = normalized.enabled ? 'grid' : 'none';
+        };
+
         const setDialogSavingState = (isSaving) => {
-            [saveSnapshotInput, saveChangeInput].forEach((input) => {
+            [saveSnapshotInput, saveChangeInput, autoCleanupEnabledInput, autoCleanupThresholdInput, autoCleanupBatchInput].forEach((input) => {
                 if (input) input.disabled = isSaving;
             });
         };
@@ -21430,6 +21583,32 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (saveSnapshotInput) saveSnapshotInput.addEventListener('change', persistDialogSettings);
         if (saveChangeInput) saveChangeInput.addEventListener('change', persistDialogSettings);
+
+        const persistAutoCleanupDialogSettings = async () => {
+            const nextSettings = normalizeBackupHistoryAutoCleanupSettings({
+                enabled: autoCleanupEnabledInput ? autoCleanupEnabledInput.checked : backupHistoryAutoCleanupState.enabled,
+                threshold: autoCleanupThresholdInput ? autoCleanupThresholdInput.value : backupHistoryAutoCleanupState.threshold,
+                batchSize: autoCleanupBatchInput ? autoCleanupBatchInput.value : backupHistoryAutoCleanupState.batchSize
+            });
+            setDialogSavingState(true);
+            try {
+                const saved = await persistBackupHistoryAutoCleanupSettings(nextSettings, { lang });
+                if (!saved) {
+                    syncAutoCleanupInputsToState();
+                } else {
+                    syncAutoCleanupInputsToState(backupHistoryAutoCleanupState);
+                }
+            } finally {
+                setDialogSavingState(false);
+            }
+        };
+
+        if (autoCleanupEnabledInput) autoCleanupEnabledInput.addEventListener('change', () => {
+            if (autoCleanupFields) autoCleanupFields.style.display = autoCleanupEnabledInput.checked ? 'grid' : 'none';
+            persistAutoCleanupDialogSettings();
+        });
+        if (autoCleanupThresholdInput) autoCleanupThresholdInput.addEventListener('change', persistAutoCleanupDialogSettings);
+        if (autoCleanupBatchInput) autoCleanupBatchInput.addEventListener('change', persistAutoCleanupDialogSettings);
     };
 
     const removeLatestSafetyCheckpointDialog = () => {

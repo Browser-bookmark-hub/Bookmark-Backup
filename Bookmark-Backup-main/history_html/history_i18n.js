@@ -53,8 +53,28 @@ const i18n = {
         'en': 'Clear Records'
     },
     clearBackupHistoryModalDesc: {
-        'zh_CN': '拖动进度条选择要删除的记录。',
-        'en': 'Drag the slider to choose records to delete.'
+        'zh_CN': '管理插件内部备份历史记录，不会删除云端或本地导出的备份文件。',
+        'en': 'Manage internal backup history records only. Cloud backups and locally exported files will not be deleted.'
+    },
+    clearHistoryManualSectionTitle: {
+        'zh_CN': '手动删除',
+        'en': 'Manual deletion'
+    },
+    clearHistoryManualSectionDesc: {
+        'zh_CN': '拖动范围选择要删除的记录。',
+        'en': 'Drag the range to choose records to delete.'
+    },
+    clearHistoryAutoSectionTitle: {
+        'zh_CN': '自动清理',
+        'en': 'Auto cleanup'
+    },
+    clearHistoryAutoCleanupToggleLabel: {
+        'zh_CN': '启用',
+        'en': 'Enabled'
+    },
+    clearHistorySelectionLabel: {
+        'zh_CN': '将删除条目',
+        'en': 'Items to delete'
     },
     clearHistoryModePercentLabel: {
         'zh_CN': '按百分比删除',
@@ -89,8 +109,8 @@ const i18n = {
         'en': 'Red starts at'
     },
     clearHistoryWarnThresholdHint: {
-        'zh_CN': '默认 50 / 100，可手动修改。',
-        'en': 'Defaults: 50 / 100. You can edit these values.'
+        'zh_CN': '默认 25 / 50，可手动修改。',
+        'en': 'Defaults: 25 / 50. You can edit these values.'
     },
     clearBackupHistoryCancelBtn: {
         'zh_CN': '取消',
@@ -157,13 +177,45 @@ const i18n = {
         'zh_CN': '保存变化数据',
         'en': 'Save change data'
     },
+    historyAutoCleanupEnabled: {
+        'zh_CN': '自动清理',
+        'en': 'Auto cleanup'
+    },
+    historyAutoCleanupThreshold: {
+        'zh_CN': '阈值/保留最新',
+        'en': 'Threshold / keep latest'
+    },
+    historyAutoCleanupBatch: {
+        'zh_CN': '触发清理条数',
+        'en': 'Cleanup batch size'
+    },
+    historyAutoCleanupHint: {
+        'zh_CN': '启用后，记录数达到“阈值 + 清理条数”时会在后台截取到阈值。仅清理插件内部备份历史记录。',
+        'en': 'When enabled, records are trimmed in the background after the count reaches threshold + batch size. This only removes internal backup history records.'
+    },
+    historyAutoCleanupConfirm: {
+        'zh_CN': (total, threshold, deleted) => `当前已有 ${total} 条备份历史。启用自动清理后将保留最新 ${threshold} 条，并删除最旧的 ${deleted} 条。是否继续？`,
+        'en': (total, threshold, deleted) => `There are ${total} backup history records. Enabling auto cleanup will keep the newest ${threshold} records and delete the oldest ${deleted}. Continue?`
+    },
     historySlimmingSettingsSaved: {
         'zh_CN': '精简设置已保存',
         'en': 'Compaction settings saved'
     },
+    historyAutoCleanupSettingsSaved: {
+        'zh_CN': '自动清理设置已保存',
+        'en': 'Auto cleanup settings saved'
+    },
+    historyAutoCleanupDeleted: {
+        'zh_CN': (deleted) => `自动清理已保存，已删除 ${deleted} 条旧记录`,
+        'en': (deleted) => `Auto cleanup saved. Deleted ${deleted} old records`
+    },
     historySlimmingSettingsSaveFailed: {
         'zh_CN': '保存精简设置失败',
         'en': 'Failed to save compaction settings'
+    },
+    historyAutoCleanupSettingsSaveFailed: {
+        'zh_CN': '保存自动清理设置失败',
+        'en': 'Failed to save auto cleanup settings'
     },
     historySafetyCheckpointTitle: {
         'zh_CN': '临时安全快照',

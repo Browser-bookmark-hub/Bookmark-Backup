@@ -10394,6 +10394,11 @@ a.tree-label.tree-bookmark-link:hover {
     color: #a62e23;
 }
 
+#clearBackupHistoryBtn.history-delete-auto-cleanup,
+#clearBackupHistoryBtn.history-delete-auto-cleanup:hover {
+    border-color: rgba(76, 175, 80, 0.85) !important;
+}
+
 /* 切换按钮组容器 */
 .toggle-btn-group {
     display: flex;
@@ -11093,43 +11098,81 @@ a.tree-label.tree-bookmark-link:hover {
     line-height: 1.45;
 }
 
-.clear-history-threshold-panel {
-    margin-top: 12px;
-    padding-top: 10px;
-    border-top: 1px dashed var(--border-color);
+.clear-history-modal-desc {
+    margin: 0 0 12px 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.45;
 }
 
-.clear-history-threshold-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-primary);
+#clearBackupHistoryModal .modal-header.compact {
+    padding-left: 20px;
+    padding-right: 20px;
+}
+
+.clear-history-section-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     margin-bottom: 8px;
 }
 
-.clear-history-threshold-row {
+.clear-history-section {
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.clear-history-section-header {
     display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.clear-history-section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.35;
+}
+
+.clear-history-section-desc {
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    line-height: 1.45;
+}
+
+.clear-history-threshold-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: center;
     gap: 12px;
-    flex-wrap: nowrap;
 }
 
 .clear-history-threshold-item {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 70px;
     align-items: center;
     gap: 6px;
-    flex: 1;
     min-width: 0;
+    min-height: 30px;
 }
 
 .clear-history-threshold-item span {
     font-size: 12px;
     color: var(--text-secondary);
     white-space: nowrap;
+    line-height: 30px;
 }
 
 .clear-history-threshold-input {
     width: 70px;
     height: 30px;
+    line-height: 30px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 0 6px;
@@ -11137,6 +11180,12 @@ a.tree-label.tree-bookmark-link:hover {
     color: var(--text-primary);
     text-align: center;
     font-variant-numeric: tabular-nums;
+}
+
+.clear-history-threshold-input:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+    background: var(--bg-secondary);
 }
 
 .clear-history-threshold-input::-webkit-outer-spin-button,
@@ -11154,6 +11203,144 @@ a.tree-label.tree-bookmark-link:hover {
     font-size: 11px;
     color: var(--text-tertiary);
     margin-top: 6px;
+}
+
+.clear-history-primary-action {
+    min-width: 104px;
+    flex: 0 0 auto;
+}
+
+.clear-history-selection-display {
+    text-align: center;
+    margin-top: 8px;
+}
+
+.clear-history-selection-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.clear-history-selection-range {
+    font-weight: 600;
+    color: var(--error);
+}
+
+.clear-history-selection-count {
+    color: var(--text-secondary);
+}
+
+.clear-history-preview {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border-color);
+}
+
+.clear-history-preview span {
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+
+.clear-history-preview i {
+    margin-right: 4px;
+}
+
+.clear-history-auto-cleanup-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+.clear-history-toggle-label {
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.clear-history-switch {
+    position: relative;
+    display: inline-flex;
+    width: 38px;
+    height: 22px;
+    flex: 0 0 38px;
+}
+
+.clear-history-switch input {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.clear-history-switch-track {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.clear-history-switch-track::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--bg-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+    transition: transform 0.18s ease;
+}
+
+.clear-history-switch input:checked + .clear-history-switch-track {
+    background: #4CAF50;
+    border-color: #4CAF50;
+}
+
+.clear-history-switch input:checked + .clear-history-switch-track::after {
+    transform: translateX(16px);
+}
+
+.clear-history-switch input:disabled {
+    cursor: not-allowed;
+}
+
+.clear-history-switch input:disabled + .clear-history-switch-track {
+    opacity: 0.6;
+}
+
+.clear-history-auto-cleanup-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+    align-items: center;
+}
+
+.clear-history-auto-cleanup-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 70px;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 30px;
+}
+
+.clear-history-auto-cleanup-item span {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    line-height: 30px;
 }
 
 #clearHistoryDeleteCountDisplay {
@@ -11484,15 +11671,6 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 /* ==================== 清除历史弹窗深色模式与样式适配 ==================== */
-#clearBackupHistoryOptions {
-    background: var(--bg-secondary);
-}
-
-[data-theme="dark"] #clearBackupHistoryOptions {
-    background: rgba(0, 0, 0, 0.2) !important;
-    border: 1px solid var(--border-color);
-}
-
 #clearHistoryExportFirstBtn {
     background: var(--accent-light);
     border-color: var(--accent-primary);
