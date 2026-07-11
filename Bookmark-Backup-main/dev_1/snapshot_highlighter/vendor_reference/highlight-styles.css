@@ -553,8 +553,6 @@
     border-bottom-color: #000000 !important;
   }
 }
-  outline-offset: 2px !important;
-}
 
 /* Screen reader support */
 .custom-highlight::before {

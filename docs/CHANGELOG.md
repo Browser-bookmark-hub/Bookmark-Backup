@@ -7,6 +7,24 @@
 
 ---
 
+## v3.6.5
+
+相对 `v3.5.8(2)` 的累计未发行更新。
+
+### 主要更新
+
+- **重载/初始负载性能优化**：以轻量级 Key 注册表替代重载、启动和标签页清理时的 `storage.local.get(null)` 全库读取，明显降低大数据量下的浏览器卡顿；同时合并重复启动/安装监听，角标可在重载后自动恢复。
+- **备份历史自动清理**：新增默认关闭的历史自动清理设置，可按保留阈值和清理批量删除最旧记录，并同步清理分离的快照与变化数据；弹窗和历史页都会显示阈值、告警和清理状态。
+- **本地备份静默升级**：将本地下载期间的静默控制迁移至 Chrome 推荐的 `downloads.ui` / `chrome.downloads.setUiOptions()` 接口，替代已废弃的 `downloads.shelf` / `setShelfEnabled()`；下载完成、失败或后台恢复时会主动还原下载 UI，并可按自动、手动及其他备份场景分别配置。
+- **高危操作后续备份策略规范化**：恢复、补丁恢复、覆盖恢复和导入合并完成后，后续备份写出统一按当前 `Overwrite / Versioned` 设置执行，不再跟随来源记录策略；撤销链路保持不触发普通备份写出，只保留事务、临时安全快照和必要边界记录。
+- **新增书签画布变化数据兼容**：相对 `v3.5.8(2)`，在原生变化数据 JSON 基础上新增可选「画布」格式，可将当前变化/历史变化导出为 [书签画布（Bookmark-Canvas）](https://github.com/Browser-bookmark-hub/Bookmark-Canvas) 可导入的临时栏目结构，并保留新增、删除、移动、修改标签以及备注信息；原格式保留，云端、本地、单文件和文件夹恢复流程同时识别两种 JSON。
+
+### 其他改进
+
+- **Markdown 正文定位与高亮工具优化**：调整辅助面板中的高亮工具交互，完善 Markdown 文本的格式处理与刷新逻辑；Markdown 正文目录定位更稳定，减少下划线、删除线等样式在导出内容中的残留。
+- **界面与可维护性整理**：精简设置改为自动保存；补充辅助面板说明，修复工具按钮在不同页面中的兼容性；重组多个核心 JavaScript 文件的注释与分区，补充索引辅助文件，并清理拆分遗留的无用 JavaScript 文件。
+- **恢复/导入合并安全措施落地说明**：高危写入前继续依赖确认、预演和临时安全快照；写入完成后只做从当前浏览器书签状态到本地、WebDAV 或 GitHub 目标的备份写出。策略文档：[`恢复与导入合并后的备份写出策略计划`](归档/19--恢复与导入合并后备份写出策略-已落地计划.md)。
+
 ## v3.5.0
 
 - **网页快照深度增强**：
@@ -134,6 +152,24 @@
 
 ---
 
+## v3.6.5
+
+Cumulative unreleased updates since `v3.5.8(2)`.
+
+### Primary updates
+
+- **Reload/initial-load performance optimization**: replaced broad `storage.local.get(null)` reads during reload, startup, and tab cleanup with a lightweight key registry, noticeably reducing stalls on large local datasets; startup/install listeners were also consolidated so the badge can recover automatically after reload.
+- **Automatic backup-history cleanup**: added an opt-in cleanup setting for backup history, with retention thresholds and cleanup batches that delete the oldest records and their detached snapshot/change-data keys; the popup and history page now show thresholds, warnings, and cleanup state.
+- **Local-backup download UI upgrade**: migrated temporary download-UI suppression to Chrome's recommended `downloads.ui` / `chrome.downloads.setUiOptions()` APIs, replacing deprecated `downloads.shelf` / `setShelfEnabled()` calls. The download UI is restored after completion, errors, or background recovery, with separate scopes for automatic, manual, and other backup flows.
+- **Standardized post-operation backup policy for high-risk actions**: after restore, patch restore, overwrite restore, or import merge, follow-up backup writes now use the current `Overwrite / Versioned` setting instead of inheriting the source record strategy. Revert flows still avoid ordinary backup writes and keep only transactions, temporary safety snapshots, and required boundary records.
+- **Added Bookmark Canvas compatibility for change data**: this adds an optional Canvas format on top of the native Changes JSON format. Current Changes / History Changes can be exported as an importable temporary section for [Bookmark-Canvas](https://github.com/Browser-bookmark-hub/Bookmark-Canvas), preserving added, deleted, moved, modified tags and notes; the original format remains available, and cloud, local, single-file, and folder restore flows detect both JSON formats.
+
+### Other improvements
+
+- **Markdown body navigation and highlighter improvements**: refined highlighter interactions in the helper panel, improved Markdown formatting and refresh handling, and made table-of-contents jumps locate the intended body section more reliably.
+- **UI and maintainability cleanup**: streamlined settings now save automatically; added helper-panel guidance; fixed tool-button compatibility across pages; reorganized comments and sections across core JavaScript files, added navigation aids for AI/developer code lookup, and removed obsolete JavaScript left over from the file split.
+- **Documented current restore/import safeguards**: high-risk writes continue to rely on confirmation, preflight checks, and temporary safety snapshots; after completion, backup writes only flow from the current browser bookmark state to local, WebDAV, or GitHub targets. See the [`post-operation backup policy plan`](归档/19--恢复与导入合并后备份写出策略-已落地计划.md).
+
 ## v3.5.0
 
 - **Enhanced Web Snapshot**:
@@ -252,4 +288,4 @@
 -   **🌟 Backup Check Records - Notes Feature**:
     -   Added a "Time and Notes" column allowing each record to have notes (recommended under 20 characters, in two lines).
     -   Notes are entered separately via the UI, avoiding interference with existing features.
-    -   Notes are included in exported txt records. 
+-   Notes are included in exported txt records.
