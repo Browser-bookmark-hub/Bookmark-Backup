@@ -71,6 +71,18 @@
                     }
                 });
             });
+
+            // Register key to dev1ActiveTabKeys
+            try {
+                const regData = await new Promise(resolve => storage.get(['dev1ActiveTabKeys'], resolve));
+                const reg = regData?.dev1ActiveTabKeys || {};
+                const idStr = String(tabId);
+                if (!reg[idStr]) reg[idStr] = [];
+                if (!reg[idStr].includes(key)) {
+                    reg[idStr].push(key);
+                    await new Promise(resolve => storage.set({ dev1ActiveTabKeys: reg }, resolve));
+                }
+            } catch (_) {}
         } catch (_) { }
     }
 
@@ -80,16 +92,19 @@
     async function removeAllForTab(tabId) {
         const id = Number(tabId);
         if (!Number.isFinite(id)) return;
-        const prefix = `${PREFIX}${id}_`;
         try {
             const storage = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local)
                 ? chrome.storage.local
                 : null;
             if (!storage) return;
-            const all = await new Promise(resolve => storage.get(null, resolve));
-            const keysToRemove = Object.keys(all || {}).filter(k => k.startsWith(prefix));
+            const regData = await new Promise(resolve => storage.get(['dev1ActiveTabKeys'], resolve));
+            const reg = regData?.dev1ActiveTabKeys || {};
+            const idStr = String(id);
+            const keysToRemove = reg[idStr] || [];
             if (keysToRemove.length > 0) {
                 await new Promise(resolve => storage.remove(keysToRemove, resolve));
+                delete reg[idStr];
+                await new Promise(resolve => storage.set({ dev1ActiveTabKeys: reg }, resolve));
             }
         } catch (_) { }
     }

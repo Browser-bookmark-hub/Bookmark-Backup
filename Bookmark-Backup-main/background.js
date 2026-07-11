@@ -2866,8 +2866,11 @@ browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 
     await migrateToSplitStorage();
     await migrateV2RecordOnlyHistory();
 
+    // 初始化语言偏好
+    await initializeLanguagePreference();
+
     // 新增：初始化存储，确保首次运行时有基准
-    if (details.reason === 'install' || details.reason === 'update') {
+    if (details && (details.reason === 'install' || details.reason === 'update')) {
         try {
             const currentData = await browserAPI.storage.local.get([
                 'lastBookmarkData',
@@ -2904,7 +2907,6 @@ browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 
 
     updateSyncAlarm();
     await initializeBadge(); // 使用 await 确保 badge 初始化完成
-    // initializeAutoSync(); // Not awaiting it as per original structure potentially
 
     // 初始化备份提醒系统（如果尚未初始化）
     if (!hasInitializedBackupReminder) {
@@ -2912,20 +2914,20 @@ browserAPI.runtime.onInstalled.addListener(async (details) => { // 添加 async 
         initializeBackupReminder().catch(error => {
             hasInitializedBackupReminder = false; // 重置标志以允许未来重试
         });
-    } else {
     }
 });
 
 // 确保定时器在浏览器启动时也能正确创建
-// 注意：此处不调用 initializeBadge()，避免与下方统一的 onStartup 重复
 browserAPI.runtime.onStartup.addListener(async () => {
     // 启动时也尝试迁移旧数据
     await migrateToSplitStorage();
     await migrateV2RecordOnlyHistory();
 
+    // 初始化语言偏好和角标
+    await initializeLanguagePreference();
+    await initializeBadge();
+
     updateSyncAlarm();
-    // initializeBadge(); // 已移除：避免重复调用（下方统一的 onStartup 会调用）
-    // initializeAutoSync(); // Not awaiting it as per original structure potentially
 
     // 初始化备份提醒系统（如果尚未初始化）
     if (!hasInitializedBackupReminder) {
@@ -2933,7 +2935,6 @@ browserAPI.runtime.onStartup.addListener(async () => {
         initializeBackupReminder().catch(error => {
             hasInitializedBackupReminder = false; // 重置标志以允许未来重试
         });
-    } else {
     }
 
     // 初始化自动备份定时器系统
@@ -2960,7 +2961,7 @@ browserAPI.runtime.onStartup.addListener(async () => {
                 // 直接初始化定时器系统，传入 true 强制检查遗漏
                 await initializeAutoBackupTimerSystem(true);
                 autoBackupTimerRunning = true; // 标记为运行中
-            } else {}
+            }
         }
     } catch (error) {
         console.error('[自动备份定时器] 定时器初始化失败:', error);
@@ -6224,18 +6225,17 @@ if (browserAPI?.tabs?.onUpdated && typeof browserAPI.tabs.onUpdated.addListener 
 
 if (browserAPI?.tabs?.onRemoved && typeof browserAPI.tabs.onRemoved.addListener === 'function') {
     browserAPI.tabs.onRemoved.addListener(async (tabId, removeInfo = {}) => {
-        const scopedPrefix = `dev1_scoped_${tabId}_`;
-        const autoRestorePrefix = dev1BuildSnapshotHighlighterAutoRestorePrefix(tabId);
-        const helperPrefix = `dev1_snapshot_helper_autorestore_${tabId}_`;
         try {
-            const all = await browserAPI.storage.local.get(null);
-            const keysToRemove = Object.keys(all || {}).filter(k => (
-                k.startsWith(scopedPrefix) || 
-                (autoRestorePrefix && k.startsWith(autoRestorePrefix)) ||
-                k.startsWith(helperPrefix)
-            ));
+            const regData = await browserAPI.storage.local.get(['dev1ActiveTabKeys']);
+            const reg = regData?.dev1ActiveTabKeys || {};
+            const idStr = String(tabId);
+            const keysToRemove = reg[idStr] || [];
             if (keysToRemove.length > 0) {
                 await browserAPI.storage.local.remove(keysToRemove);
+            }
+            if (reg[idStr]) {
+                delete reg[idStr];
+                await browserAPI.storage.local.set({ dev1ActiveTabKeys: reg });
             }
         } catch (_) {}
         const reviewWindowId = dev1NormalizeWindowId(removeInfo?.windowId);
@@ -6264,38 +6264,30 @@ async function dev1RunTabStorageGarbageCollection() {
         const tabs = await new Promise(resolve => chrome.tabs.query({}, resolve));
         const activeTabIds = new Set((tabs || []).map(t => t.id).filter(id => id != null));
 
-        const allStorage = await browserAPI.storage.local.get(null);
-        if (!allStorage) return;
+        const regData = await browserAPI.storage.local.get(['dev1ActiveTabKeys']);
+        const reg = regData?.dev1ActiveTabKeys || {};
 
         const keysToRemove = [];
-        const scopedPrefix = 'dev1_scoped_';
-        const autoRestorePrefix = DEV1_SNAPSHOT_HIGHLIGHTER_AUTORESTORE_PREFIX;
+        const tabsToClean = [];
 
-        Object.keys(allStorage).forEach(key => {
-            if (key.startsWith(scopedPrefix)) {
-                const part = key.substring(scopedPrefix.length);
-                const match = part.match(/^(\d+)_/);
-                if (match) {
-                    const tabId = parseInt(match[1], 10);
-                    if (!activeTabIds.has(tabId)) {
-                        keysToRemove.push(key);
-                    }
-                }
-            } else if (key.startsWith(autoRestorePrefix)) {
-                const part = key.substring(autoRestorePrefix.length);
-                const match = part.match(/^(\d+)_/);
-                if (match) {
-                    const tabId = parseInt(match[1], 10);
-                    if (!activeTabIds.has(tabId)) {
-                        keysToRemove.push(key);
-                    }
-                }
+        Object.keys(reg).forEach(tabIdStr => {
+            const tabId = parseInt(tabIdStr, 10);
+            if (!activeTabIds.has(tabId)) {
+                const keys = reg[tabIdStr] || [];
+                keysToRemove.push(...keys);
+                tabsToClean.push(tabIdStr);
             }
         });
 
         if (keysToRemove.length > 0) {
             await browserAPI.storage.local.remove(keysToRemove);
-            console.log(`[GC] Cleaned up ${keysToRemove.length} orphaned tab-scoped storage keys.`);
+        }
+
+        if (tabsToClean.length > 0) {
+            tabsToClean.forEach(tabIdStr => {
+                delete reg[tabIdStr];
+            });
+            await browserAPI.storage.local.set({ dev1ActiveTabKeys: reg });
         }
 
         if (chrome.storage.session) {
@@ -6304,8 +6296,10 @@ async function dev1RunTabStorageGarbageCollection() {
     } catch (_) {}
 }
 
-// Execute GC when service worker starts
-dev1RunTabStorageGarbageCollection().catch(() => {});
+// Execute GC with a delay to avoid blocking extension startup
+setTimeout(() => {
+    dev1RunTabStorageGarbageCollection().catch(() => {});
+}, 10000);
 
 if (browserAPI?.windows?.onRemoved && typeof browserAPI.windows.onRemoved.addListener === 'function') {
     browserAPI.windows.onRemoved.addListener(async (windowId) => {
@@ -8098,6 +8092,18 @@ async function dev1SetSnapshotHighlighterAutoRestoreMarker(tabId, url, lang = 'z
                 updatedAt: Date.now()
             }
         });
+
+        // Register key to dev1ActiveTabKeys
+        try {
+            const regData = await browserAPI.storage.local.get(['dev1ActiveTabKeys']);
+            const reg = regData?.dev1ActiveTabKeys || {};
+            const idStr = String(id);
+            if (!reg[idStr]) reg[idStr] = [];
+            if (!reg[idStr].includes(key)) {
+                reg[idStr].push(key);
+                await browserAPI.storage.local.set({ dev1ActiveTabKeys: reg });
+            }
+        } catch (_) {}
     } catch (_) { }
 }
 
@@ -8105,9 +8111,16 @@ async function dev1ClearSnapshotHighlighterAutoRestoreMarkers(tabId) {
     const prefix = dev1BuildSnapshotHighlighterAutoRestorePrefix(tabId);
     if (!prefix) return;
     try {
-        const all = await browserAPI.storage.local.get(null);
-        const keys = Object.keys(all || {}).filter(key => key.startsWith(prefix));
-        if (keys.length) await browserAPI.storage.local.remove(keys);
+        const regData = await browserAPI.storage.local.get(['dev1ActiveTabKeys']);
+        const reg = regData?.dev1ActiveTabKeys || {};
+        const idStr = String(tabId);
+        const keys = reg[idStr] || [];
+        const keysToRemove = keys.filter(key => key.startsWith(prefix));
+        if (keysToRemove.length > 0) {
+            await browserAPI.storage.local.remove(keysToRemove);
+            reg[idStr] = keys.filter(k => !keysToRemove.includes(k));
+            await browserAPI.storage.local.set({ dev1ActiveTabKeys: reg });
+        }
     } catch (_) { }
 }
 
@@ -8262,12 +8275,17 @@ if (browserAPI?.tabs?.onUpdated && typeof browserAPI.tabs.onUpdated.addListener 
                 } else {
                     const helperPrefix = `dev1_snapshot_helper_autorestore_${Math.floor(id)}_`;
                     const highlighterPrefix = dev1BuildSnapshotHighlighterAutoRestorePrefix(id);
-                    const all = await browserAPI.storage.local.get(null);
-                    const keysToRemove = Object.keys(all || {}).filter(k => 
+                    const regData = await browserAPI.storage.local.get(['dev1ActiveTabKeys']);
+                    const reg = regData?.dev1ActiveTabKeys || {};
+                    const idStr = String(id);
+                    const keys = reg[idStr] || [];
+                    const keysToRemove = keys.filter(k => 
                         k.startsWith(helperPrefix) || (highlighterPrefix && k.startsWith(highlighterPrefix))
                     );
                     if (keysToRemove.length > 0) {
                         await browserAPI.storage.local.remove(keysToRemove);
+                        reg[idStr] = keys.filter(k => !keysToRemove.includes(k));
+                        await browserAPI.storage.local.set({ dev1ActiveTabKeys: reg });
                     }
                 }
             } catch (_) {}
@@ -35319,37 +35337,9 @@ async function initializeLanguagePreference() {
     }
 }
 
-// 全局变量
-// ... existing code ...
-// 浏览器启动、安装或更新时执行的初始化
-browserAPI.runtime.onStartup.addListener(async () => {
-    await initializeLanguagePreference(); // 新增：初始化语言偏好
-    await initializeBadge();
-    await initializeAutoSync();
-    initializeOperationTracking();
-
-    // 活跃时间追踪已剔除
-});
-
-
 // =================================================================================
-// VIII. INITIALIZATION (初始化)
+// VIII. INITIALIZATION (初始化 - 逻辑已合并至文件前半部分的 CORE EVENT LISTENERS)
 // =================================================================================
-
-browserAPI.runtime.onInstalled.addListener(async (details) => {
-    await initializeLanguagePreference(); // 新增：初始化语言偏好
-    await initializeBadge();
-    await initializeAutoSync();
-    initializeOperationTracking();
-
-    // 活跃时间追踪已剔除
-
-    if (details.reason === 'install') {
-        // browserAPI.tabs.create({ url: 'welcome.html' });
-    } else if (details.reason === 'update') {
-        const previousVersion = details.previousVersion;
-    }
-});
 
 
 // =================================================================================

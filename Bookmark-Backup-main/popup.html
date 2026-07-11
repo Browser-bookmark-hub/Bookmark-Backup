@@ -1731,14 +1731,11 @@
         }
 
         .history-header .header-item.header-time {
-            padding-left: 0px;
             flex: 1.25;
-            transform: translateX(-8px);
         }
 
         .history-header .header-item.header-count {
             flex: 0.75;
-            transform: translateX(-18px);
         }
 
         .history-header .header-item {
@@ -1816,7 +1813,6 @@
         .history-item-time {
             flex: 1.25;
             padding-left: 0px;
-            transform: translateX(-8px);
         }
 
         .history-item-count {
@@ -1826,7 +1822,6 @@
         /* 确保历史记录内容换行时的对齐 */
         .history-item-count>div {
             width: 100%;
-            transform: translateX(-18px);
         }
 
         /* 历史记录项悬停效果 */
@@ -7007,8 +7002,8 @@
                         <div id="syncHistoryList" class="history-list">
                             <div class="history-header">
                                 <div class="header-item header-action">序号</div>
-                                <div class="header-item header-time" style="flex: 1.25; text-align: center;">时间与备注</div>
-                                <div class="header-item header-count" style="flex: 0.75; text-align: center;">数量与结构</div>
+                                <div class="header-item header-time">时间与备注</div>
+                                <div class="header-item header-count">数量与结构</div>
                                 <div class="header-item header-ops">操作</div>
                             </div>
                             <!-- 历史记录项将通过JavaScript添加 -->

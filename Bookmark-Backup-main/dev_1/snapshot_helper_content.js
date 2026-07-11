@@ -2304,6 +2304,18 @@
             else resolve();
           });
         });
+
+        // Register key to dev1ActiveTabKeys
+        try {
+          const regData = await new Promise(r => chrome.storage.local.get(['dev1ActiveTabKeys'], r));
+          const reg = regData?.dev1ActiveTabKeys || {};
+          const idStr = String(tabId);
+          if (!reg[idStr]) reg[idStr] = [];
+          if (!reg[idStr].includes(key)) {
+            reg[idStr].push(key);
+            await new Promise(r => chrome.storage.local.set({ dev1ActiveTabKeys: reg }, r));
+          }
+        } catch (_) {}
       } catch (_) {}
     }
 
@@ -2315,6 +2327,17 @@
       const key = `dev1_snapshot_helper_autorestore_${Math.floor(tabId)}_${hashUrl(url)}`;
       try {
         await new Promise(resolve => chrome.storage.local.remove(key, resolve));
+
+        // Unregister key from dev1ActiveTabKeys
+        try {
+          const regData = await new Promise(r => chrome.storage.local.get(['dev1ActiveTabKeys'], r));
+          const reg = regData?.dev1ActiveTabKeys || {};
+          const idStr = String(tabId);
+          if (reg[idStr]) {
+            reg[idStr] = reg[idStr].filter(k => k !== key);
+            await new Promise(r => chrome.storage.local.set({ dev1ActiveTabKeys: reg }, r));
+          }
+        } catch (_) {}
       } catch (_) {}
     }
 

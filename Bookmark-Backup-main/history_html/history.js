@@ -9362,6 +9362,34 @@ async function fetchHistoryPageData(page = 1, pageSize = HISTORY_PAGE_SIZE) {
     const safePage = clampHistoryPage(page);
 
     return await new Promise((resolve) => {
+        let settled = false;
+        let timeoutId = null;
+        const resolveOnce = (value) => {
+            if (settled) return;
+            settled = true;
+            if (timeoutId) clearTimeout(timeoutId);
+            resolve(value);
+        };
+        const resolveFromLocalStorage = () => {
+            browserAPI.storage.local.get(['syncHistory'], (result) => {
+                const localHistory = Array.isArray(result?.syncHistory) ? result.syncHistory : [];
+                const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
+                const totalRecords = sortedLocal.length;
+                const totalPages = Math.max(1, Math.ceil(totalRecords / safePageSize));
+                const currentPage = clampHistoryPage(safePage, totalPages);
+                const pageStart = (currentPage - 1) * safePageSize;
+                resolveOnce({
+                    records: sortedLocal.slice(pageStart, pageStart + safePageSize),
+                    totalRecords,
+                    totalPages,
+                    currentPage,
+                    pageSize: safePageSize,
+                    v2ToV3HistoryDividerIndex: -1
+                });
+            });
+        };
+        timeoutId = setTimeout(resolveFromLocalStorage, 1800);
+
         browserAPI.runtime.sendMessage({
             action: 'getSyncHistory',
             paged: true,
@@ -9369,18 +9397,11 @@ async function fetchHistoryPageData(page = 1, pageSize = HISTORY_PAGE_SIZE) {
             pageSize: safePageSize
         }, (response) => {
             if (browserAPI.runtime.lastError || !response || !response.success) {
-                resolve({
-                    records: [],
-                    totalRecords: 0,
-                    totalPages: 1,
-                    currentPage: 1,
-                    pageSize: safePageSize,
-                    v2ToV3HistoryDividerIndex: -1
-                });
+                resolveFromLocalStorage();
                 return;
             }
 
-            resolve({
+            resolveOnce({
                 records: Array.isArray(response.syncHistory) ? response.syncHistory : [],
                 totalRecords: Number.isFinite(Number(response.totalRecords)) ? Number(response.totalRecords) : 0,
                 totalPages: Math.max(1, Number.isFinite(Number(response.totalPages)) ? Number(response.totalPages) : 1),
