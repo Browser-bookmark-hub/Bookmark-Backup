@@ -904,6 +904,18 @@
             else resolve();
           });
         });
+
+        // Register key to dev1ActiveTabKeys
+        try {
+          const regData = await new Promise(resolve => storage.get(['dev1ActiveTabKeys'], resolve));
+          const reg = regData?.dev1ActiveTabKeys || {};
+          const idStr = String(tabId);
+          if (!reg[idStr]) reg[idStr] = [];
+          if (!reg[idStr].includes(key)) {
+            reg[idStr].push(key);
+            await new Promise(resolve => storage.set({ dev1ActiveTabKeys: reg }, resolve));
+          }
+        } catch (_) {}
       } catch (_) { }
     }
 
@@ -912,9 +924,16 @@
       const prefix = this.autoRestoreMarkerPrefix(tabId);
       if (!storage || !prefix) return;
       try {
-        const all = await new Promise(resolve => storage.get(null, resolve));
-        const keys = Object.keys(all || {}).filter(key => key.startsWith(prefix));
-        if (keys.length) await new Promise(resolve => storage.remove(keys, resolve));
+        const regData = await new Promise(resolve => storage.get(['dev1ActiveTabKeys'], resolve));
+        const reg = regData?.dev1ActiveTabKeys || {};
+        const idStr = String(tabId);
+        const keys = reg[idStr] || [];
+        const keysToRemove = keys.filter(key => key.startsWith(prefix));
+        if (keysToRemove.length > 0) {
+            await new Promise(resolve => storage.remove(keysToRemove, resolve));
+            reg[idStr] = keys.filter(k => !keysToRemove.includes(k));
+            await new Promise(resolve => storage.set({ dev1ActiveTabKeys: reg }, resolve));
+        }
       } catch (_) { }
     }
 

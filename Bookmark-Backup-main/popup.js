@@ -123,6 +123,7 @@ const POPUP_BACKUP_PROGRESS_TARGET_ORDER = Object.freeze({
     github_repo: 1,
     webdav: 2
 });
+const POPUP_PREFERRED_LANG_CACHE_KEY = 'popupPreferredLangCache';
 let popupActiveRestoreProgressSessionId = '';
 let backupHistorySlimmingState = {
     saveSnapshotData: true,
@@ -143,6 +144,61 @@ function normalizePopupLanguage(lang = '', fallback = 'zh_CN') {
     if (raw.startsWith('zh')) return 'zh_CN';
     const fallbackRaw = String(fallback || '').trim().toLowerCase().replace('_', '-');
     return fallbackRaw.startsWith('en') ? 'en' : 'zh_CN';
+}
+
+function detectDefaultPopupLanguage() {
+    try {
+        const ui = (chrome?.i18n?.getUILanguage?.() || '').toLowerCase();
+        return ui.startsWith('zh') ? 'zh_CN' : 'en';
+    } catch (_) {
+        return 'zh_CN';
+    }
+}
+
+function readPopupLanguageLocalCache() {
+    try {
+        const cached = localStorage.getItem(POPUP_PREFERRED_LANG_CACHE_KEY);
+        if (cached === 'en' || cached === 'zh_CN') return cached;
+    } catch (_) { }
+    return detectDefaultPopupLanguage();
+}
+
+let popupLanguageCache = readPopupLanguageLocalCache();
+let popupLanguageStorageReadPromise = null;
+window.currentLang = popupLanguageCache;
+try {
+    document.documentElement.setAttribute('lang', popupLanguageCache === 'en' ? 'en' : 'zh');
+} catch (_) { }
+
+function setPopupLanguageCache(lang) {
+    const normalizedLang = normalizePopupLanguage(lang, popupLanguageCache || 'zh_CN');
+    popupLanguageCache = normalizedLang;
+    window.currentLang = normalizedLang;
+    try {
+        localStorage.setItem(POPUP_PREFERRED_LANG_CACHE_KEY, normalizedLang);
+    } catch (_) { }
+    try {
+        document.documentElement.setAttribute('lang', normalizedLang === 'en' ? 'en' : 'zh');
+    } catch (_) { }
+    return normalizedLang;
+}
+
+async function loadPopupLanguageFromStorage({ force = false } = {}) {
+    if (!force && popupLanguageStorageReadPromise) return popupLanguageStorageReadPromise;
+    popupLanguageStorageReadPromise = new Promise(resolve => {
+        chrome.storage.local.get(['currentLang', 'preferredLang'], (result) => {
+            const lang = normalizePopupLanguage(
+                result?.currentLang || result?.preferredLang || popupLanguageCache || detectDefaultPopupLanguage(),
+                popupLanguageCache || 'zh_CN'
+            );
+            resolve(setPopupLanguageCache(lang));
+        });
+    });
+    return popupLanguageStorageReadPromise;
+}
+
+function getCachedPopupLanguage() {
+    return popupLanguageCache || setPopupLanguageCache(detectDefaultPopupLanguage());
 }
 
 function normalizeHistoryDeleteWarnValue(rawValue, fallbackValue) {
@@ -1253,11 +1309,7 @@ async function callBackgroundFunction(action, data = {}, options = {}) {
 
 
 async function getPopupPreferredLang() {
-    return await new Promise(resolve => {
-        chrome.storage.local.get(['currentLang', 'preferredLang'], (result) => {
-            resolve(normalizePopupLanguage(result.preferredLang || result.currentLang || window.currentLang || 'zh_CN'));
-        });
-    });
+    return getCachedPopupLanguage();
 }
 
 function formatRestoreRecoveryPhaseLabel(phase, lang) {
@@ -3344,8 +3396,9 @@ function resolveAbsoluteDisplayStats(stats = {}, options = {}) {
     };
 }
 
-function updateSyncHistory(passedLang) { // Added passedLang parameter
+function updateSyncHistory(passedLang, options = {}) { // Added passedLang parameter
     const PAGE_SIZE = 10;
+    const shouldRefreshLastSyncInfo = options && options.refreshLastSyncInfo === true;
 
     function getHistoryRecordTimeMs(record) {
         const timeRaw = record && record.time != null ? record.time : 0;
@@ -3567,7 +3620,26 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
     const getLangPromise = passedLang
         ? Promise.resolve(passedLang)
-        : new Promise(resolve => chrome.storage.local.get(['preferredLang'], result => resolve(result.preferredLang || 'zh_CN')));
+        : getPopupPreferredLang();
+
+    const getHistoryPageFromLocalStorage = (requestedPage) => new Promise(resolve => {
+        chrome.storage.local.get(['syncHistory'], result => {
+            const localHistory = Array.isArray(result?.syncHistory) ? result.syncHistory : [];
+            const sortedLocal = sortHistoryRecordsByTimeDesc(localHistory);
+            const totalRecords = sortedLocal.length;
+            const totalPages = Math.max(1, Math.ceil(totalRecords / PAGE_SIZE));
+            const currentPage = Math.min(totalPages, Math.max(1, Number.isFinite(Number(requestedPage)) ? Number(requestedPage) : 1));
+            const startIndex = (currentPage - 1) * PAGE_SIZE;
+            resolve({
+                syncHistory: sortedLocal.slice(startIndex, startIndex + PAGE_SIZE),
+                totalRecords,
+                totalPages,
+                currentPage,
+                pageSize: PAGE_SIZE,
+                v2ToV3HistoryDividerIndex: -1
+            });
+        });
+    });
 
     Promise.all([
         getLangPromise, // Add promise to get language
@@ -3576,24 +3648,13 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                 ? window.__syncHistoryCurrentPage
                 : 1;
 
-            chrome.runtime.sendMessage({
-                action: "getSyncHistory",
+            callBackgroundFunction("getSyncHistory", {
                 paged: true,
                 page: requestedPage,
                 pageSize: PAGE_SIZE
-            }, response => {
-                if (chrome.runtime.lastError) {
-                    console.error('获取备份历史记录失败:', chrome.runtime.lastError.message);
-                    resolve({
-                        syncHistory: [],
-                        totalRecords: 0,
-                        totalPages: 1,
-                        currentPage: 1,
-                        pageSize: PAGE_SIZE,
-                        v2ToV3HistoryDividerIndex: -1
-                    });
-                    return;
-                }
+            }, {
+                timeoutMs: 1800
+            }).then(response => {
                 if (response && response.success) {
                     resolve({
                         syncHistory: Array.isArray(response.syncHistory) ? response.syncHistory : [],
@@ -3603,18 +3664,11 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         pageSize: Number.isFinite(Number(response.pageSize)) ? Number(response.pageSize) : PAGE_SIZE,
                         v2ToV3HistoryDividerIndex: Number.isFinite(Number(response.v2ToV3HistoryDividerIndex)) ? Number(response.v2ToV3HistoryDividerIndex) : -1
                     });
+                    return;
                 }
-                else {
-                    console.error('获取备份历史记录失败 in Promise:', response);
-                    resolve({
-                        syncHistory: [],
-                        totalRecords: 0,
-                        totalPages: 1,
-                        currentPage: 1,
-                        pageSize: PAGE_SIZE,
-                        v2ToV3HistoryDividerIndex: -1
-                    });
-                }
+                getHistoryPageFromLocalStorage(requestedPage).then(resolve);
+            }).catch(() => {
+                getHistoryPageFromLocalStorage(requestedPage).then(resolve);
             });
         }),
         new Promise(resolve => {
@@ -3849,15 +3903,15 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
         if (currentLang === 'en') {
             headerHTML = `
                 <div class="header-item header-action">No.</div>
-                <div class="header-item header-time" style="flex: 1.25; text-align: center;">Time & Notes</div>
-                <div class="header-item header-count" style="flex: 0.75; text-align: center;">Quantity & Structure</div>
+                <div class="header-item header-time">Time & Notes</div>
+                <div class="header-item header-count">Quantity & Structure</div>
                 <div class="header-item header-ops">Ops</div>
             `;
         } else {
             headerHTML = `
                 <div class="header-item header-action">序号</div>
-                <div class="header-item header-time" style="flex: 1.25; text-align: center;">时间与备注</div>
-                <div class="header-item header-count" style="flex: 0.75; text-align: center;">数量与结构</div>
+                <div class="header-item header-time">时间与备注</div>
+                <div class="header-item header-count">数量与结构</div>
                 <div class="header-item header-ops">操作</div>
             `;
         }
@@ -4386,13 +4440,13 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                     prevBtn.addEventListener('click', () => {
                         if (window.__syncHistoryCurrentPage > 1) {
                             window.__syncHistoryCurrentPage -= 1;
-                            updateSyncHistory(currentLang);
+                            updateSyncHistory(currentLang, { refreshLastSyncInfo: false });
                         }
                     });
                     nextBtn.addEventListener('click', () => {
                         if (window.__syncHistoryCurrentPage < (window.__syncHistoryTotalPages || 1)) {
                             window.__syncHistoryCurrentPage += 1;
-                            updateSyncHistory(currentLang);
+                            updateSyncHistory(currentLang, { refreshLastSyncInfo: false });
                         }
                     });
                     const applyPageFromInput = () => {
@@ -4403,7 +4457,7 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
                         }
                         const clamped = Math.min(Math.max(target, 1), window.__syncHistoryTotalPages || 1);
                         window.__syncHistoryCurrentPage = clamped;
-                        updateSyncHistory(currentLang);
+                        updateSyncHistory(currentLang, { refreshLastSyncInfo: false });
                     };
                     pageInput.addEventListener('keydown', (e) => {
                         if (e.key === 'Enter') applyPageFromInput();
@@ -4445,7 +4499,9 @@ function updateSyncHistory(passedLang) { // Added passedLang parameter
 
         syncHistoryHeaderOpsWithListScrollbar(historyList);
 
-        updateLastSyncInfo(currentLang); // Pass currentLang when calling updateLastSyncInfo
+        if (shouldRefreshLastSyncInfo) {
+            updateLastSyncInfo(currentLang); // Pass currentLang when calling updateLastSyncInfo
+        }
     }).catch(error => {
         const historyList = document.getElementById('syncHistoryList');
         if (historyList) {
@@ -4469,7 +4525,7 @@ function schedulePopupHistoryRefresh(delayMs = 180) {
 
     popupHistoryRefreshTimer = setTimeout(() => {
         popupHistoryRefreshTimer = null;
-        updateSyncHistory();
+        updateSyncHistory(undefined, { refreshLastSyncInfo: false });
         updateLastSyncInfo();
     }, Math.max(0, Number(delayMs) || 0));
 }
@@ -4559,6 +4615,8 @@ function updateLastSyncInfo(passedLang) { // Added passedLang parameter
 let bookmarkCountDisplayRefreshTimer = null;
 let bookmarkCountDisplayRequestSeq = 0;
 const BOOKMARK_STATUS_ERROR_GRACE_MS = 320;
+const POPUP_BACKUP_STATS_TIMEOUT_MS = 1800;
+const POPUP_RECENT_HISTORY_TIMEOUT_MS = 1400;
 const POPUP_BOOKMARK_UI_MUTE_KEYS = ['bookmarkRestoringFlag', 'bookmarkImportingFlag', 'bookmarkBulkChangeFlag', 'canvasMarkerBulkMode'];
 const POPUP_CANVAS_MARKER_BULK_MODE_TTL_MS = 10 * 60 * 1000;
 let popupBookmarkUiMuteState = {
@@ -4700,7 +4758,7 @@ function updateBookmarkCountDisplay(passedLang) {
 
     const getLangPromise = passedLang
         ? Promise.resolve(passedLang)
-        : new Promise(resolve => chrome.storage.local.get(['preferredLang'], result => resolve(result.preferredLang || 'zh_CN')));
+        : getPopupPreferredLang();
 
     const getAutoSyncStatePromise = new Promise(resolve => {
         chrome.storage.local.get(['autoSync'], (result) => {
@@ -4737,6 +4795,7 @@ function updateBookmarkCountDisplay(passedLang) {
                 return;
             }
 
+            let statusContentPainted = false;
             const applyStatusCardDisplay = ({ html, hasChanges, showChevron, keepLoading = false }) => {
                 if (!isCurrentRequest()) {
                     return;
@@ -4745,6 +4804,7 @@ function updateBookmarkCountDisplay(passedLang) {
                 changeDescriptionContainer.innerHTML = html;
                 statusCard.classList.toggle('is-loading', Boolean(keepLoading));
                 if (!keepLoading) {
+                    statusContentPainted = true;
                     statusCard.classList.toggle('has-changes', Boolean(hasChanges));
                     updateStatusCardOverlayButtonsVisibility({
                         isAutoSyncEnabled,
@@ -5016,16 +5076,84 @@ function updateBookmarkCountDisplay(passedLang) {
             const i18nBookmarksLabel = window.i18nLabels?.bookmarksLabel || (currentLang === 'en' ? "bookmarks" : "个书签");
             const i18nFoldersLabel = window.i18nLabels?.foldersLabel || (currentLang === 'en' ? "folders" : "个文件夹");
 
+            let cachePreviewPainted = false;
+            const renderBackupStatsSnapshot = (stats) => {
+                if (!stats || typeof stats !== 'object') return false;
+                const currentBookmarkCount = Number.isFinite(Number(stats.bookmarkCount)) ? Number(stats.bookmarkCount) : 0;
+                const currentFolderCount = Number.isFinite(Number(stats.folderCount)) ? Number(stats.folderCount) : 0;
+                if (bookmarkCountSpan) {
+                    if (currentLang === 'en') {
+                        bookmarkCountSpan.innerHTML = `<span style="font-weight: bold; color: var(--theme-text-primary);">${currentBookmarkCount} BKM<span style="display:inline-block; width:6px;"></span>,<span style="display:inline-block; width:6px;"></span>${currentFolderCount} FLD</span>`;
+                    } else {
+                        bookmarkCountSpan.innerHTML = `<span style="font-weight: bold; color: var(--theme-text-primary); display: flex; justify-content: center; align-items: baseline;">
+                                            <span style="padding-right: 2px;">${currentBookmarkCount}&nbsp;${i18nBookmarksLabel}</span>
+                                            <span>,</span>
+                                            <span style="padding-left: 2px;">${currentFolderCount}&nbsp;${i18nFoldersLabel}</span>
+                                        </span>`;
+                    }
+                }
+
+                const movedTotal = (typeof stats.movedCount === 'number')
+                    ? stats.movedCount
+                    : ((typeof stats.movedBookmarkCount === 'number' ? stats.movedBookmarkCount : 0)
+                        + (typeof stats.movedFolderCount === 'number' ? stats.movedFolderCount : 0));
+                const modifiedTotal = (typeof stats.modifiedCount === 'number')
+                    ? stats.modifiedCount
+                    : ((typeof stats.modifiedBookmarkCount === 'number' ? stats.modifiedBookmarkCount : 0)
+                        + (typeof stats.modifiedFolderCount === 'number' ? stats.modifiedFolderCount : 0));
+                const {
+                    bookmarkAddedCount,
+                    bookmarkDeletedCount,
+                    folderAddedCount,
+                    folderDeletedCount,
+                    hasAnyChange
+                } = resolveAbsoluteDisplayStats(stats, {
+                    bookmarkDiff: Number(stats.bookmarkDiff) || 0,
+                    folderDiff: Number(stats.folderDiff) || 0,
+                    canCalculateDiff: true,
+                    movedTotal,
+                    modifiedTotal
+                });
+
+                if (hasAnyChange) {
+                    applyStatusCardDisplay({
+                        html: buildStatusCardChangeSummaryHTML({
+                            bookmarkAddedCount,
+                            folderAddedCount,
+                            bookmarkDeletedCount,
+                            folderDeletedCount,
+                            movedTotal,
+                            modifiedTotal
+                        }),
+                        hasChanges: true
+                    });
+                } else {
+                    const noChangeText = currentLang === 'en' ? 'No changes' : '无变化';
+                    applyStatusCardDisplay({ html: buildStatusCardMessageHTML(noChangeText), hasChanges: false });
+                }
+                return true;
+            };
+
+            try {
+                chrome.storage.local.get(['cachedBookmarkAnalysisSnapshot'], (result) => {
+                    if (!isCurrentRequest()) return;
+                    cachePreviewPainted = renderBackupStatsSnapshot(result?.cachedBookmarkAnalysisSnapshot);
+                });
+            } catch (_) { }
+
             const loadingText = currentLang === 'en' ? 'Computing...' : '计算中...';
-            if (bookmarkCountSpan) {
-                bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-text-secondary);">${loadingText}</span>`;
-            }
-            applyStatusCardDisplay({
-                html: buildStatusCardMessageHTML(loadingText, 'color: var(--theme-text-secondary);'),
-                hasChanges: false,
-                showChevron: false,
-                keepLoading: true
-            });
+            setTimeout(() => {
+                if (!isCurrentRequest() || cachePreviewPainted || statusContentPainted) return;
+                if (bookmarkCountSpan) {
+                    bookmarkCountSpan.innerHTML = `<span style="color: var(--theme-text-secondary);">${loadingText}</span>`;
+                }
+                applyStatusCardDisplay({
+                    html: buildStatusCardMessageHTML(loadingText, 'color: var(--theme-text-secondary);'),
+                    hasChanges: false,
+                    showChevron: false,
+                    keepLoading: true
+                });
+            }, 120);
 
             if (isAutoSyncEnabled) {
                 // 设置右侧状态卡片为自动模式样式
@@ -5038,7 +5166,9 @@ function updateBookmarkCountDisplay(passedLang) {
                     const backupMode = result.autoBackupTimerSettings?.backupMode || 'regular';
 
                     // 2. 单次查询当前备份统计，同时更新数量和变动区域
-                    chrome.runtime.sendMessage({ action: "getBackupStats" }, backupResponse => {
+                    callBackgroundFunction("getBackupStats", {}, {
+                        timeoutMs: POPUP_BACKUP_STATS_TIMEOUT_MS
+                    }).then(backupResponse => {
                         if (!isCurrentRequest()) {
                             return;
                         }
@@ -5082,10 +5212,12 @@ function updateBookmarkCountDisplay(passedLang) {
                             // 常规时间/特定时间：使用和手动备份完全一致的差异计算逻辑，传入 recentLimit: 20
                             Promise.all([
                                 new Promise((resolve, reject) => {
-                                    chrome.runtime.sendMessage({ action: "getSyncHistory", recentLimit: 20 }, response => {
+                                    callBackgroundFunction("getSyncHistory", { recentLimit: 20 }, {
+                                        timeoutMs: POPUP_RECENT_HISTORY_TIMEOUT_MS
+                                    }).then(response => {
                                         if (response && response.success) resolve(response.syncHistory || []);
                                         else reject(new Error(response?.error || '获取备份历史失败'));
-                                    });
+                                    }).catch(reject);
                                 }),
                                 new Promise((resolve) => {
                                     chrome.storage.local.get('cachedRecordAfterClear', result => {
@@ -5214,12 +5346,28 @@ function updateBookmarkCountDisplay(passedLang) {
                                     const noChangeText = currentLang === 'en' ? 'No changes' : '无变化';
                                     applyStatusCardDisplay({ html: buildStatusCardMessageHTML(noChangeText), hasChanges: false });
                                 }
+                            }).catch(() => {
+                                if (!isCurrentRequest()) {
+                                    return;
+                                }
+                                showSoftUnavailableState({
+                                    detailText: currentLang === 'en' ? 'Temporarily unavailable' : '暂时不可用',
+                                    statusText: currentLang === 'en' ? 'Change details temporarily unavailable' : '变动详情暂时不可用'
+                                });
                             });
                         } else {
                             // 其他情况（如 'none' 或未设置）：显示无变化
                             const noChangeText = currentLang === 'en' ? 'No changes' : '无变化';
                             applyStatusCardDisplay({ html: buildStatusCardMessageHTML(noChangeText), hasChanges: false });
                         }
+                    }).catch(() => {
+                        if (!isCurrentRequest()) {
+                            return;
+                        }
+                        showSoftUnavailableState({
+                            detailText: currentLang === 'en' ? 'Temporarily unavailable' : '暂时不可用',
+                            statusText: currentLang === 'en' ? 'Change details temporarily unavailable' : '变动详情暂时不可用'
+                        });
                     });
                 });
 
@@ -5230,16 +5378,20 @@ function updateBookmarkCountDisplay(passedLang) {
                 // --- 手动备份模式 ---
                 Promise.all([
                     new Promise((resolve, reject) => {
-                        chrome.runtime.sendMessage({ action: "getBackupStats" }, response => {
+                        callBackgroundFunction("getBackupStats", {}, {
+                            timeoutMs: POPUP_BACKUP_STATS_TIMEOUT_MS
+                        }).then(response => {
                             if (response && response.success) resolve(response);
                             else reject(new Error(response?.error || '获取备份统计失败'));
-                        });
+                        }).catch(reject);
                     }),
                     new Promise((resolve, reject) => {
-                        chrome.runtime.sendMessage({ action: "getSyncHistory", recentLimit: 20 }, response => {
+                        callBackgroundFunction("getSyncHistory", { recentLimit: 20 }, {
+                            timeoutMs: POPUP_RECENT_HISTORY_TIMEOUT_MS
+                        }).then(response => {
                             if (response && response.success) resolve(response.syncHistory || []);
                             else reject(new Error(response?.error || '获取备份历史失败'));
-                        });
+                        }).catch(reject);
                     }),
                     new Promise((resolve) => {
                         chrome.storage.local.get('cachedRecordAfterClear', result => {
@@ -7545,36 +7697,12 @@ function checkUrlParams() {
  */
 async function initializeLanguageSwitcher() {
     const langToggleButton = document.getElementById('lang-toggle-btn');
-    const POPUP_PREFERRED_LANG_CACHE_KEY = 'popupPreferredLangCache';
-
-    const detectDefaultLang = () => {
-        try {
-            const ui = (chrome?.i18n?.getUILanguage?.() || '').toLowerCase();
-            return ui.startsWith('zh') ? 'zh_CN' : 'en';
-        } catch (e) {
-            return 'zh_CN';
-        }
-    };
-
-    const getInitialLang = () => {
-        try {
-            const cached = localStorage.getItem(POPUP_PREFERRED_LANG_CACHE_KEY);
-            if (cached === 'en' || cached === 'zh_CN') return cached;
-        } catch (_) { }
-        return detectDefaultLang();
-    };
-
-    let currentLang = getInitialLang();
+    let currentLang = getCachedPopupLanguage();
     let appliedLang = '';
 
     const applyLanguageNow = async (lang) => {
-        const normalizedLang = normalizePopupLanguage(lang);
+        const normalizedLang = setPopupLanguageCache(lang);
         currentLang = normalizedLang;
-        window.currentLang = normalizedLang;
-        document.documentElement.setAttribute('lang', normalizedLang === 'en' ? 'en' : 'zh');
-        try {
-            localStorage.setItem(POPUP_PREFERRED_LANG_CACHE_KEY, normalizedLang);
-        } catch (_) { }
         if (appliedLang !== normalizedLang) {
             await applyLocalizedContent(normalizedLang);
             appliedLang = normalizedLang;
@@ -7584,14 +7712,11 @@ async function initializeLanguageSwitcher() {
     await applyLanguageNow(currentLang);
 
     try {
-        // 直接从存储中获取已设置的语言偏好
-        const result = await new Promise(resolve => chrome.storage.local.get('preferredLang', resolve));
-
-        if (result.preferredLang) {
-            currentLang = normalizePopupLanguage(result.preferredLang);
-        } else {
+        currentLang = await loadPopupLanguageFromStorage({ force: true });
+        const result = await new Promise(resolve => chrome.storage.local.get(['preferredLang', 'currentLang'], resolve));
+        if (!result.preferredLang || !result.currentLang) {
             try {
-                await chrome.storage.local.set({ preferredLang: currentLang });
+                await chrome.storage.local.set({ preferredLang: currentLang, currentLang });
             } catch (e) {
             }
         }
@@ -7606,11 +7731,9 @@ async function initializeLanguageSwitcher() {
     if (langToggleButton) {
         langToggleButton.addEventListener('click', async () => {
             currentLang = (currentLang === 'zh_CN') ? 'en' : 'zh_CN';
+            currentLang = setPopupLanguageCache(currentLang);
             try {
-                await chrome.storage.local.set({ preferredLang: currentLang });
-                try {
-                    localStorage.setItem(POPUP_PREFERRED_LANG_CACHE_KEY, currentLang);
-                } catch (_) { }
+                await chrome.storage.local.set({ preferredLang: currentLang, currentLang });
 
                 const result = await chrome.storage.local.get(['initialized']);
                 if (result.initialized === true) {
@@ -7797,9 +7920,14 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "Quantity & Structure"
     };
 
-    const statusColumnStrings = {
-        'zh_CN': "状态",
-        'en': "Status"
+    const sequenceColumnStrings = {
+        'zh_CN': "序号",
+        'en': "No."
+    };
+
+    const opsColumnStrings = {
+        'zh_CN': "操作",
+        'en': "Ops"
     };
 
     const reminderSettingsStrings = {
@@ -9298,12 +9426,16 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
             : '临时安全快照';
     }
 
-    const historyHeaders = document.querySelectorAll('.history-header .header-item');
-    if (historyHeaders.length >= 3) {
-        historyHeaders[0].textContent = timeColumnStrings[lang] || timeColumnStrings['zh_CN'];
-        historyHeaders[1].textContent = quantityColumnStrings[lang] || quantityColumnStrings['zh_CN'];
-        historyHeaders[2].textContent = statusColumnStrings[lang] || statusColumnStrings['zh_CN'];
-    }
+    document.querySelectorAll('.history-header').forEach((header) => {
+        const actionHeader = header.querySelector('.header-action');
+        const timeHeader = header.querySelector('.header-time');
+        const countHeader = header.querySelector('.header-count');
+        const opsHeader = header.querySelector('.header-ops');
+        if (actionHeader) actionHeader.textContent = sequenceColumnStrings[lang] || sequenceColumnStrings['zh_CN'];
+        if (timeHeader) timeHeader.textContent = timeColumnStrings[lang] || timeColumnStrings['zh_CN'];
+        if (countHeader) countHeader.textContent = quantityColumnStrings[lang] || quantityColumnStrings['zh_CN'];
+        if (opsHeader) opsHeader.textContent = opsColumnStrings[lang] || opsColumnStrings['zh_CN'];
+    });
 
     // 添加新的国际化字符串
     const settingsRestoredStrings = {
@@ -9451,9 +9583,6 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     if (openSourceTooltip) {
         openSourceTooltip.textContent = openSourceInfoTitleStrings[lang] || openSourceInfoTitleStrings['zh_CN'];
     }
-
-    // 在所有静态文本应用完毕后，调用此函数来刷新依赖国际化标签的动态内容
-    updateLastSyncInfo(lang); // Pass lang here
 
     // 应用备份模式开关文本（仅更新标签，不替换整个容器，避免删除按钮）
     const autoOptionLabelEl = document.getElementById('autoOptionLabel');
@@ -18870,9 +18999,24 @@ function setupGlobalImageErrorHandler() {
     }, true);
 }
 
+function scheduleFaviconCacheWarmup() {
+    const warmup = () => {
+        try { FaviconCache.init().catch(() => { }); } catch (_) { }
+    };
+
+    try {
+        if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(warmup, { timeout: 3000 });
+            return;
+        }
+    } catch (_) { }
+
+    setTimeout(warmup, 800);
+}
+
 // Init once (best-effort)
 try { setupGlobalImageErrorHandler(); } catch (_) { }
-try { FaviconCache.init().catch(() => { }); } catch (_) { }
+scheduleFaviconCacheWarmup();
 
 // Receive favicon updates from background.js (share the same cache DB)
 try {
@@ -20683,8 +20827,10 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         if (shouldShowSyncStatus) {
-            updateSyncHistory(); // 加载备份历史
-            updateLastSyncInfo(); // 新增：加载上次备份信息和书签计数
+            updateSyncHistory(undefined, { refreshLastSyncInfo: false }); // 加载备份历史
+            setTimeout(() => {
+                updateLastSyncInfo();
+            }, 240);
             refreshBackupHistorySlimmingSettings();
             refreshLatestSafetyCheckpointStatus();
             initScrollToTopButton(); // 初始化滚动按钮
@@ -22320,16 +22466,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 跟随语言切换动态更新“自动备份设置”对话框文案
     chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes.preferredLang) {
+        if (area === 'local' && (changes.currentLang || changes.preferredLang)) {
             if (autoBackupSettingsDialog && autoBackupSettingsDialog.style.display === 'block') {
                 applyAutoBackupSettingsLanguage();
                 // 同时更新动态创建的定时器UI
                 applyAutoBackupTimerLanguage();
             }
 
-            const newLang = changes.preferredLang.newValue || 'zh_CN';
-            window.currentLang = newLang;
-            document.documentElement.setAttribute('lang', newLang === 'en' ? 'en' : 'zh');
+            const newLang = setPopupLanguageCache(
+                changes.currentLang?.newValue || changes.preferredLang?.newValue || popupLanguageCache || 'zh_CN'
+            );
             applyRestoreSourceButtonLabels(newLang);
             updatePopupHistoryActionTooltips(newLang);
             applyPopupDeleteHistoryButtonWarningState(
