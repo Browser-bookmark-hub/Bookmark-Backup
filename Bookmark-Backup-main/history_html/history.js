@@ -5355,14 +5355,18 @@ async function warmupFaviconCache(bookmarkUrls) {
 
         if (domains.size === 0) return;
 
-        
+        // 限制预热的最大域名数，防止超大书签树下的串行等待瓶颈
+        let domainsToWarm = Array.from(domains);
+        if (domainsToWarm.length > 150) {
+            domainsToWarm = domainsToWarm.slice(0, 150);
+        }
 
         // 批量读取
         const transaction = FaviconCache.db.transaction([FaviconCache.storeName], 'readonly');
         const store = transaction.objectStore(FaviconCache.storeName);
 
         let loaded = 0;
-        for (const domain of domains) {
+        for (const domain of domainsToWarm) {
             // 跳过已在内存缓存中的
             if (FaviconCache.memoryCache.has(domain)) continue;
 
