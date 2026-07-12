@@ -5566,30 +5566,19 @@ function resolveAbsoluteDisplayStats(stats = {}, options = {}) {
     const explicitBookmarkDeleted = normalizeOptionalCount(sourceStats.bookmarkDeleted);
     const explicitFolderAdded = normalizeOptionalCount(sourceStats.folderAdded);
     const explicitFolderDeleted = normalizeOptionalCount(sourceStats.folderDeleted);
-    const preferDiffCounts = options.preferDiffCounts === true && canCalculateDiff;
-    const useBookmarkDiffCounts = preferDiffCounts && bookmarkDiff !== 0;
-    const useFolderDiffCounts = preferDiffCounts && folderDiff !== 0;
 
-    const bookmarkAddedCount = useBookmarkDiffCounts
-        ? (bookmarkDiff > 0 ? bookmarkDiff : 0)
-        : (explicitBookmarkAdded !== null
+    const bookmarkAddedCount = explicitBookmarkAdded !== null
         ? explicitBookmarkAdded
-        : (canCalculateDiff && bookmarkDiff > 0 ? bookmarkDiff : 0));
-    const bookmarkDeletedCount = useBookmarkDiffCounts
-        ? (bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0)
-        : (explicitBookmarkDeleted !== null
+        : (canCalculateDiff && bookmarkDiff > 0 ? bookmarkDiff : 0);
+    const bookmarkDeletedCount = explicitBookmarkDeleted !== null
         ? explicitBookmarkDeleted
-        : (canCalculateDiff && bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0));
-    const folderAddedCount = useFolderDiffCounts
-        ? (folderDiff > 0 ? folderDiff : 0)
-        : (explicitFolderAdded !== null
+        : (canCalculateDiff && bookmarkDiff < 0 ? Math.abs(bookmarkDiff) : 0);
+    const folderAddedCount = explicitFolderAdded !== null
         ? explicitFolderAdded
-        : (canCalculateDiff && folderDiff > 0 ? folderDiff : 0));
-    const folderDeletedCount = useFolderDiffCounts
-        ? (folderDiff < 0 ? Math.abs(folderDiff) : 0)
-        : (explicitFolderDeleted !== null
+        : (canCalculateDiff && folderDiff > 0 ? folderDiff : 0);
+    const folderDeletedCount = explicitFolderDeleted !== null
         ? explicitFolderDeleted
-        : (canCalculateDiff && folderDiff < 0 ? Math.abs(folderDiff) : 0));
+        : (canCalculateDiff && folderDiff < 0 ? Math.abs(folderDiff) : 0);
 
     const explicitMovedTotal = normalizeOptionalCount(options.movedTotal);
     const explicitModifiedTotal = normalizeOptionalCount(options.modifiedTotal);
