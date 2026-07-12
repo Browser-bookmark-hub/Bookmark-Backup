@@ -12914,10 +12914,12 @@ browserAPI.alarms.onAlarm.addListener(async (alarm) => {
             // 自动备份时传入完整参数
             const result = await syncBookmarks(false, null, false, null);
             // 在备份完成后调用 updateBadgeAfterSync
-            updateBadgeAfterSync(result.success);
+            await updateBadgeAfterSync(result.success, {
+                flashOnCleanAutoSuccess: result?.skipped === true || result?.noChanges === true
+            });
         } catch (error) {
             // 备份失败也要更新角标为错误状态
-            updateBadgeAfterSync(false);
+            await updateBadgeAfterSync(false);
         }
     }
     // 处理自动备份定时器的 alarms
@@ -12928,7 +12930,12 @@ browserAPI.alarms.onAlarm.addListener(async (alarm) => {
                 checkBookmarkChangesForAutoBackup,
                 syncBookmarks
             );
-            await handleAutoBackupAlarmTrigger(alarm);
+            const autoBackupResult = await handleAutoBackupAlarmTrigger(alarm);
+            if (autoBackupResult?.noChanges === true || autoBackupResult?.backedUp === true) {
+                await updateBadgeAfterSync(true, {
+                    flashOnCleanAutoSuccess: true
+                });
+            }
         } catch (error) {
             console.error('[自动备份定时器] 处理 alarm 失败:', error);
         }
@@ -13090,7 +13097,9 @@ async function flushRealtimeAutoBackupQueue() {
             }
 
             try {
-                updateBadgeAfterSync(!!result?.success);
+                await updateBadgeAfterSync(!!result?.success, {
+                    flashOnCleanAutoSuccess: true
+                });
             } catch (_) { }
 
             if (result?.success) {
@@ -24998,7 +25007,7 @@ async function flashBadge(preferredLang = 'zh_CN') {
 }
 
 // 在备份状态变化时更新角标
-async function updateBadgeAfterSync(success) {
+async function updateBadgeAfterSync(success, options = {}) {
     if (!success) {
         // 设置错误角标
         try {
@@ -25019,8 +25028,12 @@ async function updateBadgeAfterSync(success) {
                 const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
                 await flashBadge(preferredLang);
             } else {
-                // 无变化，调用 setBadge 显示静态成功状态
+                // 无变化时默认显示静态成功状态；自动备份检查/跳过也需要短闪反馈。
                 await setBadge();
+                if (options.flashOnCleanAutoSuccess === true) {
+                    const { preferredLang = 'zh_CN' } = await browserAPI.storage.local.get(['preferredLang']);
+                    await flashBadge(preferredLang);
+                }
             }
         } catch (error) {
             // 出错时，默认显示静态成功状态

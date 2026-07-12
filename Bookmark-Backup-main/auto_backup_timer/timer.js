@@ -738,10 +738,27 @@ async function getCurrentLanguage() {
 /**
  * 处理定时器触发
  * @param {chrome.alarms.Alarm} alarm - 闹钟对象
- * @returns {Promise<void>}
+ * @returns {Promise<Object>} 处理结果，供后台决定角标反馈
  */
 async function handleAlarmTrigger(alarm) {
     try {
+        const result = {
+            success: true,
+            noChanges: false,
+            backedUp: false,
+            backupAttempted: false,
+            skipped: false,
+            reason: ''
+        };
+        const recordBackupResult = (success) => {
+            result.backupAttempted = true;
+            if (success === true) {
+                result.backedUp = true;
+            } else {
+                result.skipped = true;
+            }
+        };
+
         // ⭐ 核心前提：检查是否有书签变化（角标是否黄）
         const hasChanges = await hasBookmarkChanges();
         if (!hasChanges) {
@@ -749,7 +766,12 @@ async function handleAlarmTrigger(alarm) {
             // 清除所有定时器（无变化时不应该继续定时备份）
             await clearAllAlarms();
             isInitialized = false;
-            return;
+            return {
+                ...result,
+                noChanges: true,
+                skipped: true,
+                reason: 'no_changes'
+            };
         }
         
         addLog('角标变黄（有书签变化），继续执行定时任务');
@@ -762,6 +784,7 @@ async function handleAlarmTrigger(alarm) {
             const weekDay = getCurrentWeekDayText(lang);
             const note = generateBackupNote('weekly', weekDay, lang);
             const success = await triggerAutoBackup(note);
+            recordBackupResult(success);
             if (success) {
                 await markMissedBackupExecuted();
                 addLog('已记录今天的默认时间备份，避免后续遗漏检查重复补充');
@@ -769,6 +792,7 @@ async function handleAlarmTrigger(alarm) {
             
             // 重新设置下一个周定时器
             await setupRegularTimeAlarms(settings.regularTime);
+            return result;
             
         } else if (alarm.name === ALARM_NAMES.HOUR_INTERVAL) {
             // 小时间隔触发
@@ -776,11 +800,15 @@ async function handleAlarmTrigger(alarm) {
             if (!isTodayEnabled(settings.regularTime.weekDays)) {
                 addLog('今天未在周勾选范围内，停止小时间隔定时器');
                 await browserAPI.alarms.clear(ALARM_NAMES.HOUR_INTERVAL);
-                return;
+                return {
+                    ...result,
+                    skipped: true,
+                    reason: 'day_disabled'
+                };
             }
             
             const note = generateBackupNote('hour', settings.regularTime.hourInterval.hours, lang);
-            await triggerAutoBackup(note);
+            recordBackupResult(await triggerAutoBackup(note));
             
             // 重新设置下一个小时间隔定时器
             const nextTime = getNextHourIntervalTime(settings.regularTime.hourInterval.hours);
@@ -793,6 +821,7 @@ async function handleAlarmTrigger(alarm) {
             } else {
                 await browserAPI.alarms.create(ALARM_NAMES.HOUR_INTERVAL, { when: nextTime });
             }
+            return result;
             
         } else if (alarm.name === ALARM_NAMES.MINUTE_INTERVAL) {
             // 分钟间隔触发
@@ -800,11 +829,15 @@ async function handleAlarmTrigger(alarm) {
             if (!isTodayEnabled(settings.regularTime.weekDays)) {
                 addLog('今天未在周勾选范围内，停止分钟间隔定时器');
                 await browserAPI.alarms.clear(ALARM_NAMES.MINUTE_INTERVAL);
-                return;
+                return {
+                    ...result,
+                    skipped: true,
+                    reason: 'day_disabled'
+                };
             }
             
             const note = generateBackupNote('minute', settings.regularTime.minuteInterval.minutes, lang);
-            await triggerAutoBackup(note);
+            recordBackupResult(await triggerAutoBackup(note));
             
             // 重新设置下一个分钟间隔定时器
             const includeZeroMinute = !settings.regularTime.hourInterval.enabled;
@@ -821,6 +854,7 @@ async function handleAlarmTrigger(alarm) {
             } else {
                 await browserAPI.alarms.create(ALARM_NAMES.MINUTE_INTERVAL, { when: nextTime });
             }
+            return result;
             
         } else if (alarm.name === ALARM_NAMES.SPECIFIC_CHECK) {
             // 特定时间触发
@@ -829,6 +863,7 @@ async function handleAlarmTrigger(alarm) {
             for (const schedule of pendingSchedules) {
                 const note = generateBackupNote('specific', schedule.datetime, lang);
                 const success = await triggerAutoBackup(note);
+                recordBackupResult(success);
                 if (success) {
                     await markScheduleAsExecuted(schedule.id);
                 }
@@ -836,9 +871,19 @@ async function handleAlarmTrigger(alarm) {
             
             // 重新设置下一个特定时间定时器
             await setupSpecificTimeAlarms(settings.specificTime);
+            return result;
         }
+        return {
+            ...result,
+            skipped: true,
+            reason: 'unknown_alarm'
+        };
     } catch (error) {
         addLog(`处理定时器触发失败: ${error.message}`);
+        return {
+            success: false,
+            error: error.message
+        };
     }
 }
 
