@@ -175,14 +175,16 @@ def generate_promo(bg_path, icon_path, ui_path, title_text, subtitle_text, outpu
         
     final_img.paste(ui_shadowed, (ui_x, ui_y), ui_shadowed)
     
-    final_img.convert("RGB").save(output_path, quality=95)
+    final_img.save(output_path, "PNG")
     print(f"Generated successfully: {output_path}")
 
 if __name__ == '__main__':
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Input folders
+    # Input/Output folders
     v365_dir = os.path.join(script_dir, "v3.6.5")
+    v365_out_dir = os.path.join(v365_dir, "assets")
+    os.makedirs(v365_out_dir, exist_ok=True)
     
     # Background Image
     bg_path = os.path.join(script_dir, "背景图.png")
@@ -206,7 +208,7 @@ if __name__ == '__main__':
             ui_path=ui_main_zh,
             title_text="主视图",
             subtitle_text="主要操作界面在这里，快速直达您的所有内容。",
-            output_path=os.path.join(v365_dir, "Bookmark-Backup-ZH.jpg"),
+            output_path=os.path.join(v365_out_dir, "Bookmark-Backup-ZH.png"),
             font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
             font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
             font_title_index=2,
@@ -226,7 +228,7 @@ if __name__ == '__main__':
             ui_path=ui_main_en,
             title_text="Main View",
             subtitle_text="Your primary interface to access and manage everything quickly",
-            output_path=os.path.join(v365_dir, "Bookmark-Backup-EN.jpg"),
+            output_path=os.path.join(v365_out_dir, "Bookmark-Backup-EN.png"),
             font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
             font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
             font_title_index=1,
@@ -248,7 +250,7 @@ if __name__ == '__main__':
             ui_path=ui_settings_zh,
             title_text="偏好设置",
             subtitle_text="灵活配置多种备份策略，提供安全可靠的恢复机制。",
-            output_path=os.path.join(v365_dir, "Bookmark-Backup-Settings-ZH.jpg"),
+            output_path=os.path.join(v365_out_dir, "Bookmark-Backup-Settings-ZH.png"),
             font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
             font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
             font_title_index=2,
@@ -268,7 +270,7 @@ if __name__ == '__main__':
             ui_path=ui_settings_en,
             title_text="Preferences",
             subtitle_text="Configure flexible backup strategies and secure data recovery mechanisms",
-            output_path=os.path.join(v365_dir, "Bookmark-Backup-Settings-EN.jpg"),
+            output_path=os.path.join(v365_out_dir, "Bookmark-Backup-Settings-EN.png"),
             font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
             font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
             font_title_index=1,
@@ -290,7 +292,7 @@ if __name__ == '__main__':
             ui_path=ui_changes_zh,
             title_text="当前变化",
             subtitle_text="清晰对比书签的增删移改，所有变化一目了然。",
-            output_path=os.path.join(v365_dir, "Bookmark-Backup-Changes-ZH.jpg"),
+            output_path=os.path.join(v365_out_dir, "Bookmark-Backup-Changes-ZH.png"),
             font_title_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
             font_sub_path="/System/Library/Fonts/Hiragino Sans GB.ttc",
             font_title_index=2,
@@ -310,7 +312,7 @@ if __name__ == '__main__':
             ui_path=ui_changes_en,
             title_text="Current Changes",
             subtitle_text="Clearly compare bookmark additions, deletions, moves, and modifications at a glance",
-            output_path=os.path.join(v365_dir, "Bookmark-Backup-Changes-EN.jpg"),
+            output_path=os.path.join(v365_out_dir, "Bookmark-Backup-Changes-EN.png"),
             font_title_path="/System/Library/Fonts/HelveticaNeue.ttc",
             font_sub_path="/System/Library/Fonts/HelveticaNeue.ttc",
             font_title_index=1,
