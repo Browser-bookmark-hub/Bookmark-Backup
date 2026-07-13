@@ -17,6 +17,7 @@
 
 - [ ] **语言增加与调试**：当前界面主要围绕简体中文与英文实现；繁体中文、法语、俄语、西班牙语、阿拉伯语、日语、韩语等语言需要补齐文案并逐页调试布局。详见 [`docs/LIMITATIONS_AND_COMPROMISES.md`](docs/LIMITATIONS_AND_COMPROMISES.md)。
 - [ ] **生态数据处理工具**：探索围绕备份、历史与网页快照导出数据的 CLI，用于校验、整理、转换及与书签画布互操作。不同于“书签记录与推荐”对独立客户端的探索，本项目优先考虑轻量、可组合的命令行工具。
+- [ ] **后续外部变化跟踪**：持续跟踪浏览器更新、浏览器缺陷修复、相关 API 行为变化，以及 GitHub 哈希、上传限制等外部约束对本项目的影响。跟踪文档：[`docs/LIMITATIONS_AND_COMPROMISES.md`](docs/LIMITATIONS_AND_COMPROMISES.md)。
 
 ### 相关文档
 
@@ -148,6 +149,7 @@ It is also an ecosystem-related project for [Bookmark-Canvas](https://github.com
 
 - [ ] **More languages and UI QA**: the current UI is built around Simplified Chinese and English. Traditional Chinese, French, Russian, Spanish, Arabic, Japanese, Korean, and other languages need complete copy coverage and layout QA. See [`docs/LIMITATIONS_AND_COMPROMISES.md`](docs/LIMITATIONS_AND_COMPROMISES.md).
 - [ ] **Ecosystem data tooling**: explore a CLI for validating, organizing, converting, and interoperating with backup, history, and web-snapshot exports. Unlike the possible standalone-client direction of Bookmark Record and Recommend, this project will prioritize small, composable command-line tools.
+- [ ] **External-change follow-up tracking**: keep tracking browser updates, browser bug fixes, related API behavior changes, and external constraints such as GitHub hashes and upload limits that may affect this project. Tracking doc: [`docs/LIMITATIONS_AND_COMPROMISES.md`](docs/LIMITATIONS_AND_COMPROMISES.md).
 
 ### Docs
 
