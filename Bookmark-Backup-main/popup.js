@@ -10619,7 +10619,7 @@ function initializeBackupSettings() {
             ? result.currentChangesArchiveModes.map(v => String(v || '').toLowerCase())
             : [];
 
-        const format = rawFormats.find(v => v === 'html' || v === 'json') || 'html';
+        const format = rawFormats.find(v => v === 'html' || v === 'json') || 'json';
         const mode = rawModes.find(v => v === 'simple' || v === 'detailed' || v === 'collection') || 'collection';
 
         if (currentChangesArchiveEnabled) currentChangesArchiveEnabled.checked = enabled;

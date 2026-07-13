@@ -14554,7 +14554,7 @@ function normalizeCurrentChangesArchiveSettings(settings = {}) {
         ? settings.currentChangesArchiveModes.map(v => String(v || '').toLowerCase()).find(v => v === 'simple' || v === 'detailed' || v === 'collection')
         : null;
 
-    const formats = [format || 'html'];
+    const formats = [format || 'json'];
     const modes = [mode || 'collection'];
     const jsonFormat = normalizeCurrentChangesJsonExportFormat(settings.currentChangesJsonFormat);
 
