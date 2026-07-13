@@ -21459,12 +21459,6 @@ document.addEventListener('DOMContentLoaded', function () {
         title: lang === 'en' ? 'Compaction Settings' : '精简设置',
         snapshotLabel: lang === 'en' ? 'Save snapshot data' : '保存快照数据',
         changeLabel: lang === 'en' ? 'Save change data' : '保存变化数据',
-        autoCleanupLabel: lang === 'en' ? 'Auto cleanup' : '自动清理',
-        autoCleanupThresholdLabel: lang === 'en' ? 'Keep latest records' : '保留最新记录',
-        autoCleanupBatchLabel: lang === 'en' ? 'Cleanup batch' : '清理批量',
-        autoCleanupHint: lang === 'en'
-            ? 'When enabled, records are trimmed in the background after the count reaches keep + batch. This only removes internal backup history records.'
-            : '启用后，记录数达到“保留数 + 清理批量”时会在后台截取到保留数。仅清理插件内部备份历史记录。',
         noteText: lang === 'en'
             ? 'Choose which detailed history data to write to the <span style="color: #f97316; font-weight: 500;">extension\'s internal storage (chrome.storage)</span>. Unchecked data will not be saved to save <span style="color: #f97316; font-weight: 500;">browser</span> storage space.'
             : '选择写入<span style="color: #f97316; font-weight: 500;">插件内部存储（chrome.storage）</span>的历史详情数据。未勾选的数据将不会被保存，以节省<span style="color: #f97316; font-weight: 500;">浏览器</span>的存储空间。',
@@ -21474,10 +21468,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const openBackupHistorySlimmingSettingsDialog = async () => {
         const lang = await getPopupPreferredLang();
         const labels = getLocalizedSlimmingLabels(lang);
-        const [currentState, currentAutoCleanupState] = await Promise.all([
-            refreshBackupHistorySlimmingSettings(),
-            refreshBackupHistoryAutoCleanupSettings()
-        ]);
+        const currentState = await refreshBackupHistorySlimmingSettings();
 
         removeBackupHistorySlimmingSettingsDialog();
         backupHistorySlimmingSettingsDialog = buildHelpDialog({
@@ -21512,26 +21503,6 @@ document.addEventListener('DOMContentLoaded', function () {
                             </span>
                         </label>
                     </div>
-                    <div class="backup-history-secondary-note" style="display: flex; flex-direction: column; gap: 8px;">
-                        <label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer;">
-                            <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--theme-text-primary); font-weight: 600;">
-                                <i class="fas fa-broom"></i>
-                                <span>${escapeHtml(labels.autoCleanupLabel)}</span>
-                            </span>
-                            <input type="checkbox" id="backupHistoryAutoCleanupEnabled" ${currentAutoCleanupState.enabled ? 'checked' : ''}>
-                        </label>
-                        <div id="backupHistoryAutoCleanupFields" style="display: ${currentAutoCleanupState.enabled ? 'grid' : 'none'}; grid-template-columns: 1fr 1fr; gap: 8px;">
-                            <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--theme-text-secondary);">
-                                <span>${escapeHtml(labels.autoCleanupThresholdLabel)}</span>
-                                <input id="backupHistoryAutoCleanupThreshold" type="number" min="10" max="999999" step="1" value="${currentAutoCleanupState.threshold}" style="width: 100%; box-sizing: border-box;">
-                            </label>
-                            <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--theme-text-secondary);">
-                                <span>${escapeHtml(labels.autoCleanupBatchLabel)}</span>
-                                <input id="backupHistoryAutoCleanupBatchSize" type="number" min="1" max="999999" step="1" value="${currentAutoCleanupState.batchSize}" style="width: 100%; box-sizing: border-box;">
-                            </label>
-                        </div>
-                        <div style="font-size: 10.5px; line-height: 1.45; color: var(--theme-text-secondary);">${escapeHtml(labels.autoCleanupHint)}</div>
-                    </div>
                 </div>
             `
         });
@@ -21539,10 +21510,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const saveSnapshotInput = document.getElementById('backupHistorySlimmingDialogSaveSnapshotData');
         const saveChangeInput = document.getElementById('backupHistorySlimmingDialogSaveChangeData');
-        const autoCleanupEnabledInput = document.getElementById('backupHistoryAutoCleanupEnabled');
-        const autoCleanupFields = document.getElementById('backupHistoryAutoCleanupFields');
-        const autoCleanupThresholdInput = document.getElementById('backupHistoryAutoCleanupThreshold');
-        const autoCleanupBatchInput = document.getElementById('backupHistoryAutoCleanupBatchSize');
 
         const syncDialogInputsToState = (settings = backupHistorySlimmingState) => {
             const normalized = normalizeBackupHistorySlimmingSettings(settings);
@@ -21550,16 +21517,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (saveChangeInput) saveChangeInput.checked = normalized.saveChangeData === true;
         };
 
-        const syncAutoCleanupInputsToState = (settings = backupHistoryAutoCleanupState) => {
-            const normalized = normalizeBackupHistoryAutoCleanupSettings(settings);
-            if (autoCleanupEnabledInput) autoCleanupEnabledInput.checked = normalized.enabled === true;
-            if (autoCleanupThresholdInput) autoCleanupThresholdInput.value = String(normalized.threshold);
-            if (autoCleanupBatchInput) autoCleanupBatchInput.value = String(normalized.batchSize);
-            if (autoCleanupFields) autoCleanupFields.style.display = normalized.enabled ? 'grid' : 'none';
-        };
-
         const setDialogSavingState = (isSaving) => {
-            [saveSnapshotInput, saveChangeInput, autoCleanupEnabledInput, autoCleanupThresholdInput, autoCleanupBatchInput].forEach((input) => {
+            [saveSnapshotInput, saveChangeInput].forEach((input) => {
                 if (input) input.disabled = isSaving;
             });
         };
@@ -21583,32 +21542,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (saveSnapshotInput) saveSnapshotInput.addEventListener('change', persistDialogSettings);
         if (saveChangeInput) saveChangeInput.addEventListener('change', persistDialogSettings);
-
-        const persistAutoCleanupDialogSettings = async () => {
-            const nextSettings = normalizeBackupHistoryAutoCleanupSettings({
-                enabled: autoCleanupEnabledInput ? autoCleanupEnabledInput.checked : backupHistoryAutoCleanupState.enabled,
-                threshold: autoCleanupThresholdInput ? autoCleanupThresholdInput.value : backupHistoryAutoCleanupState.threshold,
-                batchSize: autoCleanupBatchInput ? autoCleanupBatchInput.value : backupHistoryAutoCleanupState.batchSize
-            });
-            setDialogSavingState(true);
-            try {
-                const saved = await persistBackupHistoryAutoCleanupSettings(nextSettings, { lang });
-                if (!saved) {
-                    syncAutoCleanupInputsToState();
-                } else {
-                    syncAutoCleanupInputsToState(backupHistoryAutoCleanupState);
-                }
-            } finally {
-                setDialogSavingState(false);
-            }
-        };
-
-        if (autoCleanupEnabledInput) autoCleanupEnabledInput.addEventListener('change', () => {
-            if (autoCleanupFields) autoCleanupFields.style.display = autoCleanupEnabledInput.checked ? 'grid' : 'none';
-            persistAutoCleanupDialogSettings();
-        });
-        if (autoCleanupThresholdInput) autoCleanupThresholdInput.addEventListener('change', persistAutoCleanupDialogSettings);
-        if (autoCleanupBatchInput) autoCleanupBatchInput.addEventListener('change', persistAutoCleanupDialogSettings);
     };
 
     const removeLatestSafetyCheckpointDialog = () => {
