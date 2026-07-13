@@ -1241,6 +1241,8 @@ function resolveExportSubFolderByKey(folderKey, lang) {
             return getManualExportHistoryFolderByLang(lang);
         case 'current_changes':
             return getManualExportCurrentChangesFolderByLang(lang);
+        case 'web_snapshot':
+            return getWebSnapshotExportFolderByLang(lang);
         case 'backup_history':
             return lang === 'zh_CN' ? '备份历史' : 'Backup_History';
         default:
@@ -5245,8 +5247,11 @@ function resolveMergeImportTreeFromMessage(message = {}) {
 
 const DEV1_CAPTURE_RUN_STATE_KEY = 'dev1CaptureRunStateV1';
 const DEV1_CAPTURE_RUN_STATE_VERSION = 1;
+const DEV1_EXPORT_TARGETS_STORAGE_KEY = 'dev1_experiment_export_targets_v1';
 const DEV1_CAPTURE_MAX_RETRY_LIMIT = 2;
 const DEV1_DOWNLOAD_TERMINAL_TIMEOUT_MS = 120000;
+const DEV1_GITHUB_REPO_RECOMMENDED_FILE_LIMIT_BYTES = 50 * 1024 * 1024;
+const DEV1_GITHUB_REPO_HARD_FILE_LIMIT_BYTES = 100 * 1024 * 1024;
 const DEV1_BATCH_SIZE_DEFAULT = 10;
 const DEV1_BATCH_SIZE_MAX = 50;
 const DEV1_REVIEW_OPEN_BATCH_SIZE_DEFAULT = 10;
@@ -5366,6 +5371,7 @@ function dev1NormalizeRunOptions(rawOptions = {}) {
         captureMode: dev1NormalizeCaptureMode(options.captureMode),
         exportMode: dev1NormalizeExportMode(options.exportMode),
         batchSize: dev1NormalizeBatchSize(options.batchSize),
+        exportTargets: dev1NormalizeExportTargets(options.exportTargets),
         renderWaitMs: Number.isFinite(Number(options.renderWaitMs))
             ? Math.max(0, Math.min(10000, Math.floor(Number(options.renderWaitMs))))
             : 1200,
@@ -5376,6 +5382,73 @@ function dev1NormalizeRunOptions(rawOptions = {}) {
             ? Math.max(0, Math.min(DEV1_CAPTURE_MAX_RETRY_LIMIT, Math.floor(Number(options.maxRetries))))
             : 1
     };
+}
+
+function dev1NormalizeExportTargets(rawTargets = {}) {
+    const targets = rawTargets && typeof rawTargets === 'object' ? rawTargets : {};
+    return {
+        local: targets.local !== false,
+        webdav: targets.webdav === true,
+        github: targets.github === true
+    };
+}
+
+function dev1ResolveCloudTargetAvailability(values = {}) {
+    const source = values && typeof values === 'object' ? values : {};
+    return {
+        webdav: !!(source.serverAddress && source.username && source.password && source.webDAVEnabled === true),
+        github: !!(source.githubRepoToken && source.githubRepoOwner && source.githubRepoName && source.githubRepoEnabled === true)
+    };
+}
+
+function dev1ApplyCloudTargetAvailability(targets = {}, availability = {}) {
+    const next = dev1NormalizeExportTargets(targets);
+    const available = availability && typeof availability === 'object' ? availability : {};
+    if (available.webdav !== true) next.webdav = false;
+    if (available.github !== true) next.github = false;
+    if (!next.local && !next.webdav && !next.github) {
+        next.local = true;
+    }
+    return next;
+}
+
+async function dev1LoadCloudTargetAvailability() {
+    try {
+        return dev1ResolveCloudTargetAvailability(await browserAPI.storage.local.get([
+            'serverAddress',
+            'username',
+            'password',
+            'webDAVEnabled',
+            'githubRepoToken',
+            'githubRepoOwner',
+            'githubRepoName',
+            'githubRepoEnabled'
+        ]));
+    } catch (_) {
+        return { webdav: false, github: false };
+    }
+}
+
+async function dev1LoadSnapshotExportTargets() {
+    try {
+        const store = await browserAPI.storage.local.get([
+            DEV1_EXPORT_TARGETS_STORAGE_KEY,
+            'serverAddress',
+            'username',
+            'password',
+            'webDAVEnabled',
+            'githubRepoToken',
+            'githubRepoOwner',
+            'githubRepoName',
+            'githubRepoEnabled'
+        ]);
+        return dev1ApplyCloudTargetAvailability(
+            store?.[DEV1_EXPORT_TARGETS_STORAGE_KEY],
+            dev1ResolveCloudTargetAvailability(store)
+        );
+    } catch (_) {
+        return dev1NormalizeExportTargets({});
+    }
 }
 
 function dev1NormalizeResultRow(rawRow = {}, fallback = {}) {
@@ -6960,8 +7033,29 @@ async function dev1CaptureMhtmlBlob(tabId) {
             }
 
             window.__dev1MhtmlTempRemoved = window.__dev1MhtmlTempRemoved || [];
+            window.__dev1MhtmlTempHidden = window.__dev1MhtmlTempHidden || [];
+
+            const hideSelectors = [
+                '#dev1-snapshot-helper-host'
+            ];
+            hideSelectors.forEach(sel => {
+                try {
+                    document.querySelectorAll(sel).forEach(el => {
+                        if (window.__dev1MhtmlTempHidden.some(item => item.el === el)) return;
+                        window.__dev1MhtmlTempHidden.push({
+                            el,
+                            visibility: el.style.visibility,
+                            pointerEvents: el.style.pointerEvents
+                        });
+                        el.style.setProperty('visibility', 'hidden', 'important');
+                        el.style.setProperty('pointer-events', 'none', 'important');
+                    });
+                } catch (e) {
+                    console.error('Failed to hide selector ' + sel, e);
+                }
+            });
+
             const selectors = [
-                '#dev1-snapshot-helper-host',
                 '#zoom-invariant-fixed-layer',
                 '#dev1-snapshot-highlighter-toolbar',
                 '.dev1-snapshot-highlighter-panel',
@@ -7043,7 +7137,11 @@ async function dev1CaptureMhtmlBlob(tabId) {
                         const { el, parent, nextSibling } = window.__dev1MhtmlTempRemoved[i];
                         try {
                             if (parent) {
-                                parent.insertBefore(el, nextSibling);
+                                if (nextSibling && nextSibling.parentNode === parent) {
+                                    parent.insertBefore(el, nextSibling);
+                                } else {
+                                    parent.appendChild(el);
+                                }
                             }
                         } catch (e) {
                             console.error('Failed to restore element', el, e);
@@ -7051,10 +7149,79 @@ async function dev1CaptureMhtmlBlob(tabId) {
                     }
                     window.__dev1MhtmlTempRemoved = [];
                 }
+
+                if (window.__dev1MhtmlTempHidden && window.__dev1MhtmlTempHidden.length > 0) {
+                    for (let i = window.__dev1MhtmlTempHidden.length - 1; i >= 0; i--) {
+                        const { el, visibility, pointerEvents } = window.__dev1MhtmlTempHidden[i];
+                        try {
+                            if (el) {
+                                el.style.visibility = visibility || '';
+                                el.style.pointerEvents = pointerEvents || '';
+                            }
+                        } catch (e) {
+                            console.error('Failed to restore hidden element', el, e);
+                        }
+                    }
+                    window.__dev1MhtmlTempHidden = [];
+                }
             });
         } catch (e) {
             console.warn('Failed to restore helper UI:', e);
         }
+    }
+}
+
+async function dev1SetSnapshotHelperPreparingUi(tabId, preparing = true) {
+    const id = Number(tabId);
+    if (!Number.isFinite(id)) return;
+    try {
+        await dev1ExecuteScript(id, (shouldHide) => {
+            const host = document.getElementById('dev1-snapshot-helper-host');
+            if (!host) return;
+            window.__dev1SnapshotHelperPreparingUi = window.__dev1SnapshotHelperPreparingUi || null;
+            if (shouldHide) {
+                if (!window.__dev1SnapshotHelperPreparingUi) {
+                    window.__dev1SnapshotHelperPreparingUi = {
+                        display: host.style.display,
+                        visibility: host.style.visibility,
+                        pointerEvents: host.style.pointerEvents
+                    };
+                }
+                try {
+                    const shadow = host.shadowRoot;
+                    const mdPanel = shadow && shadow.querySelector('#md-settings-panel');
+                    if (mdPanel) mdPanel.remove();
+                    const recordSettings = shadow && shadow.querySelector('#recording-settings-panel');
+                    if (recordSettings) recordSettings.remove();
+                } catch (_) { }
+                host.style.setProperty('display', 'none', 'important');
+                host.style.removeProperty('visibility');
+                host.style.removeProperty('pointer-events');
+                return;
+            }
+
+            const previous = window.__dev1SnapshotHelperPreparingUi;
+            if (previous) {
+                host.style.display = previous.display || '';
+                host.style.visibility = previous.visibility || '';
+                host.style.pointerEvents = previous.pointerEvents || '';
+            } else {
+                host.style.display = '';
+                host.style.visibility = '';
+                host.style.pointerEvents = '';
+            }
+            window.__dev1SnapshotHelperPreparingUi = null;
+            host.style.removeProperty('display');
+            host.style.removeProperty('visibility');
+            host.style.removeProperty('pointer-events');
+            const shadow = host.shadowRoot;
+            const root = shadow && shadow.querySelector('.dev1-helper-root');
+            const launcher = shadow && shadow.querySelector('.dev1-helper-launcher');
+            if (root) root.dataset.open = 'true';
+            if (launcher) launcher.setAttribute('aria-expanded', 'true');
+        }, [preparing === true]);
+    } catch (error) {
+        console.warn('Failed to update snapshot helper preparing UI:', error);
     }
 }
 
@@ -8002,6 +8169,163 @@ async function dev1DownloadBlobToLocal(filePath, blob, mimeType = 'application/o
     return await dev1DownloadBlobDataUrl(filePath, blob, mimeType);
 }
 
+function dev1BuildWebSnapshotCloudFileName(filePath = '', lang = 'zh_CN') {
+    const normalizedPath = dev1NormalizeDownloadFolderPath(filePath);
+    const exportRoot = getExportRootFolderByLang(lang);
+    const webSnapshotFolder = getWebSnapshotExportFolderByLang(lang);
+    const prefix = `${exportRoot}/${webSnapshotFolder}/`;
+    if (normalizedPath.startsWith(prefix)) {
+        return normalizedPath.slice(prefix.length).replace(/^\/+/, '');
+    }
+
+    const parts = normalizedPath.split('/').filter(Boolean);
+    return parts.length > 0 ? parts[parts.length - 1] : 'web-snapshot-export';
+}
+
+function dev1Base64BinaryToBlob(base64 = '', contentType = 'application/octet-stream') {
+    const raw = String(base64 || '').trim();
+    if (!raw) return null;
+    const binary = atob(raw);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: contentType || 'application/octet-stream' });
+}
+
+function dev1FormatCloudTargetLabel(targetKey = '') {
+    const key = String(targetKey || '').trim().toLowerCase();
+    if (key === 'webdav') return 'WebDAV';
+    if (key === 'github') return 'GitHub';
+    return key || 'cloud';
+}
+
+function dev1FormatByteSize(bytes) {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value < 0) return '';
+    const mib = value / (1024 * 1024);
+    if (mib >= 1) return `${mib.toFixed(mib >= 10 ? 1 : 2)} MiB`;
+    const kib = value / 1024;
+    if (kib >= 1) return `${kib.toFixed(kib >= 10 ? 1 : 2)} KiB`;
+    return `${Math.floor(value)} B`;
+}
+
+function dev1BuildGitHubSnapshotSizeBlockError({ lang = 'zh_CN', fileSize, kind = '' } = {}) {
+    const size = Number(fileSize);
+    if (!Number.isFinite(size) || size < 0) return '';
+    if (size <= DEV1_GITHUB_REPO_RECOMMENDED_FILE_LIMIT_BYTES) return '';
+
+    const isEn = lang === 'en';
+    const sizeText = dev1FormatByteSize(size);
+    const recommendedText = dev1FormatByteSize(DEV1_GITHUB_REPO_RECOMMENDED_FILE_LIMIT_BYTES);
+    const hardText = dev1FormatByteSize(DEV1_GITHUB_REPO_HARD_FILE_LIMIT_BYTES);
+    const kindText = String(kind || '').trim().toLowerCase();
+    const recordingHint = kindText === 'screen_recording' || kindText === 'recording'
+        ? (isEn ? ' Screen recordings should use local backup or WebDAV.' : ' 录屏建议使用本地备份或 WebDAV。')
+        : '';
+
+    if (size > DEV1_GITHUB_REPO_HARD_FILE_LIMIT_BYTES) {
+        return isEn
+            ? `GitHub: file is ${sizeText}, above GitHub's ${hardText} hard limit. Skipped.${recordingHint}`
+            : `GitHub：文件大小 ${sizeText}，超过 GitHub ${hardText} 硬限制，已跳过。${recordingHint}`;
+    }
+
+    return isEn
+        ? `GitHub: file is ${sizeText}, above GitHub's recommended ${recommendedText} repository file limit. Skipped to avoid large-file problems.${recordingHint}`
+        : `GitHub：文件大小 ${sizeText}，超过 GitHub 建议的 ${recommendedText} 仓库文件限制，已跳过以避免大文件问题。${recordingHint}`;
+}
+
+async function dev1UploadSnapshotBlobToCloudTargets({ lang, filePath, blob, contentType, targets, kind = '' }) {
+    const selectedTargets = dev1NormalizeExportTargets(targets);
+    const targetResults = {
+        webdav: false,
+        github: false
+    };
+    const errors = [];
+    const githubSizeBlockError = selectedTargets.github
+        ? dev1BuildGitHubSnapshotSizeBlockError({ lang, fileSize: blob?.size, kind })
+        : '';
+    if (githubSizeBlockError) {
+        selectedTargets.github = false;
+        errors.push(githubSizeBlockError);
+    }
+    const cloudTargets = [
+        selectedTargets.webdav ? 'webdav' : '',
+        selectedTargets.github ? 'github' : ''
+    ].filter(Boolean);
+
+    if (!cloudTargets.length) {
+        return { successes: [], errors, targetResults };
+    }
+    if (!(blob instanceof Blob)) {
+        return {
+            successes: [],
+            errors: [
+                ...errors,
+                ...cloudTargets.map((target) => `${dev1FormatCloudTargetLabel(target)}: Missing blob payload`)
+            ],
+            targetResults
+        };
+    }
+
+    const fileName = dev1BuildWebSnapshotCloudFileName(filePath, lang);
+    const contentArrayBuffer = await blob.arrayBuffer();
+    const cloneBuffer = () => (
+        contentArrayBuffer && typeof contentArrayBuffer.slice === 'function'
+            ? contentArrayBuffer.slice(0)
+            : contentArrayBuffer
+    );
+    const tasks = [];
+
+    if (selectedTargets.webdav) {
+        tasks.push(uploadExportFileToWebDAV({
+            lang,
+            folderKey: 'web_snapshot',
+            fileName,
+            contentArrayBuffer: cloneBuffer(),
+            contentType
+        })
+            .then(result => ({ target: 'webdav', result }))
+            .catch(error => ({
+                target: 'webdav',
+                result: { success: false, error: error?.message || 'upload failed' }
+            })));
+    }
+
+    if (selectedTargets.github) {
+        tasks.push(uploadExportFileToGitHubRepo({
+            lang,
+            folderKey: 'web_snapshot',
+            fileName,
+            contentArrayBuffer: cloneBuffer()
+        })
+            .then(result => ({ target: 'github', result }))
+            .catch(error => ({
+                target: 'github',
+                result: { success: false, error: error?.message || 'upload failed' }
+            })));
+    }
+
+    const settled = await Promise.allSettled(tasks);
+    const successes = [];
+    settled.forEach((entry) => {
+        if (entry.status !== 'fulfilled') {
+            errors.push(entry.reason?.message || 'Cloud upload failed');
+            return;
+        }
+        const target = entry.value?.target || '';
+        const result = entry.value?.result || {};
+        if (result.success === true) {
+            successes.push(target);
+            if (target === 'webdav' || target === 'github') targetResults[target] = true;
+        } else {
+            errors.push(`${dev1FormatCloudTargetLabel(target)}: ${result.error || 'upload failed'}`);
+        }
+    });
+
+    return { successes, errors, targetResults };
+}
+
 function dev1BuildCaptureLeafName(index, item, effectiveUrl, effectiveTitle) {
     let host = '';
     try {
@@ -8015,12 +8339,14 @@ function dev1BuildCaptureLeafName(index, item, effectiveUrl, effectiveTitle) {
 
 function dev1BuildSnapshotHelperLeafName(kind = 'helper', item = {}) {
     const source = String(item?.source || '').trim();
-    const rawIndex = dev1NormalizeQueueMetadataIndex(item?.queueDisplayIndex ?? item?.index);
-    if (source === 'quick_snapshot' || rawIndex == null) {
+    if (source !== 'queue') {
         return dev1BuildQuickSnapshotLeafName(kind, item, {});
     }
-    const index = rawIndex != null ? rawIndex : 0;
-    const leafBase = dev1BuildCaptureLeafName(index, item, item?.url, item?.title);
+    const rawIndex = dev1NormalizeQueueMetadataIndex(item?.queueDisplayIndex ?? item?.index);
+    if (rawIndex == null) {
+        return dev1BuildQuickSnapshotLeafName(kind, item, {});
+    }
+    const leafBase = dev1BuildCaptureLeafName(rawIndex, item, item?.url, item?.title);
     const timePart = formatSyncTimeForFileName(new Date().toISOString());
     const kindPart = dev1SanitizeFilePart(kind, 'helper', 32);
     return `${leafBase}_${kindPart}_${timePart}`;
@@ -8040,8 +8366,11 @@ function dev1BuildQuickSnapshotLeafName(kind = 'mhtml', item = {}, tab = {}) {
 
 function dev1BuildSnapshotHelperMhtmlLeafName(item = {}, tab = {}) {
     const source = String(item?.source || '').trim();
+    if (source !== 'queue') {
+        return dev1BuildQuickSnapshotLeafName('mhtml', item, tab);
+    }
     const rawIndex = dev1NormalizeQueueMetadataIndex(item?.queueDisplayIndex ?? item?.index);
-    if (source === 'quick_snapshot' || rawIndex == null) {
+    if (rawIndex == null) {
         return dev1BuildQuickSnapshotLeafName('mhtml', item, tab);
     }
     return dev1BuildCaptureLeafName(rawIndex, item, item?.url || tab?.url, item?.title || tab?.title);
@@ -8049,8 +8378,11 @@ function dev1BuildSnapshotHelperMhtmlLeafName(item = {}, tab = {}) {
 
 function dev1BuildSnapshotHelperMdLeafName(item = {}, tab = {}) {
     const source = String(item?.source || '').trim();
+    if (source !== 'queue') {
+        return dev1BuildQuickSnapshotLeafName('md', item, tab);
+    }
     const rawIndex = dev1NormalizeQueueMetadataIndex(item?.queueDisplayIndex ?? item?.index);
-    if (source === 'quick_snapshot' || rawIndex == null) {
+    if (rawIndex == null) {
         return dev1BuildQuickSnapshotLeafName('md', item, tab);
     }
     return dev1BuildCaptureLeafName(rawIndex, item, item?.url || tab?.url, item?.title || tab?.title);
@@ -8077,37 +8409,93 @@ async function dev1DownloadSnapshotHelperBlob(message = {}) {
     const lang = message.lang === 'en' || message.lang === 'zh_CN'
         ? message.lang
         : await getCurrentLang();
+    const exportTargets = await dev1LoadSnapshotExportTargets();
     const kind = String(message?.kind || 'area_screenshot').trim().toLowerCase() || 'area_screenshot';
     const extension = dev1SanitizeFilePart(message?.extension || (kind === 'screen_recording' ? 'webm' : 'png'), 'png', 12).replace(/^\.+/, '') || 'png';
+    const mimeType = String(message?.mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+    const contentSize = Number(message?.contentSize);
     const targetFolder = String(message?.item?.snapshotHelperTargetFolder || message?.item?.targetFolder || '').trim()
         || dev1BuildSnapshotHelperTargetFolder(lang);
     const leafName = dev1BuildSnapshotHelperLeafName(kind, message?.item || {});
     const filename = `${targetFolder}/${leafName}.${extension}`;
-    const downloadId = await new Promise((resolve, reject) => {
+    const errors = [];
+    const targetResults = {
+        local: false,
+        webdav: false,
+        github: false
+    };
+    let saved = false;
+    let downloadId = null;
+
+    if (exportTargets.local) {
         try {
-            browserAPI.downloads.download({
-                url: rawUrl,
-                filename,
-                saveAs: false,
-                conflictAction: 'uniquify'
-            }, (id) => {
-                if (browserAPI.runtime.lastError) {
-                    reject(new Error(browserAPI.runtime.lastError.message || 'Helper download failed'));
-                    return;
+            downloadId = await new Promise((resolve, reject) => {
+                try {
+                    browserAPI.downloads.download({
+                        url: rawUrl,
+                        filename,
+                        saveAs: false,
+                        conflictAction: 'uniquify'
+                    }, (id) => {
+                        if (browserAPI.runtime.lastError) {
+                            reject(new Error(browserAPI.runtime.lastError.message || 'Helper download failed'));
+                            return;
+                        }
+                        const resolvedDownloadId = Number(id);
+                        if (!Number.isFinite(resolvedDownloadId)) {
+                            reject(new Error('Helper download returned empty id'));
+                            return;
+                        }
+                        resolve(resolvedDownloadId);
+                    });
+                } catch (error) {
+                    reject(error);
                 }
-                const downloadId = Number(id);
-                if (!Number.isFinite(downloadId)) {
-                    reject(new Error('Helper download returned empty id'));
-                    return;
-                }
-                resolve(downloadId);
             });
+            await dev1WaitForDownloadComplete(downloadId, DEV1_DOWNLOAD_TERMINAL_TIMEOUT_MS, filename);
+            saved = true;
+            targetResults.local = true;
         } catch (error) {
-            reject(error);
+            errors.push(`Local: ${error?.message || 'download failed'}`);
         }
-    });
-    await dev1WaitForDownloadComplete(downloadId, DEV1_DOWNLOAD_TERMINAL_TIMEOUT_MS, filename);
-    return { success: true, downloadId, filename };
+    }
+
+    const needsCloudUpload = exportTargets.webdav || exportTargets.github;
+    if (needsCloudUpload) {
+        const uploadTargets = { ...exportTargets };
+        const githubSizeBlockError = uploadTargets.github
+            ? dev1BuildGitHubSnapshotSizeBlockError({ lang, fileSize: contentSize, kind })
+            : '';
+        if (githubSizeBlockError) {
+            uploadTargets.github = false;
+            errors.push(githubSizeBlockError);
+        }
+        const helperBlob = dev1Base64BinaryToBlob(message?.contentBase64Binary, mimeType);
+        if (!helperBlob && (uploadTargets.webdav || uploadTargets.github)) {
+            if (uploadTargets.webdav) errors.push('WebDAV: missing blob payload');
+            if (uploadTargets.github) errors.push('GitHub: missing blob payload');
+        } else {
+            if (helperBlob && (uploadTargets.webdav || uploadTargets.github)) {
+                const cloudResult = await dev1UploadSnapshotBlobToCloudTargets({
+                    lang,
+                    filePath: filename,
+                    blob: helperBlob,
+                    contentType: mimeType,
+                    targets: uploadTargets,
+                    kind
+                });
+                if (cloudResult.successes.length > 0) saved = true;
+                targetResults.webdav = cloudResult.targetResults?.webdav === true;
+                targetResults.github = cloudResult.targetResults?.github === true;
+                cloudResult.errors.forEach((errorText) => errors.push(errorText));
+            }
+        }
+    }
+
+    if (!saved) {
+        throw new Error(errors.join(' | ') || 'Helper save failed');
+    }
+    return { success: true, downloadId, filename, errors, targets: targetResults };
 }
 
 async function dev1SaveSnapshotHelperCurrentMhtml(message = {}, sender = {}) {
@@ -8122,12 +8510,53 @@ async function dev1SaveSnapshotHelperCurrentMhtml(message = {}, sender = {}) {
         || dev1BuildSnapshotHelperTargetFolder(lang);
     const leafName = dev1BuildSnapshotHelperMhtmlLeafName(item, tab);
     const filename = `${targetFolder}/${leafName}.mhtml`;
-    const mhtmlBlob = await dev1CaptureMhtmlBlob(tabId);
-    const downloadId = await dev1DownloadBlobToLocal(filename, mhtmlBlob, 'multipart/related', {
-        tabId,
-        preferTabDownload: true
+    let mhtmlBlob = null;
+    try {
+        await dev1SetSnapshotHelperPreparingUi(tabId, true);
+        mhtmlBlob = await dev1CaptureMhtmlBlob(tabId);
+    } finally {
+        await dev1SetSnapshotHelperPreparingUi(tabId, false);
+    }
+    const exportTargets = await dev1LoadSnapshotExportTargets();
+    const errors = [];
+    const targetResults = {
+        local: false,
+        webdav: false,
+        github: false
+    };
+    let saved = false;
+    let downloadId = null;
+
+    if (exportTargets.local) {
+        try {
+            downloadId = await dev1DownloadBlobToLocal(filename, mhtmlBlob, 'multipart/related', {
+                tabId,
+                preferTabDownload: true
+            });
+            saved = true;
+            targetResults.local = true;
+        } catch (error) {
+            errors.push(`Local: ${error?.message || 'download failed'}`);
+        }
+    }
+
+    const cloudResult = await dev1UploadSnapshotBlobToCloudTargets({
+        lang,
+        filePath: filename,
+        blob: mhtmlBlob,
+        contentType: 'multipart/related',
+        targets: exportTargets,
+        kind: 'mhtml'
     });
-    return { success: true, downloadId, filename };
+    if (cloudResult.successes.length > 0) saved = true;
+    targetResults.webdav = cloudResult.targetResults?.webdav === true;
+    targetResults.github = cloudResult.targetResults?.github === true;
+    cloudResult.errors.forEach((errorText) => errors.push(errorText));
+
+    if (!saved) {
+        throw new Error(errors.join(' | ') || 'MHTML save failed');
+    }
+    return { success: true, downloadId, filename, errors, targets: targetResults };
 }
 
 async function dev1SaveSnapshotHelperCurrentMd(message = {}, sender = {}) {
@@ -8142,13 +8571,55 @@ async function dev1SaveSnapshotHelperCurrentMd(message = {}, sender = {}) {
         || dev1BuildSnapshotHelperTargetFolder(lang);
     const leafName = dev1BuildSnapshotHelperMdLeafName(item, tab);
     const filename = `${targetFolder}/${leafName}.md`;
-    const captured = await dev1CaptureMarkdownContent(tabId, item?.url || tab?.url || '');
-    const markdownBlob = new Blob([captured.markdown || ''], { type: 'text/markdown;charset=utf-8' });
-    const downloadId = await dev1DownloadBlobToLocal(filename, markdownBlob, 'text/markdown;charset=utf-8', {
-        tabId,
-        preferTabDownload: true
+    let captured = null;
+    let markdownBlob = null;
+    try {
+        await dev1SetSnapshotHelperPreparingUi(tabId, true);
+        captured = await dev1CaptureMarkdownContent(tabId, item?.url || tab?.url || '');
+        markdownBlob = new Blob([captured.markdown || ''], { type: 'text/markdown;charset=utf-8' });
+    } finally {
+        await dev1SetSnapshotHelperPreparingUi(tabId, false);
+    }
+    const exportTargets = await dev1LoadSnapshotExportTargets();
+    const errors = [];
+    const targetResults = {
+        local: false,
+        webdav: false,
+        github: false
+    };
+    let saved = false;
+    let downloadId = null;
+
+    if (exportTargets.local) {
+        try {
+            downloadId = await dev1DownloadBlobToLocal(filename, markdownBlob, 'text/markdown;charset=utf-8', {
+                tabId,
+                preferTabDownload: true
+            });
+            saved = true;
+            targetResults.local = true;
+        } catch (error) {
+            errors.push(`Local: ${error?.message || 'download failed'}`);
+        }
+    }
+
+    const cloudResult = await dev1UploadSnapshotBlobToCloudTargets({
+        lang,
+        filePath: filename,
+        blob: markdownBlob,
+        contentType: 'text/markdown;charset=utf-8',
+        targets: exportTargets,
+        kind: 'md'
     });
-    return { success: true, downloadId, filename };
+    if (cloudResult.successes.length > 0) saved = true;
+    targetResults.webdav = cloudResult.targetResults?.webdav === true;
+    targetResults.github = cloudResult.targetResults?.github === true;
+    cloudResult.errors.forEach((errorText) => errors.push(errorText));
+
+    if (!saved) {
+        throw new Error(errors.join(' | ') || 'Markdown save failed');
+    }
+    return { success: true, downloadId, filename, errors, targets: targetResults };
 }
 
 async function dev1ExecuteScriptFile(tabId, filePath, world = 'ISOLATED') {
@@ -8857,6 +9328,15 @@ async function runDev1CaptureAndExport(message = {}) {
 
         const formats = dev1NormalizeFormats(runState.formats || {});
         const options = dev1NormalizeRunOptions(runState.options || {});
+        const exportTargets = dev1ApplyCloudTargetAvailability(
+            options.exportTargets || {},
+            await dev1LoadCloudTargetAvailability()
+        );
+        const runTargetResults = {
+            local: false,
+            webdav: false,
+            github: false
+        };
         const batchZipEnabled = options.exportMode === 'batch-zip';
         const batchSize = dev1NormalizeBatchSize(options.batchSize);
         runState.mode = dev1NormalizeExportMode(options.exportMode);
@@ -9202,21 +9682,53 @@ async function runDev1CaptureAndExport(message = {}) {
                                 });
                             } else {
                                 const mhtmlPath = `${runState.targetFolder}/${mhtmlRelativePath}`;
-                                const mhtmlDownloadId = await dev1DownloadBlobToLocal(mhtmlPath, mhtmlBlob, 'multipart/related', {
-                                    tabId: Number(tabId),
-                                    preferTabDownload: true
-                                });
-                                baseRow.files.push(mhtmlPath);
-                                dev1AppendRunArtifact(runState, {
-                                    id: dev1BuildArtifactId(`mhtml_r${rowIndex + 1}`),
-                                    kind: 'file',
-                                    format: 'mhtml',
+                                let mhtmlSaved = false;
+                                let mhtmlLocalDownloadId = null;
+                                if (exportTargets.local) {
+                                    try {
+                                        mhtmlLocalDownloadId = await dev1DownloadBlobToLocal(mhtmlPath, mhtmlBlob, 'multipart/related', {
+                                            tabId: Number(tabId),
+                                            preferTabDownload: true
+                                        });
+                                        mhtmlSaved = true;
+                                        runTargetResults.local = true;
+                                    } catch (localError) {
+                                        baseRow.errors.push(`MHTML Local: ${localError?.message || 'failed'}`);
+                                    }
+                                }
+
+                                const mhtmlCloudResult = await dev1UploadSnapshotBlobToCloudTargets({
+                                    lang,
                                     filePath: mhtmlPath,
-                                    rowIndex,
-                                    downloadId: mhtmlDownloadId,
-                                    terminalState: 'complete',
-                                    createdAt: dev1NowIso()
+                                    blob: mhtmlBlob,
+                                    contentType: 'multipart/related',
+                                    targets: exportTargets,
+                                    kind: 'mhtml'
                                 });
+                                if (mhtmlCloudResult.successes.length > 0) {
+                                    mhtmlSaved = true;
+                                }
+                                runTargetResults.webdav = runTargetResults.webdav || mhtmlCloudResult.targetResults?.webdav === true;
+                                runTargetResults.github = runTargetResults.github || mhtmlCloudResult.targetResults?.github === true;
+                                mhtmlCloudResult.errors.forEach((errorText) => {
+                                    baseRow.errors.push(`MHTML ${errorText}`);
+                                });
+
+                                if (mhtmlSaved) {
+                                    baseRow.files.push(mhtmlPath);
+                                    dev1AppendRunArtifact(runState, {
+                                        id: dev1BuildArtifactId(`mhtml_r${rowIndex + 1}`),
+                                        kind: 'file',
+                                        format: 'mhtml',
+                                        filePath: mhtmlPath,
+                                        rowIndex,
+                                        downloadId: mhtmlLocalDownloadId,
+                                        terminalState: 'complete',
+                                        createdAt: dev1NowIso()
+                                    });
+                                } else if (!exportTargets.local && !exportTargets.webdav && !exportTargets.github) {
+                                    baseRow.errors.push('MHTML: No export target enabled');
+                                }
                             }
                         } catch (error) {
                             baseRow.errors.push(`MHTML: ${error?.message || 'failed'}`);
@@ -9246,21 +9758,53 @@ async function runDev1CaptureAndExport(message = {}) {
                                 });
                             } else {
                                 const mdPath = `${runState.targetFolder}/${mdRelativePath}`;
-                                const mdDownloadId = await dev1DownloadBlobToLocal(mdPath, mdBlob, 'text/markdown;charset=utf-8', {
-                                    tabId: Number(tabId),
-                                    preferTabDownload: true
-                                });
-                                baseRow.files.push(mdPath);
-                                dev1AppendRunArtifact(runState, {
-                                    id: dev1BuildArtifactId(`md_r${rowIndex + 1}`),
-                                    kind: 'file',
-                                    format: 'md',
+                                let mdSaved = false;
+                                let mdLocalDownloadId = null;
+                                if (exportTargets.local) {
+                                    try {
+                                        mdLocalDownloadId = await dev1DownloadBlobToLocal(mdPath, mdBlob, 'text/markdown;charset=utf-8', {
+                                            tabId: Number(tabId),
+                                            preferTabDownload: true
+                                        });
+                                        mdSaved = true;
+                                        runTargetResults.local = true;
+                                    } catch (localError) {
+                                        baseRow.errors.push(`Markdown Local: ${localError?.message || 'failed'}`);
+                                    }
+                                }
+
+                                const mdCloudResult = await dev1UploadSnapshotBlobToCloudTargets({
+                                    lang,
                                     filePath: mdPath,
-                                    rowIndex,
-                                    downloadId: mdDownloadId,
-                                    terminalState: 'complete',
-                                    createdAt: dev1NowIso()
+                                    blob: mdBlob,
+                                    contentType: 'text/markdown;charset=utf-8',
+                                    targets: exportTargets,
+                                    kind: 'md'
                                 });
+                                if (mdCloudResult.successes.length > 0) {
+                                    mdSaved = true;
+                                }
+                                runTargetResults.webdav = runTargetResults.webdav || mdCloudResult.targetResults?.webdav === true;
+                                runTargetResults.github = runTargetResults.github || mdCloudResult.targetResults?.github === true;
+                                mdCloudResult.errors.forEach((errorText) => {
+                                    baseRow.errors.push(`Markdown ${errorText}`);
+                                });
+
+                                if (mdSaved) {
+                                    baseRow.files.push(mdPath);
+                                    dev1AppendRunArtifact(runState, {
+                                        id: dev1BuildArtifactId(`md_r${rowIndex + 1}`),
+                                        kind: 'file',
+                                        format: 'md',
+                                        filePath: mdPath,
+                                        rowIndex,
+                                        downloadId: mdLocalDownloadId,
+                                        terminalState: 'complete',
+                                        createdAt: dev1NowIso()
+                                    });
+                                } else if (!exportTargets.local && !exportTargets.webdav && !exportTargets.github) {
+                                    baseRow.errors.push('Markdown: No export target enabled');
+                                }
                             }
                         } catch (error) {
                             baseRow.errors.push(`Markdown: ${error?.message || 'failed'}`);
@@ -9360,7 +9904,10 @@ async function runDev1CaptureAndExport(message = {}) {
             runState.controlState = DEV1_RUN_CONTROL_NONE;
             runState.activeTabIds = [];
             await dev1SaveCaptureRunState(runState);
-            return dev1BuildRunResponsePayload(runState);
+            return {
+                ...dev1BuildRunResponsePayload(runState),
+                targets: runTargetResults
+            };
         }
 
         await dev1CleanupCaptureWindowForRun(runState);
@@ -9370,7 +9917,10 @@ async function runDev1CaptureAndExport(message = {}) {
         runState.controlState = DEV1_RUN_CONTROL_NONE;
         runState.activeTabIds = [];
         await dev1SaveCaptureRunState(runState);
-        return dev1BuildRunResponsePayload(runState);
+        return {
+            ...dev1BuildRunResponsePayload(runState),
+            targets: runTargetResults
+        };
     } catch (error) {
         if (runState && typeof runState === 'object') {
             await dev1CleanupCaptureWindowForRun(runState);
@@ -16487,8 +17037,11 @@ async function exportCurrentChangesArchiveToCloud(options = {}) {
 }
 
 const WEBDAV_META_TIMEOUT_MS = 12000;
-const WEBDAV_PUT_TIMEOUT_MS = 15000;
-const WEBDAV_MAX_RETRIES = 1;
+const WEBDAV_PUT_TIMEOUT_BASE_MS = 15000;
+const WEBDAV_PUT_TIMEOUT_MAX_MS = 120000;
+const WEBDAV_PUT_TIMEOUT_PER_MIB_MS = 1200;
+const WEBDAV_LARGE_UPLOAD_THRESHOLD_BYTES = 32 * 1024 * 1024;
+const WEBDAV_MAX_RETRIES = 2;
 const WEBDAV_RETRY_BASE_DELAY_MS = 900;
 
 function isRetryableHttpStatus(status) {
@@ -16522,12 +17075,30 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = WEBDAV_META_TIMEO
     }
 }
 
+function getWebDAVUploadBodySize(body) {
+    if (body == null) return 0;
+    if (typeof body === 'string') return body.length;
+    if (body instanceof ArrayBuffer) return body.byteLength;
+    if (ArrayBuffer.isView(body)) return body.byteLength;
+    if (typeof Blob !== 'undefined' && body instanceof Blob) return body.size;
+    return 0;
+}
+
+function resolveWebDAVPutTimeoutMs(body) {
+    const size = getWebDAVUploadBodySize(body);
+    if (!Number.isFinite(size) || size <= WEBDAV_LARGE_UPLOAD_THRESHOLD_BYTES) return WEBDAV_PUT_TIMEOUT_BASE_MS;
+    const extraMiB = (size - WEBDAV_LARGE_UPLOAD_THRESHOLD_BYTES) / (1024 * 1024);
+    const dynamicTimeout = WEBDAV_PUT_TIMEOUT_BASE_MS + Math.ceil(extraMiB * WEBDAV_PUT_TIMEOUT_PER_MIB_MS);
+    return Math.max(WEBDAV_PUT_TIMEOUT_BASE_MS, Math.min(WEBDAV_PUT_TIMEOUT_MAX_MS, dynamicTimeout));
+}
+
 async function putWebDAVWithRetry(url, options = {}) {
     let lastError = null;
+    const putTimeoutMs = resolveWebDAVPutTimeoutMs(options.body);
 
     for (let attempt = 0; attempt <= WEBDAV_MAX_RETRIES; attempt++) {
         try {
-            const response = await fetchWithTimeout(url, options, WEBDAV_PUT_TIMEOUT_MS);
+            const response = await fetchWithTimeout(url, options, putTimeoutMs);
             if (response.ok) {
                 return response;
             }
@@ -16701,13 +17272,16 @@ async function uploadExportFileToWebDAV({ lang, folderKey, fileName, content, co
     const exportRootFolder = getExportRootFolderByLang(lang);
     const exportSubFolder = resolveExportSubFolderByKey(folderKey, lang);
     const folderPath = `${exportRootFolder}/${exportSubFolder}`;
+    const filePathSegments = normalizeWebDAVPathSegments(fileName);
+    const fileParentPath = filePathSegments.length > 1 ? filePathSegments.slice(0, -1).join('/') : '';
+    const ensureFolderPath = fileParentPath ? `${folderPath}/${fileParentPath}` : folderPath;
 
     const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
 
     const authHeader = 'Basic ' + safeBase64(`${config.username}:${config.password}`);
 
     try {
-        await ensureWebDAVCollectionPathExists(serverAddress, folderPath, authHeader, '创建导出文件夹失败');
+        await ensureWebDAVCollectionPathExists(serverAddress, ensureFolderPath, authHeader, '创建导出文件夹失败');
 
         const response = await putWebDAVWithRetry(fullUrl, {
             method: 'PUT',
@@ -25972,6 +26546,16 @@ async function listRemoteFiles(source, options = {}) {
             ));
         }
 
+        function isInWebSnapshotFolderPath(pathText) {
+            const folderSegments = splitPathSegments(pathText).map((part) => String(part || '').trim().toLowerCase());
+            return folderSegments.some((part) => (
+                part === '网页快照'
+                || part === 'web snapshot'
+                || part === 'web_snapshot'
+                || part === 'web-snapshot'
+            ));
+        }
+
         function isOverwriteFolderName(name) {
             const text = String(name || '').trim().toLowerCase();
             if (!text) return false;
@@ -26129,6 +26713,7 @@ async function listRemoteFiles(source, options = {}) {
         function shouldTreatAsCurrentChangesArtifact({ fileName, folderPath = '', snapshotFolder = '' }) {
             const name = String(fileName || '').trim();
             if (!name) return false;
+            if (isInWebSnapshotFolderPath(folderPath)) return false;
             if (isInManualExportFolderPath(folderPath)) return false;
             if (isManualExportInfoLogFileNameLike(name)) return false;
             if (isBackupHtmlName(name)) return false;
@@ -26150,6 +26735,7 @@ async function listRemoteFiles(source, options = {}) {
         function shouldTreatAsSnapshotHtml({ fileName, folderPath = '', snapshotFolder = '' }) {
             const name = String(fileName || '').trim();
             if (!name) return false;
+            if (isInWebSnapshotFolderPath(folderPath)) return false;
             if (isInManualExportFolderPath(folderPath)) return false;
             if (!/\.(html?|xhtml|json)$/i.test(name)) return false;
 
@@ -27030,6 +27616,7 @@ async function listRemoteFiles(source, options = {}) {
                         if (!fileName) continue;
 
                         const folderPath = buildFolderPathFromRelativePath(relativePath);
+                        if (isInWebSnapshotFolderPath(folderPath)) continue;
                         const snapshotFolder = parseSnapshotKeyFromText(folderPath || relativePath || fileName || '');
                         const fileUrl = buildGitHubContentsApiUrlForRestore({ owner, repo, branch, path: repoPath });
 
@@ -32031,7 +32618,7 @@ function isOwnRestorePathForRootFallback(restoreRef = {}) {
         restoreRef?.sourceFile
     ];
     const pathText = values.map((value) => String(value || '')).join('/').replace(/\\/g, '/').toLowerCase();
-    if (/(^|\/)(覆盖|overwrite|版本化|多版本|versioned|versioning|手动导出|manual export|manual_export|manual-export|备份历史|backup history|backup_history|backup-history|bookmarks history|bookmarks_history|bookmarks-history|高危操作安全快照|safety snapshots|safety_snapshots|safety-snapshots)(\/|$)/i.test(pathText)) return true;
+    if (/(^|\/)(覆盖|overwrite|版本化|多版本|versioned|versioning|手动导出|manual export|manual_export|manual-export|网页快照|web snapshot|web_snapshot|web-snapshot|备份历史|backup history|backup_history|backup-history|bookmarks history|bookmarks_history|bookmarks-history|高危操作安全快照|safety snapshots|safety_snapshots|safety-snapshots)(\/|$)/i.test(pathText)) return true;
     return values.some(isOwnRestoreSnapshotLeafNameForRootFallback);
 }
 

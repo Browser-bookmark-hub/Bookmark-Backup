@@ -746,6 +746,152 @@ export async function upsertRepoFile({ token, owner, repo, branch, path, message
       }
     };
 
+    const resolveWriteBranchName = async () => {
+      if (trimmedBranch) return trimmedBranch;
+      const repoInfo = await githubRequestJson(
+        repoApiBase,
+        { headers: { Authorization: authHeader } }
+      );
+      return repoInfo && typeof repoInfo.default_branch === 'string'
+        ? repoInfo.default_branch.trim()
+        : '';
+    };
+
+    const upsertViaGitDataApi = async () => {
+      const targetBranch = await resolveWriteBranchName();
+      if (!targetBranch) {
+        throw new Error('无法确定 GitHub 写入分支');
+      }
+
+      const refUrl = `${repoApiBase}/git/ref/heads/${encodeURIComponent(targetBranch)}`;
+      const maxGitDataAttempts = 3;
+
+      for (let attempt = 0; attempt < maxGitDataAttempts; attempt++) {
+        try {
+          const refJson = await githubRequestJson(
+            refUrl,
+            { headers: { Authorization: authHeader } }
+          );
+          const headSha = refJson && refJson.object && refJson.object.sha
+            ? String(refJson.object.sha)
+            : '';
+          if (!headSha) {
+            throw new Error('读取 GitHub 分支 head 失败');
+          }
+
+          const baseCommitJson = await githubRequestJson(
+            `${repoApiBase}/git/commits/${encodeURIComponent(headSha)}`,
+            { headers: { Authorization: authHeader } }
+          );
+          const baseTreeSha = baseCommitJson && baseCommitJson.tree && baseCommitJson.tree.sha
+            ? String(baseCommitJson.tree.sha)
+            : '';
+          if (!baseTreeSha) {
+            throw new Error('读取 GitHub 基础 tree 失败');
+          }
+
+          const blobJson = await githubRequestJson(
+            `${repoApiBase}/git/blobs`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: authHeader,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                content: safeContentBase64,
+                encoding: 'base64'
+              })
+            }
+          );
+          const blobSha = blobJson && blobJson.sha ? String(blobJson.sha) : '';
+          if (!blobSha) {
+            throw new Error('创建 GitHub Blob 失败');
+          }
+
+          const treeJson = await githubRequestJson(
+            `${repoApiBase}/git/trees`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: authHeader,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                base_tree: baseTreeSha,
+                tree: [
+                  {
+                    path: trimmedPath,
+                    mode: '100644',
+                    type: 'blob',
+                    sha: blobSha
+                  }
+                ]
+              })
+            }
+          );
+          const treeSha = treeJson && treeJson.sha ? String(treeJson.sha) : '';
+          if (!treeSha) {
+            throw new Error('创建 GitHub Tree 失败');
+          }
+
+          const commitJson = await githubRequestJson(
+            `${repoApiBase}/git/commits`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: authHeader,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                message: safeMessage,
+                tree: treeSha,
+                parents: [headSha]
+              })
+            }
+          );
+          const commitSha = commitJson && commitJson.sha ? String(commitJson.sha) : '';
+          if (!commitSha) {
+            throw new Error('创建 GitHub Commit 失败');
+          }
+
+          await githubRequestJson(
+            refUrl,
+            {
+              method: 'PATCH',
+              headers: {
+                Authorization: authHeader,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                sha: commitSha,
+                force: false
+              })
+            }
+          );
+
+          return {
+            success: true,
+            created: false,
+            path: trimmedPath,
+            htmlUrl: buildGitHubRepoBlobHtmlUrl(trimmedOwner, trimmedRepo, targetBranch, trimmedPath),
+            commitSha,
+            branchCreated: branchEnsureResult?.branchCreated === true,
+            gitDataFallback: true
+          };
+        } catch (error) {
+          const status = Number(error?.status);
+          const retryable = status === 409 || status === 422 || status >= 500;
+          if (!retryable || attempt >= maxGitDataAttempts - 1) {
+            throw error;
+          }
+          await delay((attempt + 1) * 300);
+        }
+      }
+
+      throw new Error('GitHub Git Data 写入失败');
+    };
+
     let existingSha = null;
     try {
       existingSha = await loadExistingSha();
@@ -822,11 +968,19 @@ export async function upsertRepoFile({ token, owner, repo, branch, path, message
           continue;
         }
 
-        if (!isShaConflict || attempt >= (maxAttempts - 1)) {
+        if (!isShaConflict) {
           if (branchEnsureResult?.branchCreated === true && isGitHubBranchWarmupError(error)) {
             return { success: false, error: '新分支已创建，但 GitHub 还在同步分支信息，请稍后重试' };
           }
           return { success: false, error: normalizeGitHubError(error) };
+        }
+
+        if (attempt >= (maxAttempts - 1)) {
+          try {
+            return await upsertViaGitDataApi();
+          } catch (fallbackError) {
+            return { success: false, error: normalizeGitHubError(fallbackError) };
+          }
         }
 
         // 优先使用冲突响应中给出的最新 sha，避免 Contents API 读到旧缓存导致循环冲突。
@@ -852,6 +1006,10 @@ export async function upsertRepoFile({ token, owner, repo, branch, path, message
       }
     }
 
-    return { success: false, error: 'GitHub 写入失败（未知冲突）' };
+    try {
+      return await upsertViaGitDataApi();
+    } catch (fallbackError) {
+      return { success: false, error: normalizeGitHubError(fallbackError) || 'GitHub 写入失败（未知冲突）' };
+    }
   });
 }

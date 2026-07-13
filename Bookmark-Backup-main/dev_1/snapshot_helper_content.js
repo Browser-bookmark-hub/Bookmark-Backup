@@ -17,6 +17,19 @@
 
     const API_KEY = '__dev1SnapshotHelper';
     const HOST_ID = 'dev1-snapshot-helper-host';
+    const DEV1_EXPORT_TARGETS_STORAGE_KEY = 'dev1_experiment_export_targets_v1';
+    const DEV1_GITHUB_REPO_RECOMMENDED_FILE_LIMIT_BYTES = 50 * 1024 * 1024;
+    const DEV1_LARGE_HELPER_UPLOAD_THRESHOLD_BYTES = 32 * 1024 * 1024;
+    const DEV1_CLOUD_CONFIG_KEYS = [
+      'serverAddress',
+      'username',
+      'password',
+      'webDAVEnabled',
+      'githubRepoToken',
+      'githubRepoOwner',
+      'githubRepoName',
+      'githubRepoEnabled'
+    ];
 
     if (window[API_KEY] && window[API_KEY].loaded === true) return;
 
@@ -69,8 +82,6 @@
         section_capture: '屏幕截图与录制',
         save_mhtml: '保存 MHTML',
         save_md: '保存 MD',
-        mhtml_saving: '保存中...',
-        md_saving: '保存中...',
         mhtml_saved: 'MHTML 已保存',
         md_saved: 'MD 已保存',
         mhtml_failed: 'MHTML 保存失败',
@@ -86,12 +97,32 @@
         highlight_tool_launching: '正在打开高亮工具...',
         open_web_snapshot: '打开网页快照页',
         open_web_snapshot_tooltip: '打开网页快照页面',
-        helper_info_tooltip: '说明',
+        helper_info_tooltip: '设置',
+        helper_info_title: '说明',
+        export_targets_label: '导出位置',
+        target_local: '本地',
+        target_webdav: '云端1: WebDAV',
+        target_github: '云端2: GitHub',
+        export_target_disabled_tip: '请先在主界面的对应云端配置中保存并启用。',
+        webdav_directory_warning: '网页快照会自动创建存储目录；若当前云盘不允许创建目录，上传可能失败，请更换 WebDAV 服务，或改用其他云端备份或本地备份。',
+        export_target_saved: '保存位置已更新',
+        save_status_preparing: '正在准备保存内容...',
+        save_status_uploading: '正在保存到所选位置...',
         helper_shortcut_not_set: '未设置',
         helper_info_shortcut_prefix: '可以通过快捷键',
         helper_info_shortcut_suffix: '直接在任意页面打开/关闭工具箱。',
         helper_info_cache: '辅助工具所做的用户修改暂存于本地，当对应标签页(tabid)关闭或浏览器重启时，相关缓存数据将自动释放。',
-        helper_info_export: '建议临时使用且注意导出',
+        helper_info_export: '建议及时导出备份；MD 数据量一般较小，适合云端1、2备份',
+        save_done: '已保存',
+        save_partial: '部分目标失败',
+        local_save_success: '本地下载成功',
+        webdav_save_success: '云端1上传成功',
+        github_save_success: '云端2上传成功',
+        cloud_save_success: '云端1、2上传成功',
+        local_save_failed: '本地下载失败',
+        webdav_save_failed: '云端1上传失败',
+        github_save_failed: '云端2上传失败',
+        cloud_save_failed: '云端上传失败',
         screenshot_area: '区域截图',
         screenshot_full: '长截图',
         screen_record: '屏幕录制',
@@ -156,8 +187,6 @@
         section_capture: 'Screen Capture & Record',
         save_mhtml: 'Save MHTML',
         save_md: 'Save MD',
-        mhtml_saving: 'Saving...',
-        md_saving: 'Saving...',
         mhtml_saved: 'MHTML saved',
         md_saved: 'MD saved',
         mhtml_failed: 'MHTML save failed',
@@ -173,12 +202,32 @@
         highlight_tool_launching: 'Opening highlight tool...',
         open_web_snapshot: 'Open Web Snapshot page',
         open_web_snapshot_tooltip: 'Open the Web Snapshot page',
-        helper_info_tooltip: 'Help',
+        helper_info_tooltip: 'Settings',
+        helper_info_title: 'Help',
+        export_targets_label: 'Export To',
+        target_local: 'Local',
+        target_webdav: 'Cloud 1: WebDAV',
+        target_github: 'Cloud 2: GitHub',
+        export_target_disabled_tip: 'Save and enable this cloud target in the main popup first.',
+        webdav_directory_warning: 'Web Snapshot creates storage folders automatically. If the current provider does not allow folder creation, uploads may fail; use another WebDAV service, another cloud backup target, or local backup.',
+        export_target_saved: 'Save targets updated',
+        save_status_preparing: 'Preparing content...',
+        save_status_uploading: 'Saving to selected targets...',
         helper_shortcut_not_set: 'Not Set',
         helper_info_shortcut_prefix: 'Use shortcut',
         helper_info_shortcut_suffix: 'to open/close the toolbox on any page.',
         helper_info_cache: 'User changes made by Helper are cached locally. When the related tabid is closed or the browser restarts, the cached data is released automatically.',
-        helper_info_export: 'Use temporarily and export important work',
+        helper_info_export: 'Export backups promptly; Markdown is usually small and works well with Cloud 1/2 backups',
+        save_done: 'Saved',
+        save_partial: 'some targets failed',
+        local_save_success: 'Local download complete',
+        webdav_save_success: 'Cloud 1 upload complete',
+        github_save_success: 'Cloud 2 upload complete',
+        cloud_save_success: 'Cloud 1 and 2 uploads complete',
+        local_save_failed: 'Local download failed',
+        webdav_save_failed: 'Cloud 1 upload failed',
+        github_save_failed: 'Cloud 2 upload failed',
+        cloud_save_failed: 'Cloud upload failed',
         screenshot_area: 'Area Screenshot',
         screenshot_full: 'Long Screenshot',
         screen_record: 'Screen Recording',
@@ -316,6 +365,10 @@
         this._mdArticleArea = null;
         this._mdSaveTimer = null;
         this._urlChangeListener = null;
+        this._exportTargets = { local: true, webdav: false, github: false };
+        this._cloudTargetAvailability = { webdav: false, github: false };
+        this._storageChangeHandler = null;
+        this._saveStatusLineTimer = null;
         this.t = (key) => this.translate(key);
         this._setupUrlChangeListener();
 
@@ -448,16 +501,51 @@
 
       _renderHelperInfoPopoverHtml() {
         const shortcut = this._getOpenWebSnapshotShortcutFallback();
+        const localChecked = this._exportTargets.local !== false ? 'checked' : '';
+        const webdavAvailable = this._cloudTargetAvailability.webdav === true;
+        const githubAvailable = this._cloudTargetAvailability.github === true;
+        const webdavChecked = webdavAvailable && this._exportTargets.webdav === true ? 'checked' : '';
+        const githubChecked = githubAvailable && this._exportTargets.github === true ? 'checked' : '';
+        const webdavDisabled = webdavAvailable ? '' : 'disabled';
+        const githubDisabled = githubAvailable ? '' : 'disabled';
+        const webdavClass = webdavAvailable ? '' : ' is-disabled';
+        const githubClass = githubAvailable ? '' : ' is-disabled';
+        const disabledTip = this.translate('export_target_disabled_tip');
+        const targetHtml = `
+                    <div class="dev1-helper-settings-block">
+                      <div class="dev1-helper-settings-title">${this.translate('export_targets_label')}</div>
+                      <div class="dev1-helper-target-options">
+                        <label class="dev1-helper-target-option" title="${this.translate('target_local')}">
+                          <input type="checkbox" data-helper-export-target="local" ${localChecked}>
+                          <span>${this.translate('target_local')}</span>
+                        </label>
+                        <div class="dev1-helper-target-option-row">
+                          <label class="dev1-helper-target-option${webdavClass}" title="${webdavAvailable ? this.translate('target_webdav') : disabledTip}">
+                            <input type="checkbox" data-helper-export-target="webdav" ${webdavChecked} ${webdavDisabled}>
+                            <span>${this.translate('target_webdav')}</span>
+                          </label>
+                          <button class="dev1-helper-webdav-warning" type="button" aria-label="${this.translate('webdav_directory_warning')}" data-tooltip="${this.translate('webdav_directory_warning')}">⚠️</button>
+                        </div>
+                        <label class="dev1-helper-target-option${githubClass}" title="${githubAvailable ? this.translate('target_github') : disabledTip}">
+                          <input type="checkbox" data-helper-export-target="github" ${githubChecked} ${githubDisabled}>
+                          <span>${this.translate('target_github')}</span>
+                        </label>
+                      </div>
+                    </div>`;
         if (this.config && this.config.lang === 'en') {
           return `
-                  <div class="dev1-helper-info-popover" role="tooltip">
+                  <div class="dev1-helper-info-popover" role="dialog" aria-label="${this.translate('helper_info_tooltip')}">
+                    ${targetHtml}
+                    <div class="dev1-helper-settings-help-title">${this.translate('helper_info_title')}</div>
                     <div class="dev1-helper-info-line">1. ${this.translate('helper_info_shortcut_prefix')} <kbd data-helper-shortcut>${shortcut}</kbd> ${this.translate('helper_info_shortcut_suffix')}</div>
                     <div class="dev1-helper-info-line">2. ${this.translate('helper_info_cache')}</div>
                     <div class="dev1-helper-info-line dev1-helper-info-warning">3. ${this.translate('helper_info_export')}</div>
                   </div>`;
         }
         return `
-                  <div class="dev1-helper-info-popover" role="tooltip">
+                  <div class="dev1-helper-info-popover" role="dialog" aria-label="${this.translate('helper_info_tooltip')}">
+                    ${targetHtml}
+                    <div class="dev1-helper-settings-help-title">${this.translate('helper_info_title')}</div>
                     <div class="dev1-helper-info-line">1、${this.translate('helper_info_shortcut_prefix')}「<kbd data-helper-shortcut>${shortcut}</kbd>」${this.translate('helper_info_shortcut_suffix')}</div>
                     <div class="dev1-helper-info-line">2、${this.translate('helper_info_cache')}</div>
                     <div class="dev1-helper-info-line dev1-helper-info-warning">3、「${this.translate('helper_info_export')}」</div>
@@ -1126,11 +1214,117 @@
               transform: translateY(-4px) scale(0.98);
               transition: opacity 120ms ease, transform 120ms ease;
             }
-            .dev1-helper-info-wrap:hover .dev1-helper-info-popover,
-            .dev1-helper-info-wrap:focus-within .dev1-helper-info-popover {
+            .dev1-helper-info-wrap[data-open="true"] .dev1-helper-info-popover {
               opacity: 1;
               transform: translateY(0) scale(1);
               pointer-events: auto;
+            }
+            .dev1-helper-info-wrap[data-open="true"] .dev1-helper-info {
+              background: var(--btn-min-hover);
+              color: var(--accent-color);
+            }
+            .dev1-helper-settings-block {
+              padding-bottom: 10px;
+              margin-bottom: 10px;
+              border-bottom: 1px solid var(--card-border);
+            }
+            .dev1-helper-settings-title,
+            .dev1-helper-settings-help-title {
+              font-size: 11px;
+              font-weight: 800;
+              color: var(--text-main);
+              margin-bottom: 7px;
+            }
+            .dev1-helper-target-options {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+            }
+            .dev1-helper-target-option-row {
+              position: relative;
+              display: flex;
+              align-items: center;
+              gap: 4px;
+              min-width: 0;
+            }
+            .dev1-helper-target-option {
+              display: flex;
+              align-items: center;
+              gap: 7px;
+              min-height: 22px;
+              color: var(--text-main);
+              cursor: pointer;
+              user-select: none;
+            }
+            .dev1-helper-target-option input {
+              width: 14px;
+              height: 14px;
+              margin: 0;
+              accent-color: var(--accent-color);
+              flex: 0 0 auto;
+            }
+            .dev1-helper-target-option span {
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .dev1-helper-target-option.is-disabled {
+              color: var(--text-muted);
+              cursor: not-allowed;
+              opacity: 0.58;
+            }
+            .dev1-helper-webdav-warning {
+              position: relative;
+              width: 20px;
+              height: 20px;
+              padding: 0;
+              border: 0;
+              border-radius: 6px;
+              background: transparent;
+              color: #f97316;
+              cursor: help;
+              font-size: 13px;
+              line-height: 1;
+              flex: 0 0 auto;
+            }
+            .dev1-helper-webdav-warning:hover,
+            .dev1-helper-webdav-warning:focus,
+            .dev1-helper-webdav-warning:focus-visible {
+              background: rgba(249, 115, 22, 0.12);
+              outline: none;
+            }
+            .dev1-helper-webdav-warning::after {
+              content: attr(data-tooltip);
+              position: absolute;
+              left: 50%;
+              top: calc(100% + 8px);
+              z-index: 2147483647;
+              width: 218px;
+              max-width: min(218px, calc(100vw - 64px));
+              padding: 8px 9px;
+              border-radius: 8px;
+              border: 1px solid rgba(249, 115, 22, 0.28);
+              background: var(--panel-bg);
+              color: var(--text-main);
+              box-shadow: var(--panel-shadow);
+              font-size: 11px;
+              line-height: 1.45;
+              font-weight: 600;
+              white-space: normal;
+              text-align: left;
+              opacity: 0;
+              pointer-events: none;
+              transform: translate(-50%, -3px);
+              transition: opacity 120ms ease, transform 120ms ease;
+            }
+            .dev1-helper-webdav-warning:hover::after,
+            .dev1-helper-webdav-warning:focus::after,
+            .dev1-helper-webdav-warning:focus-visible::after {
+              opacity: 1;
+              transform: translate(-50%, 0);
+            }
+            .dev1-helper-settings-help-title {
+              margin-top: 0;
             }
             .dev1-helper-info-line + .dev1-helper-info-line {
               margin-top: 8px;
@@ -1163,6 +1357,106 @@
               white-space: nowrap;
               text-overflow: ellipsis;
               margin-right: 4px;
+            }
+            .dev1-helper-target-hint {
+              position: relative;
+              overflow: hidden;
+              font-size: 11px;
+              line-height: 1.42;
+              color: var(--text-muted);
+              background: color-mix(in srgb, var(--accent-color) 7%, var(--card-bg) 93%);
+              border: 1px dashed color-mix(in srgb, var(--accent-color) 34%, var(--card-border) 66%);
+              border-radius: 10px;
+              padding: 8px 10px 9px;
+              margin-bottom: 10px;
+            }
+            .dev1-helper-target-hint[hidden] {
+              display: none;
+            }
+            .dev1-helper-target-hint[data-state="saving"] {
+              color: var(--text-main);
+              border-style: solid;
+              background: color-mix(in srgb, var(--accent-color) 10%, var(--card-bg) 90%);
+            }
+            .dev1-helper-target-hint[data-state="success"] {
+              color: var(--text-main);
+              border-style: solid;
+              background: color-mix(in srgb, #22c55e 10%, var(--card-bg) 90%);
+              border-color: color-mix(in srgb, #22c55e 42%, var(--card-border) 58%);
+            }
+            .dev1-helper-target-hint[data-state="warning"],
+            .dev1-helper-target-hint[data-state="error"] {
+              color: var(--text-main);
+              border-style: solid;
+              background: color-mix(in srgb, #f97316 10%, var(--card-bg) 90%);
+              border-color: color-mix(in srgb, #f97316 44%, var(--card-border) 56%);
+            }
+            .dev1-helper-save-progress {
+              position: relative;
+              height: 5px;
+              border-radius: 999px;
+              overflow: hidden;
+              background: color-mix(in srgb, var(--accent-color) 12%, transparent 88%);
+              margin-top: 7px;
+            }
+            .dev1-helper-save-progress i {
+              position: absolute;
+              left: 0;
+              top: 0;
+              bottom: 0;
+              width: 0%;
+              border-radius: inherit;
+              background: linear-gradient(90deg, var(--accent-color), color-mix(in srgb, var(--accent-color) 40%, #ffffff 60%));
+              transition: width 0.28s ease;
+            }
+            .dev1-helper-target-hint[data-state="success"] .dev1-helper-save-progress i {
+              background: #22c55e;
+            }
+            .dev1-helper-target-hint[data-state="warning"] .dev1-helper-save-progress i,
+            .dev1-helper-target-hint[data-state="error"] .dev1-helper-save-progress i {
+              background: #f97316;
+            }
+            .dev1-helper-save-status-row {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 10px;
+              min-width: 0;
+            }
+            .dev1-helper-save-status-text {
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+              min-width: 0;
+            }
+            .dev1-helper-save-status-percent {
+              flex: 0 0 auto;
+              font-weight: 800;
+              color: var(--accent-color);
+              font-variant-numeric: tabular-nums;
+            }
+            .dev1-helper-toast {
+              position: fixed;
+              left: 50%;
+              top: 16px;
+              transform: translateX(-50%) translateY(8px);
+              z-index: 2147483647;
+              max-width: min(320px, calc(100vw - 32px));
+              padding: 9px 12px;
+              border-radius: 8px;
+              background: rgba(17, 24, 39, 0.92);
+              color: #fff;
+              font-size: 12px;
+              line-height: 1.35;
+              box-shadow: 0 8px 24px rgba(0,0,0,.24);
+              opacity: 0;
+              pointer-events: none;
+              transition: opacity 160ms ease, transform 160ms ease;
+              text-align: center;
+            }
+            .dev1-helper-toast[data-show="true"] {
+              opacity: 1;
+              transform: translateX(-50%) translateY(0);
             }
             .dev1-helper-body {
               padding: 14px 16px 16px;
@@ -1322,8 +1616,8 @@
                 <div class="dev1-helper-title-group">
                   <div class="dev1-helper-title">${this.translate('title')}</div>
                   <div class="dev1-helper-info-wrap" data-no-drag="true">
-                    <button class="dev1-helper-btn dev1-helper-info" type="button" aria-label="${this.translate('helper_info_tooltip')}" data-no-drag="true">
-                      <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                    <button class="dev1-helper-btn dev1-helper-info" type="button" aria-label="${this.translate('helper_info_tooltip')}" aria-expanded="false" data-no-drag="true">
+                      <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8.9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.31.33.58.6.76.27.18.59.24.91.24H21a2 2 0 0 1 0 4h-.09c-.32 0-.64.06-.91.24-.27.18-.46.45-.6.76z"></path></svg>
                     </button>
                     ${this._renderHelperInfoPopoverHtml()}
                   </div>
@@ -1338,6 +1632,13 @@
               <div class="dev1-helper-body">
                 <!-- Section 1: Annotate & Save -->
                 <div class="dev1-helper-section">
+                  <div class="dev1-helper-target-hint" data-state="idle" aria-live="polite" hidden>
+                    <div class="dev1-helper-save-status-row">
+                      <span class="dev1-helper-save-status-text"></span>
+                      <span class="dev1-helper-save-status-percent">0%</span>
+                    </div>
+                    <div class="dev1-helper-save-progress" aria-hidden="true"><i></i></div>
+                  </div>
                   <div class="dev1-helper-section-title">${this.translate('section_archive')}</div>
                   <div class="dev1-helper-list">
                     <button class="dev1-helper-card dev1-helper-highlight" type="button" aria-label="${this.translate('highlight_tooltip')}" data-no-drag="true">
@@ -1426,6 +1727,8 @@
         const mdBtn = shadow.querySelector('.dev1-helper-md');
         const highlighterBtn = shadow.querySelector('.dev1-helper-highlight');
         const openSnapshotBtn = shadow.querySelector('.dev1-helper-open-snapshot');
+        const infoWrap = shadow.querySelector('.dev1-helper-info-wrap');
+        const infoBtn = shadow.querySelector('.dev1-helper-info');
         const areaBtn = shadow.querySelector('.dev1-helper-screenshot-area');
         const fullBtn = shadow.querySelector('.dev1-helper-screenshot-full');
         const recordBtn = shadow.querySelector('.dev1-helper-screen-record');
@@ -1468,6 +1771,32 @@
           button.addEventListener('click', removeTip);
         };
         shadow.querySelector('.dev1-helper-close').addEventListener('click', () => this.destroy());
+        const setSettingsOpen = (open) => {
+          if (!infoWrap) return;
+          infoWrap.dataset.open = open ? 'true' : 'false';
+          if (infoBtn) infoBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        };
+        if (infoBtn) {
+          infoBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setSettingsOpen(infoWrap && infoWrap.dataset.open !== 'true');
+          });
+        }
+        if (infoWrap) {
+          infoWrap.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            setSettingsOpen(false);
+            if (infoBtn) infoBtn.focus();
+          });
+        }
+        shadow.addEventListener('click', (event) => {
+          if (!infoWrap || infoWrap.dataset.open !== 'true') return;
+          const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+          if (path.includes(infoWrap)) return;
+          setSettingsOpen(false);
+        });
         const setOpen = (open) => {
           this._setPanelOpen(open);
         };
@@ -1483,6 +1812,11 @@
         minBtn.addEventListener('click', () => setOpen(false));
         bindTip(openSnapshotBtn);
         this._hydrateOpenWebSnapshotShortcut();
+        this._bindHelperExportTargetControls();
+        this._readHelperExportTargetState()
+          .then(() => this._updateHelperExportTargetControls())
+          .catch(() => this._updateHelperExportTargetControls());
+        this._setupExportTargetStorageListener();
         mhtmlBtn.addEventListener('click', () => this._saveCurrentMhtml(mhtmlBtn));
         mdBtn.addEventListener('click', () => { this._collapsePanel(); this._showMdSettingsPanel(launcher); });
         highlighterBtn.addEventListener('click', () => this._toggleHighlighter(highlighterBtn));
@@ -1527,6 +1861,349 @@
             feedback.textContent = '';
           }, timeoutMs);
         }
+      }
+
+      _normalizeExportTargets(raw = {}) {
+        const source = raw && typeof raw === 'object' ? raw : {};
+        return {
+          local: source.local !== false,
+          webdav: source.webdav === true,
+          github: source.github === true
+        };
+      }
+
+      _resolveCloudTargetAvailability(values = {}) {
+        const source = values && typeof values === 'object' ? values : {};
+        return {
+          webdav: !!(source.serverAddress && source.username && source.password && source.webDAVEnabled === true),
+          github: !!(source.githubRepoToken && source.githubRepoOwner && source.githubRepoName && source.githubRepoEnabled === true)
+        };
+      }
+
+      _applyExportTargetAvailability(targets = this._exportTargets, availability = this._cloudTargetAvailability) {
+        const next = this._normalizeExportTargets(targets);
+        const available = availability && typeof availability === 'object' ? availability : {};
+        if (available.webdav !== true) next.webdav = false;
+        if (available.github !== true) next.github = false;
+        if (!next.local && !next.webdav && !next.github) next.local = true;
+        return next;
+      }
+
+      async _readHelperExportTargetState() {
+        const storage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local ? chrome.storage.local : null;
+        if (!storage) {
+          this._exportTargets = this._applyExportTargetAvailability();
+          return;
+        }
+        const keys = [DEV1_EXPORT_TARGETS_STORAGE_KEY, ...DEV1_CLOUD_CONFIG_KEYS];
+        try {
+          const result = await new Promise(resolve => storage.get(keys, resolve));
+          this._cloudTargetAvailability = this._resolveCloudTargetAvailability(result);
+          this._exportTargets = this._applyExportTargetAvailability(
+            result && result[DEV1_EXPORT_TARGETS_STORAGE_KEY],
+            this._cloudTargetAvailability
+          );
+        } catch (_) {
+          this._cloudTargetAvailability = { webdav: false, github: false };
+          this._exportTargets = this._applyExportTargetAvailability();
+        }
+      }
+
+      async _writeHelperExportTargets(nextTargets) {
+        const storage = typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local ? chrome.storage.local : null;
+        this._exportTargets = this._applyExportTargetAvailability(nextTargets, this._cloudTargetAvailability);
+        this._updateHelperExportTargetControls();
+        if (!storage) return;
+        await new Promise(resolve => {
+          try {
+            storage.set({ [DEV1_EXPORT_TARGETS_STORAGE_KEY]: this._exportTargets }, resolve);
+          } catch (_) {
+            resolve();
+          }
+        });
+      }
+
+      _updateHelperExportTargetControls() {
+        if (!this.shadow) return;
+        const targets = this._applyExportTargetAvailability(this._exportTargets, this._cloudTargetAvailability);
+        this._exportTargets = targets;
+        const defs = [
+          { key: 'local', available: true, label: this.translate('target_local') },
+          { key: 'webdav', available: this._cloudTargetAvailability.webdav === true, label: this.translate('target_webdav') },
+          { key: 'github', available: this._cloudTargetAvailability.github === true, label: this.translate('target_github') }
+        ];
+        defs.forEach((def) => {
+          const input = this.shadow.querySelector(`input[data-helper-export-target="${def.key}"]`);
+          if (!(input instanceof HTMLInputElement)) return;
+          const option = input.closest('.dev1-helper-target-option');
+          input.checked = def.available === true && targets[def.key] === true;
+          input.disabled = def.available !== true;
+          if (option) {
+            option.classList.toggle('is-disabled', def.available !== true);
+            option.setAttribute('title', def.available === true ? def.label : this.translate('export_target_disabled_tip'));
+          }
+        });
+      }
+
+      _bindHelperExportTargetControls() {
+        if (!this.shadow) return;
+        this.shadow.querySelectorAll('input[data-helper-export-target]').forEach((input) => {
+          if (!(input instanceof HTMLInputElement)) return;
+          input.addEventListener('change', async () => {
+            const key = String(input.dataset.helperExportTarget || '').trim();
+            if (!['local', 'webdav', 'github'].includes(key)) return;
+            const next = this._normalizeExportTargets(this._exportTargets);
+            if ((key === 'webdav' || key === 'github') && this._cloudTargetAvailability[key] !== true) {
+              next[key] = false;
+            } else {
+              next[key] = input.checked === true;
+            }
+            await this._writeHelperExportTargets(next);
+            this._setHeaderFeedback(this.translate('export_target_saved'));
+          });
+        });
+      }
+
+      _setupExportTargetStorageListener() {
+        if (this._storageChangeHandler) return;
+        if (!(typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged)) return;
+        this._storageChangeHandler = async (changes, namespace) => {
+          if (namespace !== 'local') return;
+          const changedKeys = Object.keys(changes || {});
+          if (!changedKeys.includes(DEV1_EXPORT_TARGETS_STORAGE_KEY)
+            && !DEV1_CLOUD_CONFIG_KEYS.some(key => changedKeys.includes(key))) {
+            return;
+          }
+          await this._readHelperExportTargetState();
+          this._updateHelperExportTargetControls();
+        };
+        chrome.storage.onChanged.addListener(this._storageChangeHandler);
+      }
+
+      _removeExportTargetStorageListener() {
+        if (!this._storageChangeHandler) return;
+        try {
+          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+            chrome.storage.onChanged.removeListener(this._storageChangeHandler);
+          }
+        } catch (_) { }
+        this._storageChangeHandler = null;
+      }
+
+      _getSaveResultMessage(response, fallbackKey) {
+        const errors = Array.isArray(response && response.errors)
+          ? response.errors.map(item => String(item || '').trim()).filter(Boolean)
+          : [];
+        const targets = response && response.targets && typeof response.targets === 'object'
+          ? response.targets
+          : {};
+        const parts = [];
+        if (targets.local === true) parts.push(this.translate('local_save_success'));
+        if (targets.webdav === true && targets.github === true) {
+          parts.push(this.translate('cloud_save_success'));
+        } else {
+          if (targets.webdav === true) parts.push(this.translate('webdav_save_success'));
+          if (targets.github === true) parts.push(this.translate('github_save_success'));
+        }
+        const separator = this.config.lang === 'en' ? ', ' : '、';
+        const base = parts.length > 0 ? parts.join(separator) : this.translate(fallbackKey);
+        if (errors.length > 0) {
+          const failureParts = this._getSaveFailureParts(errors);
+          const failureText = failureParts.length > 0
+            ? failureParts.join(separator)
+            : this._formatSaveFailureSummary(errors);
+          return `${base}${this.config.lang === 'en' ? '; ' : '，'}${failureText}`;
+        }
+        return base;
+      }
+
+      _formatSaveFailureSummary(errors = []) {
+        const list = Array.isArray(errors) ? errors.map(item => String(item || '').trim()).filter(Boolean) : [];
+        const compact = list.slice(0, 2).map((text) => {
+          const cleaned = text.replace(/\s+/g, ' ');
+          return cleaned.length > 96 ? `${cleaned.slice(0, 96)}...` : cleaned;
+        }).join(this.config.lang === 'en' ? '; ' : '；');
+        if (!compact) return this.translate('save_partial');
+        return this.config.lang === 'en' ? `Failed: ${compact}` : `失败：${compact}`;
+      }
+
+      _getSaveFailureParts(errors = []) {
+        const list = Array.isArray(errors) ? errors.map(item => String(item || '').trim()).filter(Boolean) : [];
+        const failed = new Set();
+        list.forEach((text) => {
+          const lower = text.toLowerCase();
+          if (/^local\s*:/i.test(text) || lower.includes('local download')) failed.add('local');
+          if (/^webdav\s*:/i.test(text) || lower.includes('webdav')) failed.add('webdav');
+          if (/^github\s*:/i.test(text) || lower.includes('github')) failed.add('github');
+          if (/^cloud\s*:/i.test(text) || lower.includes('cloud upload')) failed.add('cloud');
+        });
+        const parts = [];
+        if (failed.has('local')) parts.push(this.translate('local_save_failed'));
+        if (failed.has('webdav')) parts.push(this.translate('webdav_save_failed'));
+        if (failed.has('github')) parts.push(this.translate('github_save_failed'));
+        if (parts.length === 0 && failed.has('cloud')) parts.push(this.translate('cloud_save_failed'));
+        return parts;
+      }
+
+      _getSaveStatusLineTimeout(response) {
+        const errors = Array.isArray(response && response.errors)
+          ? response.errors.map(item => String(item || '').trim()).filter(Boolean)
+          : [];
+        return errors.length > 0 ? 6500 : 2800;
+      }
+
+      _getSaveStatusLineState(response) {
+        const errors = Array.isArray(response && response.errors)
+          ? response.errors.map(item => String(item || '').trim()).filter(Boolean)
+          : [];
+        return errors.length > 0 ? 'warning' : 'success';
+      }
+
+      _ensureSaveStatusLineParts(line) {
+        if (!line) return null;
+        let textEl = line.querySelector('.dev1-helper-save-status-text');
+        let percentEl = line.querySelector('.dev1-helper-save-status-percent');
+        let fillEl = line.querySelector('.dev1-helper-save-progress i');
+        if (!textEl) {
+          line.textContent = '';
+          const row = document.createElement('div');
+          row.className = 'dev1-helper-save-status-row';
+          textEl = document.createElement('span');
+          textEl.className = 'dev1-helper-save-status-text';
+          percentEl = document.createElement('span');
+          percentEl.className = 'dev1-helper-save-status-percent';
+          percentEl.textContent = '0%';
+          const progress = document.createElement('div');
+          progress.className = 'dev1-helper-save-progress';
+          progress.setAttribute('aria-hidden', 'true');
+          fillEl = document.createElement('i');
+          progress.appendChild(fillEl);
+          row.appendChild(textEl);
+          row.appendChild(percentEl);
+          line.appendChild(row);
+          line.appendChild(progress);
+        }
+        return { textEl, percentEl, fillEl };
+      }
+
+      _setSaveStatusLine(message = '', timeoutMs = 0, options = {}) {
+        const line = this.shadow && this.shadow.querySelector('.dev1-helper-target-hint');
+        if (!line) return;
+        if (this._saveStatusLineTimer) {
+          clearTimeout(this._saveStatusLineTimer);
+          this._saveStatusLineTimer = null;
+        }
+        const parts = this._ensureSaveStatusLineParts(line);
+        if (!parts || !parts.textEl) return;
+        const { textEl, percentEl, fillEl } = parts;
+        const state = String(options && options.state || '').trim().toLowerCase();
+        const normalizedState = ['idle', 'saving', 'success', 'warning', 'error'].includes(state) ? state : 'idle';
+        const text = String(message || '').trim();
+        const rawProgress = Number(options && options.progress);
+        const progress = Number.isFinite(rawProgress)
+          ? Math.max(0, Math.min(100, Math.round(rawProgress)))
+          : (normalizedState === 'success' || normalizedState === 'warning' || normalizedState === 'error' ? 100 : 0);
+        textEl.textContent = text;
+        if (percentEl) percentEl.textContent = `${progress}%`;
+        if (fillEl) fillEl.style.width = `${progress}%`;
+        line.dataset.state = normalizedState;
+        line.hidden = !text;
+        const delay = Number(timeoutMs);
+        if (text && Number.isFinite(delay) && delay > 0) {
+          this._saveStatusLineTimer = setTimeout(() => {
+            this._saveStatusLineTimer = null;
+            const currentLine = this.shadow && this.shadow.querySelector('.dev1-helper-target-hint');
+            if (!currentLine) return;
+            const currentText = currentLine.querySelector('.dev1-helper-save-status-text');
+            if (!currentText || currentText.textContent !== text) return;
+            currentLine.dataset.state = 'idle';
+            currentText.textContent = '';
+            const currentPercent = currentLine.querySelector('.dev1-helper-save-status-percent');
+            if (currentPercent) currentPercent.textContent = '0%';
+            const currentFill = currentLine.querySelector('.dev1-helper-save-progress i');
+            if (currentFill) currentFill.style.width = '0%';
+            currentLine.hidden = true;
+          }, Math.max(800, Math.floor(delay)));
+        }
+      }
+
+      _showToast(message = '', timeoutMs = 2600) {
+        if (!this.shadow) return;
+        const text = String(message || '').trim();
+        if (!text) return;
+        if (this._toastTimer) {
+          clearTimeout(this._toastTimer);
+          this._toastTimer = null;
+        }
+        let toast = this.shadow.querySelector('.dev1-helper-toast');
+        if (!toast) {
+          toast = document.createElement('div');
+          toast.className = 'dev1-helper-toast';
+          toast.setAttribute('role', 'status');
+          toast.setAttribute('aria-live', 'polite');
+          this.shadow.appendChild(toast);
+        }
+        toast.textContent = text;
+        toast.dataset.show = 'false';
+        requestAnimationFrame(() => {
+          this._positionToast(toast);
+          toast.dataset.show = 'true';
+        });
+        this._toastTimer = setTimeout(() => {
+          toast.dataset.show = 'false';
+        }, Math.max(800, Number(timeoutMs) || 2600));
+      }
+
+      _positionToast(toast) {
+        if (!toast || !this.shadow) return;
+        const panel = this.shadow.querySelector('.dev1-helper-panel');
+        const launcher = this.shadow.querySelector('.dev1-helper-launcher');
+        const anchor = panel && panel.getBoundingClientRect().width > 0
+          ? panel
+          : launcher;
+        if (!anchor) return;
+        const anchorRect = anchor.getBoundingClientRect();
+        const toastRect = toast.getBoundingClientRect();
+        const gap = 8;
+        const left = Math.max(16, Math.min(
+          window.innerWidth - 16,
+          anchorRect.left + anchorRect.width / 2
+        ));
+        let top = anchorRect.top - toastRect.height - gap;
+        if (top < 10) {
+          top = anchorRect.bottom + gap;
+        }
+        top = Math.max(10, Math.min(window.innerHeight - toastRect.height - 10, top));
+        toast.style.left = `${left}px`;
+        toast.style.top = `${top}px`;
+      }
+
+      _hideForDataPreparation() {
+        this._hideHighlighterLaunchPanel();
+        this._removeRecordingSettingsPanel();
+        this._removeMdSettingsPanel();
+        if (this.host) {
+          this.host.style.display = 'none';
+          this.host.style.visibility = '';
+          this.host.style.pointerEvents = '';
+        }
+      }
+
+      _restoreAfterDataPrepared({ clearTransientDialogs = false } = {}) {
+        if (clearTransientDialogs) {
+          ['screen-record-result-dialog', 'screenshot-result-dialog'].forEach((id) => {
+            try {
+              const el = document.getElementById(id);
+              if (el) el.remove();
+            } catch (_) { }
+          });
+        }
+        if (this.host) {
+          this.host.style.display = '';
+          this.host.style.visibility = '';
+          this.host.style.pointerEvents = '';
+        }
+        this._setPanelOpen(true);
       }
 
       _normalizeHighlighterToolbarUi(value = {}) {
@@ -1763,22 +2440,22 @@
           button.disabled = true;
           if (labelEl) labelEl.textContent = '...';
         }
-        this._setHeaderFeedback(this.translate('mhtml_saving'), 0);
-        const previousVisibility = this.host ? this.host.style.visibility : '';
-        if (this.host) this.host.style.visibility = 'hidden';
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        this._setSaveStatusLine(this.translate('save_status_uploading'), 0, { state: 'saving', progress: 55 });
+        this._hideForDataPreparation();
         try {
           const response = await sendRuntimeMessage({
             action: 'dev1SnapshotHelperSaveCurrentMhtml',
             lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
             item: this.config
-          }, 120000);
+          }, 90000);
           if (!response || response.success !== true) throw new Error(response?.error || 'MHTML save failed');
-          this._setHeaderFeedback(this.translate('mhtml_saved'));
+          const message = this._getSaveResultMessage(response, 'mhtml_saved');
+          this._setSaveStatusLine(message, this._getSaveStatusLineTimeout(response), { state: this._getSaveStatusLineState(response), progress: 100 });
         } catch (error) {
-          this._setHeaderFeedback(`${this.translate('mhtml_failed')}: ${error?.message || error}`, 5000);
+          const message = `${this.translate('mhtml_failed')}: ${error?.message || error}`;
+          this._setSaveStatusLine(message, 6500, { state: 'error', progress: 100 });
         } finally {
-          if (this.host) this.host.style.visibility = previousVisibility;
+          this._restoreAfterDataPrepared();
           if (button) {
             button.disabled = false;
             if (labelEl) {
@@ -1797,22 +2474,22 @@
           button.disabled = true;
           if (labelEl) labelEl.textContent = '...';
         }
-        this._setHeaderFeedback(this.translate('md_saving'), 0);
-        const previousVisibility = this.host ? this.host.style.visibility : '';
-        if (this.host) this.host.style.visibility = 'hidden';
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        this._setSaveStatusLine(this.translate('save_status_uploading'), 0, { state: 'saving', progress: 55 });
+        this._hideForDataPreparation();
         try {
           const response = await sendRuntimeMessage({
             action: 'dev1SnapshotHelperSaveCurrentMd',
             lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
             item: this.config
-          }, 120000);
+          }, 60000);
           if (!response || response.success !== true) throw new Error(response?.error || 'Markdown save failed');
-          this._setHeaderFeedback(this.translate('md_saved'));
+          const message = this._getSaveResultMessage(response, 'md_saved');
+          this._setSaveStatusLine(message, this._getSaveStatusLineTimeout(response), { state: this._getSaveStatusLineState(response), progress: 100 });
         } catch (error) {
-          this._setHeaderFeedback(`${this.translate('md_failed')}: ${error?.message || error}`, 5000);
+          const message = `${this.translate('md_failed')}: ${error?.message || error}`;
+          this._setSaveStatusLine(message, 6500, { state: 'error', progress: 100 });
         } finally {
-          if (this.host) this.host.style.visibility = previousVisibility;
+          this._restoreAfterDataPrepared();
           if (button) {
             button.disabled = false;
             if (labelEl) {
@@ -1947,20 +2624,83 @@
       async _saveBlob(blob, kind, extension, mimeType) {
         const url = URL.createObjectURL(blob);
         try {
+          let contentBase64Binary = '';
+          this._setSaveStatusLine(this.translate('save_status_preparing'), 0, { state: 'saving', progress: 15 });
+          try {
+            const shouldAttachPayload = await this._shouldAttachCloudPayloadForSave(blob);
+            if (shouldAttachPayload) {
+              contentBase64Binary = await this._blobToBase64(blob);
+            }
+          } catch (_) { }
+          this._restoreAfterDataPrepared({ clearTransientDialogs: true });
+          this._setSaveStatusLine(this.translate('save_status_uploading'), 0, { state: 'saving', progress: 55 });
           const response = await sendRuntimeMessage({
             action: 'dev1SnapshotHelperDownloadBlob',
             url,
+            contentBase64Binary,
+            contentSize: Number.isFinite(Number(blob && blob.size)) ? Number(blob.size) : null,
             kind,
             extension,
             lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
             mimeType: mimeType || blob.type || 'application/octet-stream',
             item: this.config
-          }, 120000);
+          }, this._getBlobSaveMessageTimeoutMs(blob));
           if (!response || response.success !== true) throw new Error(response?.error || 'Download failed');
+          const message = this._getSaveResultMessage(response, 'save_done');
+          this._setSaveStatusLine(message, this._getSaveStatusLineTimeout(response), { state: this._getSaveStatusLineState(response), progress: 100 });
+          this._restoreAfterDataPrepared();
           return response;
+        } catch (error) {
+          const message = `${this.translate('screenshot_failed')}: ${error?.message || error}`;
+          this._setSaveStatusLine(message, 6500, { state: 'error', progress: 100 });
+          throw error;
         } finally {
           setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) { } }, 600000);
         }
+      }
+
+      async _shouldAttachCloudPayloadForSave(blob = null) {
+        try {
+          const storageApi = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local)
+            ? chrome.storage.local
+            : null;
+          if (!storageApi) return false;
+          const result = await new Promise(resolve => storageApi.get([DEV1_EXPORT_TARGETS_STORAGE_KEY], resolve));
+          const targets = result && result[DEV1_EXPORT_TARGETS_STORAGE_KEY];
+          if (!targets || typeof targets !== 'object') return false;
+          if (targets.webdav === true) return true;
+          if (targets.github === true) {
+            const size = Number(blob && blob.size);
+            return !Number.isFinite(size) || size <= DEV1_GITHUB_REPO_RECOMMENDED_FILE_LIMIT_BYTES;
+          }
+          return false;
+        } catch (_) {
+          return false;
+        }
+      }
+
+      _getBlobSaveMessageTimeoutMs(blob = null) {
+        const size = Number(blob && blob.size);
+        if (!Number.isFinite(size) || size <= DEV1_LARGE_HELPER_UPLOAD_THRESHOLD_BYTES) return 60000;
+        const extraMiB = (size - DEV1_LARGE_HELPER_UPLOAD_THRESHOLD_BYTES) / (1024 * 1024);
+        return Math.max(60000, Math.min(180000, 60000 + Math.ceil(extraMiB * 2500)));
+      }
+
+      async _blobToBase64(blob) {
+        if (!(blob instanceof Blob)) return '';
+        const dataUrl = await new Promise((resolve, reject) => {
+          try {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('Failed to read blob'));
+            reader.onabort = () => reject(new Error('Blob read aborted'));
+            reader.readAsDataURL(blob);
+          } catch (error) {
+            reject(error);
+          }
+        });
+        const commaIndex = dataUrl.indexOf(',');
+        return commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
       }
 
       show(config) {
@@ -2004,6 +2744,7 @@
 
       destroy() {
         this._removeUrlChangeListener();
+        this._removeExportTargetStorageListener();
         if (typeof this.activeSessionCleanup === 'function') {
           try { this.activeSessionCleanup(); } catch (_) { }
           this.activeSessionCleanup = null;
@@ -2015,6 +2756,10 @@
         if (this._headerFeedbackTimer) {
           clearTimeout(this._headerFeedbackTimer);
           this._headerFeedbackTimer = null;
+        }
+        if (this._saveStatusLineTimer) {
+          clearTimeout(this._saveStatusLineTimer);
+          this._saveStatusLineTimer = null;
         }
         this._hideHighlighterLaunchPanel();
         this._removeRecordingSettingsPanel();
@@ -4377,10 +5122,12 @@
 
       // 下载按钮 - 下载后也清理缓存
       actions.appendChild(createBtn(t('save_and_clear_cache', '保存并删除缓存'), async () => {
+        this._hideForDataPreparation();
         try {
           await this._saveBlob(blob, 'screen_recording', mimeType.includes('mp4') ? 'mp4' : 'webm', mimeType);
           setTimeout(cleanup, 500);
         } catch (error) {
+          this._restoreAfterDataPrepared();
           alert(`${t('screen_record_error', '录屏失败')}: ${error.message || error}`);
         }
       }, true));
@@ -9875,6 +10622,7 @@
       }));
 
       actions.appendChild(createBtn((this.t && this.t('save_and_clear_cache')) || '保存并删除缓存', async () => {
+        this._hideForDataPreparation();
         try {
           if (activeInput) {
             commitTextInput(activeInput, activeInput._canvasX, activeInput._canvasY);
@@ -9883,6 +10631,7 @@
           await this._saveBlob(blob, kind, 'png', 'image/png');
           setTimeout(cleanup, 500);
         } catch (error) {
+          this._restoreAfterDataPrepared();
           alert(((this.t && this.t('screenshot_failed')) || 'Screenshot failed') + ': ' + (error.message || error));
         }
       }, true));

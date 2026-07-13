@@ -8153,8 +8153,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const webdavRootFolderNoticeStrings = {
-        'zh_CN': "⚠️ <b>提示</b>：部分 WebDAV 服务商可能限制第三方应用自动在根目录创建文件夹。可先点击下方的 <b>“测试：连接与创建文件夹”</b> 按钮进行检测。若提示创建失败，请手动登录网盘并在根目录创建一个名为 <b>“书签备份”</b> 的文件夹。",
-        'en': "⚠️ <b>Tip</b>: Some WebDAV providers restrict third-party apps from automatically creating folders in the root directory. You can click the <b>\"Test: Connection & Folder Creation\"</b> button below to diagnose. If it fails, please manually create a folder named <b>\"Bookmark Backup\"</b> in the root directory."
+        'zh_CN': "⚠️ <b>提示</b>：可先点击下方的 <b>“测试：连接与创建文件夹”</b>，检测当前 WebDAV 配置能否创建存储目录。若创建失败，请更换 WebDAV 服务，或改用其他云端备份或本地备份。",
+        'en': "⚠️ <b>Tip</b>: Click <b>\"Test: Connection & Folder Creation\"</b> below to check whether the current WebDAV configuration can create storage folders. If creation fails, use another WebDAV service, another cloud backup target, or local backup."
     };
 
     // 云端2：GitHub Repository 配置部分

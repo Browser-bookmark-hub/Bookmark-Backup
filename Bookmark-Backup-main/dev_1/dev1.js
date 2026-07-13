@@ -14,7 +14,18 @@
     const DEV1_SNAPSHOT_HELPER_STORAGE_KEY = 'dev1_experiment_snapshot_helper_enabled_v1';
     const DEV1_SNAPSHOT_MHTML_FORMAT_STORAGE_KEY = 'dev1_experiment_snapshot_mhtml_format_enabled_v1';
     const DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY = 'dev1_experiment_snapshot_md_format_enabled_v1';
+    const DEV1_EXPORT_TARGETS_STORAGE_KEY = 'dev1_experiment_export_targets_v1';
     const DEV1_REVIEW_WINDOW_EVENT_KEY = 'dev1ReviewWindowEventV1';
+    const DEV1_CLOUD_TARGET_CONFIG_KEYS = [
+        'serverAddress',
+        'username',
+        'password',
+        'webDAVEnabled',
+        'githubRepoToken',
+        'githubRepoOwner',
+        'githubRepoName',
+        'githubRepoEnabled'
+    ];
 
     const runtimeApi = (typeof chrome !== 'undefined' && chrome.runtime)
         ? chrome
@@ -194,6 +205,15 @@
         snapshotHelperTargetFolder: '',
         snapshotMhtmlFormatEnabled: true,
         snapshotMdFormatEnabled: true,
+        exportTargets: {
+            local: true,
+            webdav: false,
+            github: false
+        },
+        cloudTargetAvailability: {
+            webdav: false,
+            github: false
+        },
         queueBatchSize: QUEUE_BATCH_SIZE_DEFAULT,
         queueColumnWidths: null,
         queueBatchIndex: 0,
@@ -281,6 +301,10 @@
             runPauseFailed: '暂停失败',
             runCancelFailed: '撤销失败',
             runControlNoActive: '当前没有正在执行的抓取任务。',
+            localSaveSuccess: '本地下载成功',
+            webdavSaveSuccess: '云端1上传成功',
+            githubSaveSuccess: '云端2上传成功',
+            cloudSaveSuccess: '云端1、2上传成功',
             dimBookmark: '书签',
             dimFolder: '书签树',
             dimCurrentChanges: '当前变化',
@@ -296,6 +320,12 @@
             scopeRefreshingCurrentChanges: '正在刷新当前变化...',
             exportFormats: '导出格式',
             exportTypesLabel: '导出类型',
+            exportTargetsLabel: '保存位置',
+            targetLocal: '本地',
+            targetWebdav: '云端1: WebDAV',
+            targetGithub: '云端2: GitHub',
+            exportTargetDisabledTip: '请先在主界面的对应云端配置中保存并启用。',
+            webdavDirectoryWarning: '网页快照会自动创建存储目录；若当前云盘不允许创建目录，上传可能失败，请更换 WebDAV 服务，或改用其他云端备份或本地备份。',
             mhtmlLoadedHint: 'MHTML 使用 Chrome 官方 pageCapture.saveAsMHTML API，仅保存抓取时已加载内容；未渲染或懒加载区域可能缺失。',
             mdLoadedHint: 'MD 基于 Obsidian Clipper 的开源算法，转换当前页面为 Markdown。',
             exportHelp: '导出配置：固定导出 MHTML / MD 文件到网页快照文件夹；不再生成 ZIP。复核列表由队列批大小控制。',
@@ -414,7 +444,7 @@
             snapshotHelperLabel: '辅助工具',
             snapshotHelperTip: '勾选后，会按当前队列已打开页面的 Tab ID 注入辅助工具：区域截图、长截图、屏幕录制、MHTML / MD 高亮工具。（若队列是从「所有窗口Tab页面」的则不会注入。）',
             snapshotHelperHintLine1: '辅助工具：区域截图、长截图、屏幕录制、MHTML / MD 高亮工具。',
-            snapshotHelperHintLine2: '保存位置：当次网页快照时间戳目录。（若队列是从「所有窗口Tab页面」的则不会注入。）',
+            snapshotHelperHintLine2: '保存位置：按所选本地 / 云端1 / 云端2 保存到当次网页快照时间戳目录；MD 通常较小，适合云端备份。（若队列来自「所有窗口Tab页面」则不会注入辅助工具。）',
             snapshotHelperShortcutHint: '也可以通过快捷键「{shortcut}」直接在任意页面打开/关闭工具箱。',
             snapshotHelperStorageHint: '辅助工具所做的用户修改暂存于本地，当对应标签页(tabid)关闭或浏览器重启时，相关缓存数据将自动释放。',
             archiveOrgLabel: '其他存档链接：',
@@ -423,6 +453,7 @@
             snapshotHelperPartialStatus: '部分页面未能启用辅助工具',
             snapshotHelperFailed: '辅助工具启用失败',
             runBlockedNoFormat: '请至少选择一种导出格式。',
+            runBlockedNoTarget: '请至少选择一个保存位置。',
             runBlockedNoQueue: '当前没有可执行的 URL。',
             colIndex: '#',
             colOps: '操作',
@@ -499,6 +530,10 @@
             runPauseFailed: 'Pause failed',
             runCancelFailed: 'Cancel failed',
             runControlNoActive: 'No capture task is currently running.',
+            localSaveSuccess: 'Local download complete',
+            webdavSaveSuccess: 'Cloud 1 upload complete',
+            githubSaveSuccess: 'Cloud 2 upload complete',
+            cloudSaveSuccess: 'Cloud 1 and 2 uploads complete',
             dimBookmark: 'Bookmark',
             dimFolder: 'Bookmark Tree',
             dimCurrentChanges: 'Current Changes',
@@ -514,6 +549,12 @@
             scopeRefreshingCurrentChanges: 'Refreshing Current Changes...',
             exportFormats: 'Export Formats',
             exportTypesLabel: 'Format Types',
+            exportTargetsLabel: 'Save To',
+            targetLocal: 'Local',
+            targetWebdav: 'Cloud 1: WebDAV',
+            targetGithub: 'Cloud 2: GitHub',
+            exportTargetDisabledTip: 'Save and enable this cloud target in the main popup first.',
+            webdavDirectoryWarning: 'Web Snapshot creates storage folders automatically. If the current provider does not allow folder creation, uploads may fail; use another WebDAV service, another cloud backup target, or local backup.',
             mhtmlLoadedHint: 'MHTML uses Chrome\'s official pageCapture.saveAsMHTML API and saves only content loaded at capture time; unloaded or lazy-loaded regions may be missing.',
             mdLoadedHint: 'MD uses the open-source algorithm from Obsidian Clipper to convert the current page to Markdown.',
             exportHelp: 'Export setup: MHTML/MD files are written directly to the Web Snapshot folder; ZIP output is no longer generated. Review lists still follow the queue batch size.',
@@ -632,7 +673,7 @@
             snapshotHelperLabel: 'Helper Tools',
             snapshotHelperTip: 'When checked, helper tools are injected by opened queue tab IDs: area screenshot, long screenshot, screen recording, and MHTML / MD highlight tools. (Queues from "All Window Tabs" are not injected.)',
             snapshotHelperHintLine1: 'Helper tools: area screenshot, long screenshot, screen recording, and MHTML / MD highlight tools.',
-            snapshotHelperHintLine2: 'Save location: the current web-snapshot timestamp folder. (Queues from "All Window Tabs" are not injected.)',
+            snapshotHelperHintLine2: 'Save location: selected Local / Cloud 1 / Cloud 2 targets under the current web-snapshot timestamp folder; Markdown is usually small and suitable for cloud backup. (Queues from "All Window Tabs" do not inject helper tools.)',
             snapshotHelperShortcutHint: 'You can also press "{shortcut}" on any page to open/close the toolbox directly.',
             snapshotHelperStorageHint: 'User modifications in helper tools are stored locally and will be automatically released when the corresponding tab (tabid) is closed or the browser is restarted.',
             archiveOrgLabel: 'Other archive link: ',
@@ -641,6 +682,7 @@
             snapshotHelperPartialStatus: 'Some pages could not enable helper tools',
             snapshotHelperFailed: 'Failed to enable helper tools',
             runBlockedNoFormat: 'Pick at least one export format.',
+            runBlockedNoTarget: 'Pick at least one export target.',
             runBlockedNoQueue: 'No URLs available to run.',
             colIndex: '#',
             colOps: 'Ops',
@@ -1048,6 +1090,33 @@
         return value;
     }
 
+    function normalizeExportTargets(raw) {
+        const source = raw && typeof raw === 'object' ? raw : {};
+        return {
+            local: source.local !== false,
+            webdav: source.webdav === true,
+            github: source.github === true
+        };
+    }
+
+    function resolveCloudTargetAvailability(data = {}) {
+        const values = data && typeof data === 'object' ? data : {};
+        return {
+            webdav: !!(values.serverAddress && values.username && values.password && values.webDAVEnabled === true),
+            github: !!(values.githubRepoToken && values.githubRepoOwner && values.githubRepoName && values.githubRepoEnabled === true)
+        };
+    }
+
+    function applyCloudTargetAvailability() {
+        state.exportTargets = normalizeExportTargets(state.exportTargets);
+        const availability = state.cloudTargetAvailability || {};
+        if (availability.webdav !== true) state.exportTargets.webdav = false;
+        if (availability.github !== true) state.exportTargets.github = false;
+        if (!state.exportTargets.local && !state.exportTargets.webdav && !state.exportTargets.github) {
+            state.exportTargets.local = true;
+        }
+    }
+
     function normalizeWhitelistRuleKeys(raw, normalizeFn) {
         const set = new Set();
         if (!Array.isArray(raw) || typeof normalizeFn !== 'function') return set;
@@ -1070,7 +1139,9 @@
             DEV1_REVIEW_AUTO_REVIEW_MS_STORAGE_KEY,
             DEV1_SNAPSHOT_HELPER_STORAGE_KEY,
             DEV1_SNAPSHOT_MHTML_FORMAT_STORAGE_KEY,
-            DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY
+            DEV1_SNAPSHOT_MD_FORMAT_STORAGE_KEY,
+            DEV1_EXPORT_TARGETS_STORAGE_KEY,
+            ...DEV1_CLOUD_TARGET_CONFIG_KEYS
         ];
 
         let results = {};
@@ -1169,7 +1240,25 @@
             state.snapshotMdFormatEnabled = false;
         }
 
-        // 8. Review Session
+        // 8. Export Targets
+        try {
+            const targetVal = getStoredValue(DEV1_EXPORT_TARGETS_STORAGE_KEY);
+            let parsedTargets = targetVal;
+            if (typeof targetVal === 'string') {
+                try {
+                    parsedTargets = JSON.parse(targetVal);
+                } catch (_) { }
+            }
+            state.exportTargets = normalizeExportTargets(parsedTargets);
+            state.cloudTargetAvailability = resolveCloudTargetAvailability(results || {});
+            applyCloudTargetAvailability();
+        } catch (_) {
+            state.exportTargets = normalizeExportTargets({});
+            state.cloudTargetAvailability = resolveCloudTargetAvailability(results || {});
+            applyCloudTargetAvailability();
+        }
+
+        // 9. Review Session
         try {
             const reviewVal = getStoredValue(DEV1_REVIEW_STORAGE_KEY);
             let parsedReview = null;
@@ -1181,7 +1270,7 @@
             state.reviewSession = createEmptyReviewSession();
         }
 
-        // 9. Whitelist
+        // 10. Whitelist
         try {
             const whitelistVal = getStoredValue(DEV1_WHITELIST_STORAGE_KEY);
             let parsedWhitelist = null;
@@ -1637,6 +1726,95 @@
         persistSnapshotMdFormatEnabled();
         const input = document.getElementById('dev1FormatMdCheckbox');
         if (input instanceof HTMLInputElement) input.checked = state.snapshotMdFormatEnabled === true;
+    }
+
+    function loadSavedExportTargets() {
+        // Handled by loadAllSavedStates()
+    }
+
+    function persistExportTargets() {
+        try {
+            if (runtimeApi?.storage?.local) {
+                runtimeApi.storage.local.set({ [DEV1_EXPORT_TARGETS_STORAGE_KEY]: normalizeExportTargets(state.exportTargets) });
+            }
+        } catch (_) { }
+    }
+
+    async function refreshCloudTargetAvailability() {
+        if (!runtimeApi?.storage?.local) {
+            state.cloudTargetAvailability = { webdav: false, github: false };
+            applyCloudTargetAvailability();
+            return state.cloudTargetAvailability;
+        }
+
+        try {
+            const values = await new Promise(resolve => {
+                runtimeApi.storage.local.get(DEV1_CLOUD_TARGET_CONFIG_KEYS, resolve);
+            });
+            state.cloudTargetAvailability = resolveCloudTargetAvailability(values || {});
+        } catch (_) {
+            state.cloudTargetAvailability = { webdav: false, github: false };
+        }
+        applyCloudTargetAvailability();
+        return state.cloudTargetAvailability;
+    }
+
+    function getSelectedExportTargets() {
+        const localInput = document.getElementById('dev1TargetLocalCheckbox');
+        const webdavInput = document.getElementById('dev1TargetWebdavCheckbox');
+        const githubInput = document.getElementById('dev1TargetGithubCheckbox');
+        const availability = state.cloudTargetAvailability || {};
+        const targets = normalizeExportTargets({
+            local: localInput instanceof HTMLInputElement ? localInput.checked === true : state.exportTargets.local,
+            webdav: webdavInput instanceof HTMLInputElement ? webdavInput.checked === true : state.exportTargets.webdav,
+            github: githubInput instanceof HTMLInputElement ? githubInput.checked === true : state.exportTargets.github
+        });
+        if (availability.webdav !== true) targets.webdav = false;
+        if (availability.github !== true) targets.github = false;
+        return targets;
+    }
+
+    function hasAnyExportTarget(targets = getSelectedExportTargets()) {
+        return !!(targets && (targets.local || targets.webdav || targets.github));
+    }
+
+    function setSnapshotExportTargetEnabled(targetKey, enabled) {
+        const key = String(targetKey || '').trim();
+        if (!['local', 'webdav', 'github'].includes(key)) return;
+        state.exportTargets = normalizeExportTargets(state.exportTargets);
+        if ((key === 'webdav' || key === 'github') && state.cloudTargetAvailability?.[key] !== true) {
+            state.exportTargets[key] = false;
+        } else {
+            state.exportTargets[key] = enabled === true;
+        }
+        applyCloudTargetAvailability();
+        persistExportTargets();
+        updateExportTargetControlState();
+    }
+
+    function updateExportTargetControlState() {
+        const targets = normalizeExportTargets(state.exportTargets);
+        const availability = state.cloudTargetAvailability || {};
+        const disabledTip = t('exportTargetDisabledTip');
+        const runIsActive = state.running || String(state.captureRunState?.status || '').toLowerCase() === 'running';
+        const controlDefs = [
+            { key: 'local', id: 'dev1TargetLocalCheckbox', available: true, title: t('targetLocal') },
+            { key: 'webdav', id: 'dev1TargetWebdavCheckbox', available: availability.webdav === true, title: t('targetWebdav') },
+            { key: 'github', id: 'dev1TargetGithubCheckbox', available: availability.github === true, title: t('targetGithub') }
+        ];
+
+        controlDefs.forEach((def) => {
+            const input = document.getElementById(def.id);
+            if (!(input instanceof HTMLInputElement)) return;
+            const label = input.closest('.dev1-check-inline');
+            input.disabled = runIsActive || def.available !== true;
+            input.checked = def.available === true && targets[def.key] === true;
+            input.title = def.available === true ? def.title : disabledTip;
+            if (label instanceof HTMLElement) {
+                label.classList.toggle('disabled', runIsActive || def.available !== true);
+                label.title = input.title;
+            }
+        });
     }
 
     function isSnapshotHelperEnabled() {
@@ -5607,6 +5785,96 @@
             });
         }
 
+        const targetLocalCheckbox = root.querySelector('#dev1TargetLocalCheckbox');
+        if (targetLocalCheckbox instanceof HTMLInputElement) {
+            targetLocalCheckbox.checked = state.exportTargets.local === true;
+            targetLocalCheckbox.addEventListener('change', () => {
+                setSnapshotExportTargetEnabled('local', targetLocalCheckbox.checked === true);
+            });
+        }
+
+        const targetWebdavCheckbox = root.querySelector('#dev1TargetWebdavCheckbox');
+        if (targetWebdavCheckbox instanceof HTMLInputElement) {
+            targetWebdavCheckbox.checked = state.exportTargets.webdav === true && state.cloudTargetAvailability.webdav === true;
+            targetWebdavCheckbox.disabled = state.cloudTargetAvailability.webdav !== true;
+            targetWebdavCheckbox.addEventListener('change', () => {
+                setSnapshotExportTargetEnabled('webdav', targetWebdavCheckbox.checked === true);
+            });
+        }
+
+        const targetGithubCheckbox = root.querySelector('#dev1TargetGithubCheckbox');
+        if (targetGithubCheckbox instanceof HTMLInputElement) {
+            targetGithubCheckbox.checked = state.exportTargets.github === true && state.cloudTargetAvailability.github === true;
+            targetGithubCheckbox.disabled = state.cloudTargetAvailability.github !== true;
+            targetGithubCheckbox.addEventListener('change', () => {
+                setSnapshotExportTargetEnabled('github', targetGithubCheckbox.checked === true);
+            });
+        }
+        const webdavWarningBtn = root.querySelector('#dev1WebdavWarningBtn');
+        const webdavWarningPopover = root.querySelector('#dev1WebdavWarningPopover');
+        if (webdavWarningBtn instanceof HTMLButtonElement && webdavWarningPopover instanceof HTMLElement) {
+            let webdavWarningPinned = false;
+            let webdavWarningHideTimer = null;
+            const hideWebdavWarning = () => {
+                if (webdavWarningHideTimer) {
+                    clearTimeout(webdavWarningHideTimer);
+                    webdavWarningHideTimer = null;
+                }
+                webdavWarningPinned = false;
+                webdavWarningPopover.hidden = true;
+                webdavWarningBtn.setAttribute('aria-expanded', 'false');
+            };
+            const showWebdavWarning = (pinned = false) => {
+                if (webdavWarningHideTimer) {
+                    clearTimeout(webdavWarningHideTimer);
+                    webdavWarningHideTimer = null;
+                }
+                webdavWarningPinned = pinned === true;
+                const rect = webdavWarningBtn.getBoundingClientRect();
+                webdavWarningPopover.hidden = false;
+                const popoverWidth = Math.min(320, Math.max(180, window.innerWidth - 28));
+                const left = Math.min(Math.max(14, rect.left + rect.width / 2 - popoverWidth / 2), window.innerWidth - popoverWidth - 14);
+                const top = Math.min(rect.bottom + 8, window.innerHeight - 120);
+                webdavWarningPopover.style.left = `${Math.max(14, left)}px`;
+                webdavWarningPopover.style.top = `${Math.max(14, top)}px`;
+                webdavWarningBtn.setAttribute('aria-expanded', 'true');
+            };
+            const scheduleWebdavWarningHide = () => {
+                if (webdavWarningPinned) return;
+                if (webdavWarningHideTimer) clearTimeout(webdavWarningHideTimer);
+                webdavWarningHideTimer = setTimeout(hideWebdavWarning, 120);
+            };
+            webdavWarningBtn.addEventListener('mouseenter', () => showWebdavWarning(false));
+            webdavWarningBtn.addEventListener('mouseleave', scheduleWebdavWarningHide);
+            webdavWarningBtn.addEventListener('focus', () => showWebdavWarning(false));
+            webdavWarningBtn.addEventListener('blur', scheduleWebdavWarningHide);
+            webdavWarningBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (!webdavWarningPopover.hidden && webdavWarningPinned) {
+                    hideWebdavWarning();
+                } else {
+                    showWebdavWarning(true);
+                }
+            });
+            webdavWarningPopover.addEventListener('mouseenter', () => {
+                if (webdavWarningHideTimer) {
+                    clearTimeout(webdavWarningHideTimer);
+                    webdavWarningHideTimer = null;
+                }
+            });
+            webdavWarningPopover.addEventListener('mouseleave', scheduleWebdavWarningHide);
+            document.addEventListener('click', (event) => {
+                if (webdavWarningPopover.hidden) return;
+                const target = event.target;
+                if (target === webdavWarningBtn || target === webdavWarningPopover || webdavWarningPopover.contains(target)) return;
+                hideWebdavWarning();
+            });
+            window.addEventListener('resize', hideWebdavWarning);
+            window.addEventListener('scroll', hideWebdavWarning, true);
+        }
+        updateExportTargetControlState();
+
         const openReviewBtn = root.querySelector('#dev1OpenReviewBtn');
         if (openReviewBtn) {
             openReviewBtn.addEventListener('click', async () => {
@@ -6793,6 +7061,7 @@
                 || queueCount <= 0;
         }
         updateQueueBatchSizeControlState();
+        updateExportTargetControlState();
     }
 
     function isUserPausedCaptureState(runState) {
@@ -6800,6 +7069,22 @@
         const status = String(runState.status || '').trim().toLowerCase();
         const reason = String(runState.interruptedReason || '').trim().toLowerCase();
         return status === 'interrupted' && reason === 'paused_by_user' && runState.resumable === true;
+    }
+
+    function getRunTargetResultMessage(response) {
+        const targets = response && response.targets && typeof response.targets === 'object'
+            ? response.targets
+            : {};
+        const parts = [];
+        if (targets.local === true) parts.push(t('localSaveSuccess'));
+        if (targets.webdav === true && targets.github === true) {
+            parts.push(t('cloudSaveSuccess'));
+        } else {
+            if (targets.webdav === true) parts.push(t('webdavSaveSuccess'));
+            if (targets.github === true) parts.push(t('githubSaveSuccess'));
+        }
+        if (parts.length === 0) return '';
+        return parts.join(getLangKey() === 'en' ? ', ' : '、');
     }
 
     function applyRunResponseStatus(response, doneTextKey) {
@@ -6813,7 +7098,9 @@
             setStatus(t('runCancelled'), 'warning');
             return;
         }
-        setStatus(`${t(doneTextKey)} (${t('statusOk')}: ${response?.summary?.successCount || 0}, ${t('statusPartial')}: ${response?.summary?.partialCount || 0}, ${t('statusFail')}: ${response?.summary?.failureCount || 0})`, 'success');
+        const summaryText = `${t(doneTextKey)} (${t('statusOk')}: ${response?.summary?.successCount || 0}, ${t('statusPartial')}: ${response?.summary?.partialCount || 0}, ${t('statusFail')}: ${response?.summary?.failureCount || 0})`;
+        const targetText = getRunTargetResultMessage(response);
+        setStatus(targetText ? `${summaryText}${getLangKey() === 'en' ? '; ' : '；'}${targetText}` : summaryText, 'success');
     }
 
     function hasRunDownloadEvidence(response) {
@@ -6893,6 +7180,11 @@
         const formats = getSelectedFormats();
         if (!formats.mhtml && !formats.md) {
             setStatus(t('runBlockedNoFormat'), 'error');
+            return;
+        }
+        const exportTargets = getSelectedExportTargets();
+        if (!hasAnyExportTarget(exportTargets)) {
+            setStatus(t('runBlockedNoTarget'), 'error');
             return;
         }
 
@@ -7005,7 +7297,8 @@
                     renderWaitMs: 1300,
                     captureMode,
                     exportMode,
-                    batchSize
+                    batchSize,
+                    exportTargets
                 }
             }, Math.max(180000, items.length * 30000));
 
@@ -7038,6 +7331,11 @@
         if (state.running) return;
 
         const formats = getSelectedFormats();
+        const exportTargets = getSelectedExportTargets();
+        if (!hasAnyExportTarget(exportTargets)) {
+            setStatus(t('runBlockedNoTarget'), 'error');
+            return;
+        }
         const captureMode = getSelectedCaptureMode();
         const exportMode = getSelectedExportMode();
         const batchSize = getQueueBatchSize();
@@ -7059,7 +7357,8 @@
                     maxRetries: 1,
                     captureMode,
                     exportMode,
-                    batchSize
+                    batchSize,
+                    exportTargets
                 }
             }, Math.max(180000, getExecutionQueueItems().length * 30000));
 
@@ -7343,6 +7642,26 @@
                             </label>
                         </div>
                     </div>
+                    <div class="dev1-format-row dev1-export-inline-row">
+                        <span class="dev1-export-inline-label">${escapeHtml(t('exportTargetsLabel'))}</span>
+                        <div class="dev1-format-fixed dev1-target-fixed">
+                            <label class="dev1-check-inline dev1-export-target-toggle" title="${escapeHtml(t('targetLocal'))}">
+                                <input id="dev1TargetLocalCheckbox" type="checkbox" ${state.exportTargets.local ? 'checked' : ''}>
+                                <span>${escapeHtml(t('targetLocal'))}</span>
+                            </label>
+                            <span class="dev1-webdav-target-wrap">
+                                <label class="dev1-check-inline dev1-export-target-toggle ${state.cloudTargetAvailability.webdav === true ? '' : 'disabled'}" title="${escapeHtml(state.cloudTargetAvailability.webdav === true ? t('targetWebdav') : t('exportTargetDisabledTip'))}">
+                                    <input id="dev1TargetWebdavCheckbox" type="checkbox" ${state.exportTargets.webdav && state.cloudTargetAvailability.webdav === true ? 'checked' : ''} ${state.cloudTargetAvailability.webdav === true ? '' : 'disabled'}>
+                                    <span>${escapeHtml(t('targetWebdav'))}</span>
+                                </label>
+                                <button id="dev1WebdavWarningBtn" class="dev1-webdav-warning-btn" type="button" aria-label="${escapeHtml(t('webdavDirectoryWarning'))}" aria-expanded="false" data-tooltip="${escapeHtml(t('webdavDirectoryWarning'))}">⚠️</button>
+                            </span>
+                            <label class="dev1-check-inline dev1-export-target-toggle ${state.cloudTargetAvailability.github === true ? '' : 'disabled'}" title="${escapeHtml(state.cloudTargetAvailability.github === true ? t('targetGithub') : t('exportTargetDisabledTip'))}">
+                                <input id="dev1TargetGithubCheckbox" type="checkbox" ${state.exportTargets.github && state.cloudTargetAvailability.github === true ? 'checked' : ''} ${state.cloudTargetAvailability.github === true ? '' : 'disabled'}>
+                                <span>${escapeHtml(t('targetGithub'))}</span>
+                            </label>
+                        </div>
+                    </div>
                     <div class="dev1-format-row dev1-export-inline-row dev1-snapshot-helper-row">
                         <span class="dev1-export-inline-label">${escapeHtml(t('snapshotHelperLabel'))}</span>
                         <label class="dev1-check-inline dev1-snapshot-helper-toggle" title="${escapeHtml(t('snapshotHelperTip'))}">
@@ -7350,6 +7669,7 @@
                             <span>${escapeHtml(t('snapshotHelperLabel'))}</span>
                         </label>
                     </div>
+                    <div id="dev1WebdavWarningPopover" class="dev1-webdav-warning-popover" role="tooltip" hidden>${escapeHtml(t('webdavDirectoryWarning'))}</div>
                     <div id="dev1ExportFormatHintRow" class="dev1-format-row dev1-export-note-row" ${isSnapshotMhtmlFormatEnabled() || isSnapshotMdFormatEnabled() ? '' : 'hidden'}>
                         <div class="dev1-export-note">
                             <i class="fas fa-info-circle"></i>
@@ -7504,6 +7824,7 @@
         if (!root) return;
 
         await loadAllSavedStates();
+        await refreshCloudTargetAvailability();
         renderLayout(root);
         bindRootEvents(root);
         renderScopePanelVisibility();
@@ -7556,6 +7877,19 @@
             if (areaName !== 'local') return;
             const nextEvent = changes?.[DEV1_REVIEW_WINDOW_EVENT_KEY]?.newValue;
             handleReviewWindowChangedEvent(nextEvent);
+            const changedKeys = Object.keys(changes || {});
+            const cloudTargetChanged = changedKeys.some((key) => DEV1_CLOUD_TARGET_CONFIG_KEYS.includes(key));
+            const exportTargetChanged = changedKeys.includes(DEV1_EXPORT_TARGETS_STORAGE_KEY);
+            if (cloudTargetChanged || exportTargetChanged) {
+                if (exportTargetChanged) {
+                    state.exportTargets = normalizeExportTargets(changes[DEV1_EXPORT_TARGETS_STORAGE_KEY]?.newValue);
+                }
+                refreshCloudTargetAvailability()
+                    .then(() => {
+                        updateExportTargetControlState();
+                    })
+                    .catch(() => { });
+            }
         });
     }
 

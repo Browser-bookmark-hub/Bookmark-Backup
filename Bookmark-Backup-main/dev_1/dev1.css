@@ -1570,8 +1570,54 @@
 .dev1-export-inline-row .dev1-mhtml-format-toggle,
 .dev1-export-inline-row .dev1-mhtml-format-toggle span,
 .dev1-export-inline-row .dev1-md-format-toggle,
-.dev1-export-inline-row .dev1-md-format-toggle span {
+.dev1-export-inline-row .dev1-md-format-toggle span,
+.dev1-export-inline-row .dev1-export-target-toggle,
+.dev1-export-inline-row .dev1-export-target-toggle span {
     white-space: nowrap;
+}
+
+.dev1-webdav-target-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.dev1-webdav-warning-btn {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #f97316;
+    cursor: help;
+    font-size: 13px;
+    line-height: 1;
+}
+
+.dev1-webdav-warning-btn:hover,
+.dev1-webdav-warning-btn:focus-visible,
+.dev1-webdav-warning-btn[aria-expanded="true"] {
+    background: rgba(249, 115, 22, 0.12);
+    outline: none;
+}
+
+.dev1-webdav-warning-popover {
+    position: fixed;
+    z-index: 1000;
+    width: min(320px, calc(100vw - 28px));
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(249, 115, 22, 0.34);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+    font-size: 12px;
+    line-height: 1.5;
+    font-weight: 600;
+    white-space: normal;
 }
 
 .dev1-field-control select {
@@ -1621,6 +1667,31 @@
     width: 15px;
     height: 15px;
     accent-color: var(--accent-primary);
+}
+
+.dev1-export-target-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.dev1-export-target-toggle input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent-primary);
+}
+
+.dev1-export-target-toggle.disabled {
+    color: var(--text-secondary) !important;
+    opacity: 0.48;
+    cursor: not-allowed;
+}
+
+.dev1-export-target-toggle.disabled input[type="checkbox"] {
+    cursor: not-allowed;
 }
 
 .dev1-sub-field-row {
