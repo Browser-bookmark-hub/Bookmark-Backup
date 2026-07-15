@@ -15409,6 +15409,50 @@ function applyIncrementalMoveToCachedCurrentTree(id, moveInfo) {
     }
 }
 
+function applyIncrementalChildrenReorderedToCachedCurrentTree(parentId, reorderInfo) {
+    try {
+        if (!(currentView === 'current-changes' && CANVAS_PERMANENT_TREE_LAZY_ENABLED)) return false;
+        if (typeof parentId === 'undefined' || parentId === null || !reorderInfo || !Array.isArray(reorderInfo.childIds)) return false;
+        if (!cachedCurrentTree || !cachedCurrentTree[0]) return false;
+
+        const index = getCachedCurrentTreeIndex();
+        if (!index) return false;
+
+        const parent = index.get(String(parentId));
+        if (!parent || !Array.isArray(parent.children)) return false;
+
+        const childOrder = reorderInfo.childIds.map(id => String(id));
+        if (childOrder.length !== parent.children.length) return false;
+
+        const currentById = new Map();
+        parent.children.forEach((child) => {
+            if (child && typeof child.id !== 'undefined') {
+                currentById.set(String(child.id), child);
+            }
+        });
+
+        const reordered = [];
+        const usedIds = new Set();
+        childOrder.forEach((childId, indexValue) => {
+            const child = currentById.get(childId);
+            if (!child) return;
+            child.index = indexValue;
+            child.parentId = String(parentId);
+            reordered.push(child);
+            usedIds.add(childId);
+        });
+        if (reordered.length !== childOrder.length || usedIds.size !== childOrder.length) return false;
+
+        parent.children = reordered;
+        cachedRenderTreeIndex = null;
+        try { window.__canvasRenderTreeIndex = null; } catch (_) { }
+        return true;
+    } catch (_) {
+        // 静默失败：最终会由 refreshCachedCurrentTreeSnapshot() 兜底
+        return false;
+    }
+}
+
 function getCachedCurrentTreeIndex() {
     if (cachedCurrentTreeIndex) return cachedCurrentTreeIndex;
     if (!cachedCurrentTree || !cachedCurrentTree[0]) return null;
@@ -22311,6 +22355,31 @@ browserAPI.bookmarks.onMoved.addListener(async (id, moveInfo) => {
             
         }
     });
+
+    // 文件夹子项重排（同父级排序/批量调整可能只触发该事件，不触发 onMoved）
+    if (browserAPI.bookmarks.onChildrenReordered) {
+        browserAPI.bookmarks.onChildrenReordered.addListener(async (parentId, reorderInfo) => {
+            try {
+                if (shouldMuteHistoryBookmarkRealtimeEventHandling()) {
+                    clearCanvasLazyChangeHints('onChildrenReordered-muted');
+                    markCurrentChangesDataStale('onChildrenReordered-muted');
+                    scheduleCachedCurrentTreeSnapshotRefresh('onChildrenReordered-muted');
+                    return;
+                }
+                await flushPendingAddRemoveEvents('before-onChildrenReordered');
+                const appliedToCachedTree = applyIncrementalChildrenReorderedToCachedCurrentTree(parentId, reorderInfo);
+                if (!appliedToCachedTree) {
+                    scheduleCachedCurrentTreeSnapshotRefresh('onChildrenReordered-fast-fallback');
+                }
+
+                clearCanvasLazyChangeHints('onChildrenReordered');
+                markCurrentChangesDataStale('onChildrenReordered');
+            } catch (e) {
+                // 仅记录错误，不触发完全刷新以避免页面闪烁和滚动位置丢失
+                
+            }
+        });
+    }
 }
 
 // =============================================================================
