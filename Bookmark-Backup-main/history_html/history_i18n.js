@@ -49,8 +49,8 @@ const i18n = {
         'en': 'Clear history'
     },
     clearBackupHistoryModalTitle: {
-        'zh_CN': '清除记录',
-        'en': 'Clear Records'
+        'zh_CN': '清理',
+        'en': 'Cleanup'
     },
     clearBackupHistoryModalDesc: {
         'zh_CN': '管理插件内部备份历史记录，不会删除云端或本地导出的备份文件。',
@@ -158,8 +158,8 @@ const i18n = {
         'en': 'Go back'
     },
     historySlimmingSettingsTitle: {
-        'zh_CN': '精简设置',
-        'en': 'Compaction Settings'
+        'zh_CN': '新记录存储选择',
+        'en': 'New Record Storage Selection'
     },
     historySlimmingSettingsDescription: {
         'zh_CN': '选择写入<span style="color: #f97316; font-weight: 500;">插件内部存储（chrome.storage）</span>的历史详情数据。未勾选的数据将不会被保存，以节省<span style="color: #f97316; font-weight: 500;">浏览器</span>的存储空间。',
@@ -198,8 +198,8 @@ const i18n = {
         'en': (total, threshold, deleted) => `There are ${total} backup history records. Enabling auto cleanup will keep the newest ${threshold} records and delete the oldest ${deleted}. Continue?`
     },
     historySlimmingSettingsSaved: {
-        'zh_CN': '精简设置已保存',
-        'en': 'Compaction settings saved'
+        'zh_CN': '新记录存储选择已保存',
+        'en': 'New record storage selection saved'
     },
     historyAutoCleanupSettingsSaved: {
         'zh_CN': '自动清理设置已保存',
@@ -210,8 +210,8 @@ const i18n = {
         'en': (deleted) => `Auto cleanup saved. Deleted ${deleted} old records`
     },
     historySlimmingSettingsSaveFailed: {
-        'zh_CN': '保存精简设置失败',
-        'en': 'Failed to save compaction settings'
+        'zh_CN': '保存新记录存储选择失败',
+        'en': 'Failed to save new record storage selection'
     },
     historyAutoCleanupSettingsSaveFailed: {
         'zh_CN': '保存自动清理设置失败',

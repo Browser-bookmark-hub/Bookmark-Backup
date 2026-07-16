@@ -884,12 +884,13 @@ option {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    height: 28px;
+    min-height: 28px;
     padding: 0;
     border: 0;
     border-radius: 0;
     background: transparent;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-width: 0;
     white-space: nowrap;
     box-sizing: border-box;
     position: relative;
@@ -917,6 +918,62 @@ option {
     border-color: var(--border-hover);
     box-shadow: none;
     transform: none;
+}
+
+.backup-history-warning-prompt {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    max-width: none;
+    min-width: 0;
+    flex: 0 0 auto;
+    min-height: 28px;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    font-size: 10px;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.backup-history-warning-prompt.warning {
+    border-color: rgba(255, 193, 7, 0.62);
+    background: rgba(255, 193, 7, 0.09);
+}
+
+.backup-history-warning-prompt.danger {
+    border-color: rgba(244, 67, 54, 0.58);
+    background: rgba(244, 67, 54, 0.08);
+}
+
+.clear-history-warning-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 10px 0;
+    color: var(--text-primary);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.clear-history-warning-toggle-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.clear-history-warning-current-usage {
+    color: var(--text-secondary);
+    font-size: 11px;
+    white-space: nowrap;
 }
 
 .history-pagination-inline {
@@ -1234,13 +1291,13 @@ option {
 .history-commits {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 15px;
 }
 
 .history-record-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
 }
 
 .history-warning-divider {
@@ -1248,6 +1305,31 @@ option {
     align-items: center;
     gap: 10px;
     margin: 2px 2px -6px;
+}
+
+.history-date-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 2px;
+}
+
+.history-date-divider-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(0, 122, 255, 0), rgba(0, 122, 255, 0.9), rgba(0, 122, 255, 0));
+}
+
+.history-date-divider-label {
+    color: #007aff;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+[data-theme="dark"] .history-date-divider-label {
+    color: #67adff;
 }
 
 .history-warning-divider-line {
@@ -1297,7 +1379,7 @@ option {
     background: var(--bg-elevated);
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    padding: 16px;
+    padding: 8px;
     transition: all 0.2s ease;
     cursor: pointer;
     position: relative;
@@ -1312,8 +1394,8 @@ option {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 12px;
-    gap: 12px;
+    margin-bottom: 6px;
+    gap: 6px;
 }
 
 .commit-title-group {
@@ -2856,10 +2938,10 @@ body:has(#historySafetyCheckpointModal.show) .view-header-right .btn-tooltip {
 .commit-meta {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 6px;
     flex-wrap: nowrap;
     margin-bottom: 0;
-    padding: 10px 0;
+    padding: 5px 0;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--bg-secondary);
@@ -2871,12 +2953,12 @@ body:has(#historySafetyCheckpointModal.show) .view-header-right .btn-tooltip {
 .commit-meta-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 6px;
     flex: 1;
     min-width: 0;
     flex-wrap: wrap;
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-left: 6px;
+    padding-right: 6px;
 }
 
 .commit-badge {
@@ -10316,46 +10398,9 @@ a.tree-label.tree-bookmark-link:hover {
     color: var(--text-primary);
 }
 
-@keyframes warning-breath {
-    0% {
-        background: rgba(255, 193, 7, 0.16);
-        border-color: rgba(255, 193, 7, 0.44);
-        box-shadow: 0 0 0 0px rgba(255, 193, 7, 0.2);
-    }
-    50% {
-        background: rgba(255, 193, 7, 0.32);
-        border-color: rgba(255, 193, 7, 0.85);
-        box-shadow: 0 0 4px 2px rgba(255, 193, 7, 0.35);
-    }
-    100% {
-        background: rgba(255, 193, 7, 0.16);
-        border-color: rgba(255, 193, 7, 0.44);
-        box-shadow: 0 0 0 0px rgba(255, 193, 7, 0.2);
-    }
-}
-
-@keyframes danger-breath {
-    0% {
-        background: rgba(244, 67, 54, 0.14);
-        border-color: rgba(244, 67, 54, 0.4);
-        box-shadow: 0 0 0 0px rgba(244, 67, 54, 0.2);
-    }
-    50% {
-        background: rgba(244, 67, 54, 0.28);
-        border-color: rgba(244, 67, 54, 0.8);
-        box-shadow: 0 0 5px 3px rgba(244, 67, 54, 0.3);
-    }
-    100% {
-        background: rgba(244, 67, 54, 0.14);
-        border-color: rgba(244, 67, 54, 0.4);
-        box-shadow: 0 0 0 0px rgba(244, 67, 54, 0.2);
-    }
-}
-
 #clearBackupHistoryBtn.history-delete-warning {
     background: rgba(255, 193, 7, 0.16);
-    border-color: rgba(255, 193, 7, 0.44);
-    animation: warning-breath 2s infinite ease-in-out;
+    border-color: rgba(255, 193, 7, 0.44) !important;
 }
 
 #clearBackupHistoryBtn.history-delete-warning i {
@@ -10364,8 +10409,7 @@ a.tree-label.tree-bookmark-link:hover {
 
 #clearBackupHistoryBtn.history-delete-warning:hover {
     background: rgba(255, 193, 7, 0.24);
-    border-color: rgba(255, 193, 7, 0.56);
-    animation: none;
+    border-color: rgba(255, 193, 7, 0.56) !important;
     box-shadow: 0 2px 6px rgba(255, 193, 7, 0.3);
 }
 
@@ -10375,8 +10419,7 @@ a.tree-label.tree-bookmark-link:hover {
 
 #clearBackupHistoryBtn.history-delete-danger {
     background: rgba(244, 67, 54, 0.14);
-    border-color: rgba(244, 67, 54, 0.4);
-    animation: danger-breath 1.5s infinite ease-in-out;
+    border-color: rgba(244, 67, 54, 0.4) !important;
 }
 
 #clearBackupHistoryBtn.history-delete-danger i {
@@ -10385,8 +10428,7 @@ a.tree-label.tree-bookmark-link:hover {
 
 #clearBackupHistoryBtn.history-delete-danger:hover {
     background: rgba(244, 67, 54, 0.22);
-    border-color: rgba(244, 67, 54, 0.54);
-    animation: none;
+    border-color: rgba(244, 67, 54, 0.54) !important;
     box-shadow: 0 2px 6px rgba(244, 67, 54, 0.3);
 }
 
@@ -10394,8 +10436,8 @@ a.tree-label.tree-bookmark-link:hover {
     color: #a62e23;
 }
 
-#clearBackupHistoryBtn.history-delete-auto-cleanup,
-#clearBackupHistoryBtn.history-delete-auto-cleanup:hover {
+#clearBackupHistoryBtn.history-delete-auto-cleanup:not(.history-delete-warning):not(.history-delete-danger),
+#clearBackupHistoryBtn.history-delete-auto-cleanup:not(.history-delete-warning):not(.history-delete-danger):hover {
     border-color: rgba(76, 175, 80, 0.85) !important;
 }
 
@@ -11303,8 +11345,8 @@ a.tree-label.tree-bookmark-link:hover {
 }
 
 .clear-history-switch input:checked + .clear-history-switch-track {
-    background: #4CAF50;
-    border-color: #4CAF50;
+    background: var(--accent-primary, #007AFF);
+    border-color: var(--accent-primary, #007AFF);
 }
 
 .clear-history-switch input:checked + .clear-history-switch-track::after {

@@ -113,21 +113,6 @@ function normalizeHistoryBackupHistoryAutoCleanupSettings(rawSettings = {}) {
     };
 }
 
-function getHistorySlimmingButtonState(settings = historyBackupHistorySlimmingSettings) {
-    const normalized = normalizeHistoryBackupHistorySlimmingSettings(settings);
-    const selectedCount = [normalized.saveSnapshotData, normalized.saveChangeData].filter(Boolean).length;
-    if (selectedCount === 2) return 'all';
-    if (selectedCount === 1) return 'partial';
-    return 'none';
-}
-
-function syncHistorySlimmingSettingsButtonState(settings = historyBackupHistorySlimmingSettings) {
-    const settingsBtn = document.getElementById('historySlimmingSettingsBtn');
-    if (!settingsBtn) return;
-    const state = getHistorySlimmingButtonState(settings);
-    settingsBtn.dataset.slimmingState = state;
-}
-
 function getHistoryRecordCapabilities(record = {}) {
     const explicit = record?.capabilities && typeof record.capabilities === 'object'
         ? record.capabilities
@@ -393,6 +378,7 @@ const HISTORY_DELETE_WARN_MAX = 999999;
 
 let historyDeleteWarnThresholds = { ...HISTORY_DELETE_WARN_DEFAULTS };
 let historyDeleteWarnRecordCount = 0;
+let historyBackupHistoryWarningStatus = null;
 
 function normalizeHistoryDeleteWarnValue(rawValue, fallbackValue) {
     const parsed = parseInt(rawValue, 10);
@@ -421,32 +407,92 @@ function getHistoryDeleteWarnLevel(recordCount, thresholds = historyDeleteWarnTh
     return 'normal';
 }
 
-async function saveHistoryDeleteWarnThresholdsToStorage() {
-    const payload = {
-        [HISTORY_DELETE_WARN_SETTING_KEYS.yellow]: historyDeleteWarnThresholds.yellow,
-        [HISTORY_DELETE_WARN_SETTING_KEYS.red]: historyDeleteWarnThresholds.red
-    };
+function formatHistoryStorageMb(value) {
+    const mb = Math.max(0, Number(value) || 0);
+    return new Intl.NumberFormat(currentLang === 'en' ? 'en-US' : 'zh-CN', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1
+    }).format(mb);
+}
 
-    return await new Promise((resolve) => {
-        try {
-            browserAPI.storage.local.set(payload, () => {
-                resolve(true);
-            });
-        } catch (_) {
-            resolve(false);
+function renderHistoryStorageWarningCurrentUsage(status = historyBackupHistoryWarningStatus) {
+    const usage = document.getElementById('historyStorageWarningCurrentUsage');
+    if (!usage) return;
+    const value = Number(status?.storageMb);
+    const displayValue = Number.isFinite(value) ? `${formatHistoryStorageMb(value)} MB` : '-- MB';
+    usage.textContent = currentLang === 'en' ? `Current: ${displayValue}` : `当前：${displayValue}`;
+}
+
+function renderHistoryWarningPrompt(status = historyBackupHistoryWarningStatus) {
+    renderHistoryStorageWarningCurrentUsage(status);
+    const prompt = document.getElementById('historyWarningPrompt');
+    if (!prompt) return;
+    const promptSettings = status?.settings?.prompt || { showStatus: true };
+    const showStatus = promptSettings.showStatus !== false;
+    const shouldShow = !!(status?.hasWarning && showStatus);
+    if (!shouldShow) {
+        prompt.style.display = 'none';
+        prompt.classList.remove('warning', 'danger');
+        prompt.innerHTML = '';
+        return;
+    }
+
+    const isEn = currentLang === 'en';
+    const summaryParts = [];
+    if (status.countLevel !== 'normal') {
+        const threshold = status.countLevel === 'danger'
+            ? status.settings.count.red
+            : status.settings.count.yellow;
+        summaryParts.push(isEn
+            ? `History records: ${status.recordCount} (threshold ${threshold})`
+            : `备份历史：${status.recordCount} 条（阈值 ${threshold} 条）`);
+    }
+    if (status.storageLevel !== 'normal') {
+        const threshold = status.storageLevel === 'danger'
+            ? status.settings.storage.redMb
+            : status.settings.storage.yellowMb;
+        summaryParts.push(isEn
+            ? `Local storage: ${formatHistoryStorageMb(status.storageMb)} MB (threshold ${threshold} MB)`
+            : `插件本地存储：${formatHistoryStorageMb(status.storageMb)} MB（阈值 ${threshold} MB）`);
+    }
+
+    prompt.classList.toggle('danger', status.level === 'danger');
+    prompt.classList.toggle('warning', status.level === 'warning');
+    prompt.innerHTML = `
+        <span>${summaryParts.join(isEn ? ' | ' : ' ｜ ')}</span>
+    `;
+    prompt.style.display = 'inline-flex';
+}
+
+async function refreshHistoryBackupHistoryWarningStatus() {
+    try {
+        const response = await sendHistoryRuntimeMessage({ action: 'getBackupHistoryWarningStatus' });
+        if (response?.success && response.status) {
+            historyBackupHistoryWarningStatus = response.status;
+            historyDeleteWarnThresholds = normalizeHistoryDeleteWarnThresholds(
+                response.status.settings?.count?.yellow,
+                response.status.settings?.count?.red
+            );
         }
-    });
+    } catch (_) { }
+    applyHistoryDeleteButtonWarningState(
+        Number(historyIndexMeta?.totalRecords) || syncHistory.length || historyBackupHistoryWarningStatus?.recordCount || 0
+    );
+    return historyBackupHistoryWarningStatus;
 }
 
 function applyHistoryDeleteButtonWarningState(recordCount = historyDeleteWarnRecordCount) {
-    historyDeleteWarnRecordCount = Math.max(0, Number(recordCount) || 0);
+    const status = historyBackupHistoryWarningStatus;
+    historyDeleteWarnRecordCount = Number.isFinite(Number(status?.recordCount))
+        ? Number(status.recordCount)
+        : Math.max(0, Number(recordCount) || 0);
 
     const btn = document.getElementById('clearBackupHistoryBtn');
     if (!btn) return;
 
     btn.classList.remove('history-delete-warning', 'history-delete-danger', 'history-delete-auto-cleanup');
 
-    const warnLevel = getHistoryDeleteWarnLevel(historyDeleteWarnRecordCount, historyDeleteWarnThresholds);
+    const warnLevel = status?.level || getHistoryDeleteWarnLevel(historyDeleteWarnRecordCount, historyDeleteWarnThresholds);
     if (warnLevel === 'warning') {
         btn.classList.add('history-delete-warning');
     } else if (warnLevel === 'danger') {
@@ -462,6 +508,7 @@ function applyHistoryDeleteButtonWarningState(recordCount = historyDeleteWarnRec
     btn.setAttribute('data-title', tooltipText);
     const tooltip = btn.querySelector('.btn-tooltip');
     if (tooltip) tooltip.textContent = tooltipText;
+    renderHistoryWarningPrompt(status);
 }
 
 
@@ -2783,15 +2830,6 @@ function applyLanguage() {
 
     const clearBackupHistoryConfirmBtn = document.getElementById('clearBackupHistoryConfirmBtn');
     if (clearBackupHistoryConfirmBtn) clearBackupHistoryConfirmBtn.textContent = i18n.clearBackupHistoryConfirmBtn[currentLang];
-    const historySlimmingSettingsBtn = document.getElementById('historySlimmingSettingsBtn');
-    if (historySlimmingSettingsBtn) {
-        historySlimmingSettingsBtn.removeAttribute('title');
-        historySlimmingSettingsBtn.setAttribute('data-title', i18n.historySlimmingSettingsTitle[currentLang]);
-        historySlimmingSettingsBtn.setAttribute('aria-label', i18n.historySlimmingSettingsTitle[currentLang]);
-        const tooltip = historySlimmingSettingsBtn.querySelector('.btn-tooltip');
-        if (tooltip) tooltip.textContent = i18n.historySlimmingSettingsTitle[currentLang];
-        syncHistorySlimmingSettingsButtonState();
-    }
     const historySafetyCheckpointBtn = document.getElementById('historySafetyCheckpointBtn');
     if (historySafetyCheckpointBtn) {
         historySafetyCheckpointBtn.removeAttribute('title');
@@ -2801,8 +2839,8 @@ function applyLanguage() {
         if (tooltip) tooltip.textContent = i18n.historySafetyCheckpointTitle[currentLang];
     }
 
-    const historySlimmingSettingsModalTitle = document.getElementById('historySlimmingSettingsModalTitle');
-    if (historySlimmingSettingsModalTitle) historySlimmingSettingsModalTitle.textContent = i18n.historySlimmingSettingsTitle[currentLang];
+    const clearHistorySlimmingSectionTitle = document.getElementById('clearHistorySlimmingSectionTitle');
+    if (clearHistorySlimmingSectionTitle) clearHistorySlimmingSectionTitle.textContent = i18n.historySlimmingSettingsTitle[currentLang];
     const historySlimmingSettingsDesc = document.getElementById('historySlimmingSettingsDesc');
     if (historySlimmingSettingsDesc) historySlimmingSettingsDesc.innerHTML = buildHistorySlimmingSettingsDescriptionHtml(currentLang);
     const historySlimmingSaveSnapshotDataText = document.getElementById('historySlimmingSaveSnapshotDataText');
@@ -2817,8 +2855,24 @@ function applyLanguage() {
     if (historyAutoCleanupBatchText) historyAutoCleanupBatchText.textContent = i18n.historyAutoCleanupBatch[currentLang];
     const historyAutoCleanupHint = document.getElementById('historyAutoCleanupHint');
     if (historyAutoCleanupHint) historyAutoCleanupHint.textContent = i18n.historyAutoCleanupHint[currentLang];
+    const warningIsEn = currentLang === 'en';
+    if (clearHistoryWarningThresholdTitle) clearHistoryWarningThresholdTitle.textContent = warningIsEn ? 'Backup history reminders' : '备份历史提醒';
+    if (clearHistoryWarnThresholdHint) clearHistoryWarnThresholdHint.textContent = warningIsEn
+        ? 'Use record count, extension local storage, or both.'
+        : '可按历史条数、插件本地存储或两者同时提醒。';
+    const historyWarningStatusEnabledText = document.getElementById('historyWarningStatusEnabledText');
+    if (historyWarningStatusEnabledText) historyWarningStatusEnabledText.textContent = warningIsEn ? 'Show warning status' : '显示超限信息';
+    const historyCountWarningEnabledText = document.getElementById('historyCountWarningEnabledText');
+    if (historyCountWarningEnabledText) historyCountWarningEnabledText.textContent = warningIsEn ? 'Warn by record count' : '按历史条数提醒';
+    const historyStorageWarningEnabledText = document.getElementById('historyStorageWarningEnabledText');
+    if (historyStorageWarningEnabledText) historyStorageWarningEnabledText.textContent = warningIsEn ? 'Warn by extension local storage' : '按插件本地存储提醒';
+    const historyStorageWarnYellowLabel = document.getElementById('historyStorageWarnYellowLabel');
+    if (historyStorageWarnYellowLabel) historyStorageWarnYellowLabel.textContent = warningIsEn ? 'Yellow storage threshold (MB)' : '淡黄色起始容量（MB）';
+    const historyStorageWarnRedLabel = document.getElementById('historyStorageWarnRedLabel');
+    if (historyStorageWarnRedLabel) historyStorageWarnRedLabel.textContent = warningIsEn ? 'Red storage threshold (MB)' : '淡红色起始容量（MB）';
     syncHistorySlimmingSettingsModalUi();
     syncHistoryAutoCleanupSettingsUi();
+    renderHistoryWarningPrompt();
 
     const historySafetyCheckpointModalTitle = document.getElementById('historySafetyCheckpointModalTitle');
     if (historySafetyCheckpointModalTitle) historySafetyCheckpointModalTitle.textContent = i18n.historySafetyCheckpointTitle[currentLang];
@@ -3134,6 +3188,11 @@ function initClearBackupHistoryModal() {
     const previewTextEl = document.getElementById('clearHistoryPreviewText');
     const warnYellowInput = document.getElementById('clearHistoryWarnYellowInput');
     const warnRedInput = document.getElementById('clearHistoryWarnRedInput');
+    const warningStatusEnabled = document.getElementById('historyWarningStatusEnabled');
+    const countWarningEnabled = document.getElementById('historyCountWarningEnabled');
+    const storageWarningEnabled = document.getElementById('historyStorageWarningEnabled');
+    const storageWarnYellowInput = document.getElementById('historyStorageWarnYellowInput');
+    const storageWarnRedInput = document.getElementById('historyStorageWarnRedInput');
     const autoCleanupEnabled = document.getElementById('historyAutoCleanupEnabled');
     const autoCleanupThreshold = document.getElementById('historyAutoCleanupThreshold');
     const autoCleanupBatchSize = document.getElementById('historyAutoCleanupBatchSize');
@@ -3155,13 +3214,37 @@ function initClearBackupHistoryModal() {
     let pendingDeleteEntries = [];
     let clearHistoryActiveThumb = 'max'; // 'min' | 'max'
     let isSavingAutoCleanupSettings = false;
+    let isSavingHistoryWarningSettings = false;
 
     const syncDeleteWarningThresholdInputs = () => {
-        if (warnYellowInput) warnYellowInput.value = String(historyDeleteWarnThresholds.yellow);
+        const settings = historyBackupHistoryWarningStatus?.settings || {
+            prompt: { showStatus: true },
+            count: { enabled: true, yellow: historyDeleteWarnThresholds.yellow, red: historyDeleteWarnThresholds.red },
+            storage: { enabled: true, yellowMb: 50, redMb: 100 }
+        };
+        [warningStatusEnabled, countWarningEnabled, storageWarningEnabled]
+            .forEach(input => { if (input) input.disabled = isSavingHistoryWarningSettings; });
+        if (warningStatusEnabled) warningStatusEnabled.checked = settings.prompt?.showStatus !== false;
+        if (countWarningEnabled) countWarningEnabled.checked = settings.count.enabled !== false;
+        if (storageWarningEnabled) storageWarningEnabled.checked = settings.storage.enabled !== false;
+        if (warnYellowInput) {
+            warnYellowInput.value = String(settings.count.yellow);
+            warnYellowInput.disabled = settings.count.enabled === false;
+        }
         if (warnRedInput) {
-            const minRed = Math.min(HISTORY_DELETE_WARN_MAX, historyDeleteWarnThresholds.yellow + 1);
+            const minRed = Math.min(HISTORY_DELETE_WARN_MAX, Number(settings.count.yellow) + 1);
             warnRedInput.min = String(minRed);
-            warnRedInput.value = String(Math.max(minRed, historyDeleteWarnThresholds.red));
+            warnRedInput.value = String(Math.max(minRed, Number(settings.count.red)));
+            warnRedInput.disabled = settings.count.enabled === false;
+        }
+        if (storageWarnYellowInput) {
+            storageWarnYellowInput.value = String(settings.storage.yellowMb);
+            storageWarnYellowInput.disabled = settings.storage.enabled === false;
+        }
+        if (storageWarnRedInput) {
+            storageWarnRedInput.min = String(Number(settings.storage.yellowMb) + 0.1);
+            storageWarnRedInput.value = String(settings.storage.redMb);
+            storageWarnRedInput.disabled = settings.storage.enabled === false;
         }
     };
 
@@ -3194,20 +3277,36 @@ function initClearBackupHistoryModal() {
     };
 
     const commitDeleteWarningThresholdInputs = async () => {
-        const nextThresholds = normalizeHistoryDeleteWarnThresholds(
-            warnYellowInput ? warnYellowInput.value : historyDeleteWarnThresholds.yellow,
-            warnRedInput ? warnRedInput.value : historyDeleteWarnThresholds.red
-        );
-
-        const changed = nextThresholds.yellow !== historyDeleteWarnThresholds.yellow
-            || nextThresholds.red !== historyDeleteWarnThresholds.red;
-
-        historyDeleteWarnThresholds = nextThresholds;
-        syncDeleteWarningThresholdInputs();
-        applyHistoryDeleteButtonWarningState(Number(historyIndexMeta?.totalRecords) || syncHistory.length || 0);
-
-        if (changed) {
-            await saveHistoryDeleteWarnThresholdsToStorage();
+        if (isSavingHistoryWarningSettings) return;
+        const current = historyBackupHistoryWarningStatus?.settings || {
+            prompt: { showStatus: true },
+            count: { enabled: true, yellow: historyDeleteWarnThresholds.yellow, red: historyDeleteWarnThresholds.red },
+            storage: { enabled: true, yellowMb: 50, redMb: 100 }
+        };
+        const nextSettings = {
+            prompt: {
+                showStatus: warningStatusEnabled ? warningStatusEnabled.checked : current.prompt?.showStatus
+            },
+            count: {
+                enabled: countWarningEnabled ? countWarningEnabled.checked : current.count.enabled,
+                yellow: warnYellowInput ? warnYellowInput.value : current.count.yellow,
+                red: warnRedInput ? warnRedInput.value : current.count.red
+            },
+            storage: {
+                enabled: storageWarningEnabled ? storageWarningEnabled.checked : current.storage.enabled,
+                yellowMb: storageWarnYellowInput ? storageWarnYellowInput.value : current.storage.yellowMb,
+                redMb: storageWarnRedInput ? storageWarnRedInput.value : current.storage.redMb
+            }
+        };
+        isSavingHistoryWarningSettings = true;
+        [warningStatusEnabled, countWarningEnabled, storageWarningEnabled, warnYellowInput, warnRedInput, storageWarnYellowInput, storageWarnRedInput]
+            .forEach(input => { if (input) input.disabled = true; });
+        try {
+            const response = await saveHistoryBackupHistoryWarningSettings(nextSettings);
+            if (!(response && response.success)) syncDeleteWarningThresholdInputs();
+        } finally {
+            isSavingHistoryWarningSettings = false;
+            syncDeleteWarningThresholdInputs();
         }
     };
 
@@ -3654,8 +3753,11 @@ function initClearBackupHistoryModal() {
         if (maxSeqLabel) maxSeqLabel.textContent = getClearHistoryDisplayNumberForPosition(seqRange.min); // Right Label = Min
 
         syncDeleteWarningThresholdInputs();
+        syncHistorySlimmingSettingsModalUi();
         syncHistoryAutoCleanupSettingsUi();
+        refreshHistoryBackupHistorySlimmingSettings({ silent: true }).catch(() => { });
         refreshHistoryBackupHistoryAutoCleanupSettings({ silent: true }).catch(() => { });
+        refreshHistoryBackupHistoryWarningStatus().then(() => syncDeleteWarningThresholdInputs()).catch(() => { });
 
         modal.classList.add('show');
         // Must update after the modal is visible; otherwise container width can be 0 and bubbles won't render.
@@ -3924,6 +4026,35 @@ function initClearBackupHistoryModal() {
 
         warnRedInput.setAttribute('data-listener-attached', 'true');
     }
+
+    [warningStatusEnabled, countWarningEnabled, storageWarningEnabled].forEach((input) => {
+        if (!input || input.hasAttribute('data-listener-attached')) return;
+        input.addEventListener('change', () => {
+            const countEnabled = countWarningEnabled?.checked !== false;
+            const storageEnabled = storageWarningEnabled?.checked !== false;
+            [warnYellowInput, warnRedInput].forEach(field => { if (field) field.disabled = !countEnabled; });
+            [storageWarnYellowInput, storageWarnRedInput].forEach(field => { if (field) field.disabled = !storageEnabled; });
+            commitDeleteWarningThresholdInputs().catch(() => { });
+        });
+        input.setAttribute('data-listener-attached', 'true');
+    });
+
+    const bindHistoryWarningNumberInput = (input) => {
+        if (!input || input.hasAttribute('data-listener-attached')) return;
+        const commitValue = () => commitDeleteWarningThresholdInputs().catch(() => { });
+        input.addEventListener('change', commitValue);
+        input.addEventListener('blur', commitValue);
+        input.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            commitValue();
+            input.blur();
+        });
+        input.setAttribute('data-listener-attached', 'true');
+    };
+
+    bindHistoryWarningNumberInput(storageWarnYellowInput);
+    bindHistoryWarningNumberInput(storageWarnRedInput);
 
     if (autoCleanupEnabled && !autoCleanupEnabled.hasAttribute('data-listener-attached')) {
         autoCleanupEnabled.addEventListener('change', () => {
@@ -9927,6 +10058,27 @@ function buildV2ToV3HistoryDivider(lang = currentLang) {
     </div>`;
 }
 
+function getHistoryRecordDateKey(recordTime) {
+    const date = new Date(recordTime);
+    if (!Number.isFinite(date.getTime())) return '';
+    return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function buildHistoryDateDivider(recordTime, lang = currentLang) {
+    const date = new Date(recordTime);
+    if (!Number.isFinite(date.getTime())) return '';
+
+    const label = lang === 'en'
+        ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+        : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+
+    return `<div class="history-date-divider" role="separator" aria-label="${escapeHtml(label)}">
+        <span class="history-date-divider-line" aria-hidden="true"></span>
+        <span class="history-date-divider-label">${escapeHtml(label)}</span>
+        <span class="history-date-divider-line" aria-hidden="true"></span>
+    </div>`;
+}
+
 function renderHistoryView() {
     const container = document.getElementById('historyList');
     // 分页控件元素
@@ -9972,6 +10124,7 @@ function renderHistoryView() {
     const pageRecords = (syncHistoryPageRecords.length > HISTORY_PAGE_SIZE && syncHistoryPageRecords.length === totalRecords)
         ? sortedRecords.slice(startIndex, startIndex + HISTORY_PAGE_SIZE)
         : sortedRecords;
+    const sortedAllHistoryRecords = sortHistoryRecordsByTimeDesc(syncHistory);
     const effectiveOverwriteRevertMarkerTime = resolveEffectiveHistoryOverwriteRevertMarkerTime(syncHistory);
     const hasLatestOverwriteRevertMarker = getHistoryMarkerTimeMs(effectiveOverwriteRevertMarkerTime) > 0;
     const latestOverwriteRevertDividerInsertIndex = (currentHistoryPage === 1 && hasLatestOverwriteRevertMarker)
@@ -9982,7 +10135,7 @@ function renderHistoryView() {
     const rawV2ToV3HistoryDividerIndex = Number(historyIndexMeta.v2ToV3HistoryDividerIndex);
     const v2ToV3HistoryDividerIndex = Number.isFinite(rawV2ToV3HistoryDividerIndex)
         ? rawV2ToV3HistoryDividerIndex
-        : resolveV2ToV3HistoryDividerIndexFromDisplayRecords(sortHistoryRecordsByTimeDesc(syncHistory));
+        : resolveV2ToV3HistoryDividerIndexFromDisplayRecords(sortedAllHistoryRecords);
 
     // 更新分页控件 UI
     if (pagination) {
@@ -10010,6 +10163,15 @@ function renderHistoryView() {
     container.innerHTML = pageRecords.map((record, i) => {
         const globalIndex = startIndex + i; // Index in the full reversedHistory array
         const seqNumber = Number.isFinite(Number(record.seqNumber)) ? Number(record.seqNumber) : '-';
+
+        const previousRecord = i > 0
+            ? pageRecords[i - 1]
+            : (startIndex > 0 ? sortedAllHistoryRecords[startIndex - 1] : null);
+        const currentDateKey = getHistoryRecordDateKey(record.time);
+        const previousDateKey = previousRecord ? getHistoryRecordDateKey(previousRecord.time) : '';
+        const dateDivider = previousDateKey && currentDateKey && previousDateKey !== currentDateKey
+            ? buildHistoryDateDivider(previousRecord.time, currentLang)
+            : '';
 
         const time = formatTime(record.time);
         // 使用 type 字段代替 isAutoBackup：'manual', 'auto', 'switch'
@@ -10173,6 +10335,7 @@ function renderHistoryView() {
         const dataCapabilityBadge = buildHistoryDataCapabilityBadge(recordCapabilities, currentLang);
 
         return `
+            ${dateDivider}
             <div class="history-record-group">
                 ${v2ToV3HistoryDivider}
                 ${latestOverwriteRevertDivider}
@@ -19634,59 +19797,42 @@ function initHistoryDetailModeToggle() {
 }
 
 function initBackupHistorySlimmingAndSafetyControls() {
-    const settingsBtn = document.getElementById('historySlimmingSettingsBtn');
     const safetyBtn = document.getElementById('historySafetyCheckpointBtn');
-    const settingsModal = document.getElementById('historySlimmingSettingsModal');
     const safetyModal = document.getElementById('historySafetyCheckpointModal');
-
-    if (settingsBtn && settingsModal && !settingsBtn.hasAttribute('data-history-slimming-settings-bound')) {
-        settingsBtn.addEventListener('click', openHistorySlimmingSettingsModal);
-        settingsBtn.setAttribute('data-history-slimming-settings-bound', 'true');
-    }
 
     if (safetyBtn && safetyModal && !safetyBtn.hasAttribute('data-history-safety-bound')) {
         safetyBtn.addEventListener('click', openHistorySafetyCheckpointModal);
         safetyBtn.setAttribute('data-history-safety-bound', 'true');
     }
 
-    if (settingsModal && !settingsModal.hasAttribute('data-history-slimming-modal-bound')) {
-        const closeBtn = document.getElementById('historySlimmingSettingsModalClose');
-        const snapshotCheckbox = document.getElementById('historySlimmingSaveSnapshotData');
-        const changeCheckbox = document.getElementById('historySlimmingSaveChangeData');
-        let isSavingSlimmingSettings = false;
-
-        const setSlimmingInputsSavingState = (isSaving) => {
-            [snapshotCheckbox, changeCheckbox].forEach((input) => {
-                if (input) input.disabled = isSaving;
-            });
-        };
-
-        const commitSettings = async () => {
-            if (isSavingSlimmingSettings) return;
-            isSavingSlimmingSettings = true;
-            setSlimmingInputsSavingState(true);
-            try {
-                const response = await saveHistoryBackupHistorySlimmingSettings({
-                    saveSnapshotData: snapshotCheckbox ? snapshotCheckbox.checked : historyBackupHistorySlimmingSettings.saveSnapshotData,
-                    saveChangeData: changeCheckbox ? changeCheckbox.checked : historyBackupHistorySlimmingSettings.saveChangeData
-                });
-                if (!(response && response.success)) {
-                    syncHistorySlimmingSettingsModalUi();
-                }
-            } finally {
-                isSavingSlimmingSettings = false;
-                setSlimmingInputsSavingState(false);
-            }
-        };
-
-        if (closeBtn) closeBtn.addEventListener('click', closeHistorySlimmingSettingsModal);
-        if (snapshotCheckbox) snapshotCheckbox.addEventListener('change', commitSettings);
-        if (changeCheckbox) changeCheckbox.addEventListener('change', commitSettings);
-        settingsModal.addEventListener('click', (e) => {
-            if (e.target === settingsModal) closeHistorySlimmingSettingsModal();
+    const snapshotCheckbox = document.getElementById('historySlimmingSaveSnapshotData');
+    const changeCheckbox = document.getElementById('historySlimmingSaveChangeData');
+    let isSavingSlimmingSettings = false;
+    const setSlimmingInputsSavingState = (isSaving) => {
+        [snapshotCheckbox, changeCheckbox].forEach((input) => {
+            if (input) input.disabled = isSaving;
         });
-        settingsModal.setAttribute('data-history-slimming-modal-bound', 'true');
-    }
+    };
+    const commitSlimmingSettings = async () => {
+        if (isSavingSlimmingSettings) return;
+        isSavingSlimmingSettings = true;
+        setSlimmingInputsSavingState(true);
+        try {
+            const response = await saveHistoryBackupHistorySlimmingSettings({
+                saveSnapshotData: snapshotCheckbox ? snapshotCheckbox.checked : historyBackupHistorySlimmingSettings.saveSnapshotData,
+                saveChangeData: changeCheckbox ? changeCheckbox.checked : historyBackupHistorySlimmingSettings.saveChangeData
+            });
+            if (!(response && response.success)) syncHistorySlimmingSettingsModalUi();
+        } finally {
+            isSavingSlimmingSettings = false;
+            setSlimmingInputsSavingState(false);
+        }
+    };
+    [snapshotCheckbox, changeCheckbox].forEach((input) => {
+        if (!input || input.hasAttribute('data-history-slimming-bound')) return;
+        input.addEventListener('change', commitSlimmingSettings);
+        input.setAttribute('data-history-slimming-bound', 'true');
+    });
 
     if (safetyModal && !safetyModal.hasAttribute('data-history-safety-modal-bound')) {
         const closeBtn = document.getElementById('historySafetyCheckpointModalClose');
@@ -21939,11 +22085,16 @@ function handleStorageChange(changes, namespace) {
         applyHistoryDeleteButtonWarningState(Number(historyIndexMeta?.totalRecords) || syncHistory.length || 0);
     }
 
+    if (Object.prototype.hasOwnProperty.call(changes, 'backupHistoryWarningSettings')) {
+        refreshHistoryBackupHistoryWarningStatus().catch(() => { });
+    }
+
     // 备份历史被清空：关闭详情弹窗并清理本地状态，避免残留旧记录内容/展开状态
     if (changes.syncHistory) {
         try {
             const newHistory = changes.syncHistory.newValue || [];
             applyHistoryDeleteButtonWarningState(Array.isArray(newHistory) ? newHistory.length : 0);
+            refreshHistoryBackupHistoryWarningStatus().catch(() => { });
             if (Array.isArray(newHistory) && newHistory.length === 0) {
                 const modal = document.getElementById('detailModal');
                 if (modal && modal.classList.contains('show')) {
@@ -23040,10 +23191,6 @@ function formatHistorySafetyCheckpointSummary(checkpoint) {
 }
 
 function syncHistorySlimmingSettingsModalUi() {
-    syncHistorySlimmingSettingsButtonState();
-    const modal = document.getElementById('historySlimmingSettingsModal');
-    if (!modal) return;
-
     const snapshotCheckbox = document.getElementById('historySlimmingSaveSnapshotData');
     const changeCheckbox = document.getElementById('historySlimmingSaveChangeData');
     const statusEl = document.getElementById('historySlimmingSettingsStatus');
@@ -23151,6 +23298,23 @@ async function refreshHistoryBackupHistoryAutoCleanupSettings({ silent = false }
     syncHistoryAutoCleanupSettingsUi();
     applyHistoryDeleteButtonWarningState(historyDeleteWarnRecordCount);
     return response;
+}
+
+async function saveHistoryBackupHistoryWarningSettings(nextSettings) {
+    const response = await sendHistoryRuntimeMessage({
+        action: 'setBackupHistoryWarningSettings',
+        settings: nextSettings
+    });
+    if (response?.success && response.settings) {
+        historyBackupHistoryWarningStatus = {
+            ...(historyBackupHistoryWarningStatus || {}),
+            settings: response.settings
+        };
+        await refreshHistoryBackupHistoryWarningStatus();
+        return response;
+    }
+    showToast(currentLang === 'en' ? 'Failed to save history warning settings' : '备份历史提醒设置保存失败', 'error');
+    return response || { success: false };
 }
 
 async function saveHistoryBackupHistorySlimmingSettings(nextSettings) {
@@ -23326,25 +23490,6 @@ async function exportLatestSafetyCheckpointPackage() {
             exportBtn.textContent = i18n.historySafetyCheckpointExportBtn[currentLang];
         }
     }
-}
-
-function openHistorySlimmingSettingsModal() {
-    const modal = document.getElementById('historySlimmingSettingsModal');
-    if (!modal) return;
-    syncHistorySlimmingSettingsModalUi();
-    const statusEl = document.getElementById('historySlimmingSettingsStatus');
-    if (statusEl) {
-        statusEl.textContent = historyBackupHistorySlimmingSettingsLoaded
-            ? ''
-            : i18n.loading[currentLang];
-    }
-    modal.classList.add('show');
-    refreshHistoryBackupHistorySlimmingSettings({ silent: true }).catch(() => { });
-}
-
-function closeHistorySlimmingSettingsModal() {
-    const modal = document.getElementById('historySlimmingSettingsModal');
-    if (modal) modal.classList.remove('show');
 }
 
 function openHistorySafetyCheckpointModal() {
@@ -30085,6 +30230,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initExportChangesModal();
     refreshHistoryBackupHistorySlimmingSettings({ silent: true }).catch(() => { });
     refreshHistoryBackupHistoryAutoCleanupSettings({ silent: true }).catch(() => { });
+    refreshHistoryBackupHistoryWarningStatus().catch(() => { });
     refreshLatestSafetyCheckpointStatus({ silent: true }).catch(() => { });
     // 初始化全局导出功能
     initGlobalExport();

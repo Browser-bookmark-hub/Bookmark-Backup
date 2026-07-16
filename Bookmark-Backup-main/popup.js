@@ -115,6 +115,7 @@ const HISTORY_DELETE_WARN_MIN = 1;
 const HISTORY_DELETE_WARN_MAX = 999999;
 
 let popupHistoryDeleteWarnThresholds = { ...HISTORY_DELETE_WARN_DEFAULTS };
+let popupHistoryWarningStatus = null;
 window.__popupHistoryTotalRecordsLoaded = window.__popupHistoryTotalRecordsLoaded === true;
 if (!window.__popupHistoryTotalRecordsLoaded) {
     window.__popupHistoryTotalRecords = null;
@@ -234,6 +235,73 @@ function getHistoryDeleteWarnLevel(recordCount, thresholds = popupHistoryDeleteW
     return 'normal';
 }
 
+function formatPopupHistoryStorageMb(value, lang = 'zh_CN') {
+    const mb = Math.max(0, Number(value) || 0);
+    return new Intl.NumberFormat(lang === 'en' ? 'en-US' : 'zh-CN', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1
+    }).format(mb);
+}
+
+function renderPopupHistoryWarningPrompt(status, lang = 'zh_CN') {
+    const prompt = document.getElementById('popupHistoryWarningPrompt');
+    if (!prompt) return;
+
+    const promptSettings = status?.settings?.prompt || { showStatus: true };
+    const showStatus = promptSettings.showStatus !== false;
+    const shouldShow = !!(status?.hasWarning && showStatus);
+    if (!shouldShow) {
+        prompt.style.display = 'none';
+        prompt.classList.remove('warning', 'danger');
+        prompt.innerHTML = '';
+        return;
+    }
+
+    const isEn = lang === 'en';
+    const summaryParts = [];
+    if (status.countLevel !== 'normal') {
+        const threshold = status.countLevel === 'danger'
+            ? status.settings.count.red
+            : status.settings.count.yellow;
+        summaryParts.push(isEn
+            ? `History: ${status.recordCount} (>= ${threshold})`
+            : `历史：${status.recordCount} 条（阈值 ${threshold} 条）`);
+    }
+    if (status.storageLevel !== 'normal') {
+        const threshold = status.storageLevel === 'danger'
+            ? status.settings.storage.redMb
+            : status.settings.storage.yellowMb;
+        summaryParts.push(isEn
+            ? `Storage: ${formatPopupHistoryStorageMb(status.storageMb, lang)} MB (>= ${threshold} MB)`
+            : `本地：${formatPopupHistoryStorageMb(status.storageMb, lang)} MB（阈值 ${threshold} MB）`);
+    }
+
+    prompt.classList.toggle('danger', status.level === 'danger');
+    prompt.classList.toggle('warning', status.level === 'warning');
+    prompt.innerHTML = `
+        <span>${summaryParts.join(isEn ? ' | ' : ' ｜ ')}</span>
+    `;
+    prompt.style.display = 'inline-flex';
+}
+
+async function refreshPopupHistoryWarningStatus(lang = getCachedPopupLanguage()) {
+    try {
+        const response = await callBackgroundFunction('getBackupHistoryWarningStatus');
+        if (response?.success && response.status) {
+            popupHistoryWarningStatus = response.status;
+            popupHistoryDeleteWarnThresholds = normalizeHistoryDeleteWarnThresholds(
+                response.status.settings?.count?.yellow,
+                response.status.settings?.count?.red
+            );
+        }
+    } catch (_) { }
+    applyPopupDeleteHistoryButtonWarningState(
+        Number(window.__popupHistoryTotalRecords) || popupHistoryWarningStatus?.recordCount || 0,
+        lang
+    );
+    return popupHistoryWarningStatus;
+}
+
 function updatePopupHistoryActionTooltips(lang = 'zh_CN') {
     const isEn = lang === 'en';
     const clearTooltip = document.querySelector('#clearHistoryBtn .tooltip');
@@ -246,7 +314,7 @@ function updatePopupHistoryActionTooltips(lang = 'zh_CN') {
     if (historyTooltip) historyTooltip.textContent = isEn ? 'Open HTML page' : '打开HTML页面';
 
     const slimmingTooltip = document.querySelector('#backupHistorySlimmingSettingsBtn .tooltip');
-    if (slimmingTooltip) slimmingTooltip.textContent = isEn ? 'Compaction settings' : '精简设置';
+    if (slimmingTooltip) slimmingTooltip.textContent = isEn ? 'New Record Storage Selection' : '新记录存储选择';
 
     const safetyTooltip = document.querySelector('#backupHistorySafetyCheckpointBtn .tooltip');
     if (safetyTooltip) safetyTooltip.textContent = isEn ? 'Temporary Safety Snapshot' : '临时安全快照';
@@ -416,7 +484,7 @@ function applyBackupHistorySlimmingSettingsToUI(settings) {
 
     const settingsBtn = document.getElementById('backupHistorySlimmingSettingsBtn');
     if (settingsBtn) {
-        const title = isEn ? 'Compaction settings' : '精简设置';
+        const title = isEn ? 'New Record Storage Selection' : '新记录存储选择';
         settingsBtn.setAttribute('aria-label', title);
     }
     syncBackupHistorySlimmingButtonState(normalized);
@@ -427,7 +495,7 @@ function applyBackupHistorySlimmingLocale(lang = 'zh_CN') {
 
     const settingsBtn = document.getElementById('backupHistorySlimmingSettingsBtn');
     if (settingsBtn) {
-        settingsBtn.setAttribute('aria-label', isEn ? 'Compaction settings' : '精简设置');
+        settingsBtn.setAttribute('aria-label', isEn ? 'New Record Storage Selection' : '新记录存储选择');
         syncBackupHistorySlimmingButtonState();
     }
 
@@ -751,7 +819,7 @@ async function refreshBackupHistorySlimmingSettings() {
             return normalized;
         }
     } catch (error) {
-        console.warn('获取备份历史精简设置失败:', error);
+        console.warn('获取备份历史新记录存储选择失败:', error);
     }
     const snapshot = getBackupHistorySlimmingSettingsSnapshot();
     applyBackupHistorySlimmingSettingsToUI(snapshot);
@@ -849,7 +917,7 @@ async function persistBackupHistorySlimmingSettings(nextSettings, opts = {}) {
         if (response && response.success) {
             applyBackupHistorySlimmingSettingsToUI(normalized);
             if (opts.silent !== true) {
-                showStatus(opts.successMessage || '备份历史精简设置已保存', 'success', 2200);
+                showStatus(opts.successMessage || '备份历史新记录存储选择已保存', 'success', 2200);
             }
             return true;
         }
@@ -857,7 +925,7 @@ async function persistBackupHistorySlimmingSettings(nextSettings, opts = {}) {
     } catch (error) {
         applyBackupHistorySlimmingSettingsToUI(backupHistorySlimmingState);
         if (opts.silent !== true) {
-            showStatus(`备份历史精简设置保存失败: ${error?.message || '未知错误'}`, 'error', 3200);
+            showStatus(`备份历史新记录存储选择保存失败: ${error?.message || '未知错误'}`, 'error', 3200);
         }
         return false;
     }
@@ -883,7 +951,11 @@ function applyPopupDeleteHistoryButtonWarningState(recordCount, lang = 'zh_CN') 
 
     clearBtn.classList.remove('history-delete-warning', 'history-delete-danger', 'history-delete-auto-cleanup');
 
-    const warnLevel = getHistoryDeleteWarnLevel(recordCount);
+    const status = popupHistoryWarningStatus;
+    const displayRecordCount = Number.isFinite(Number(status?.recordCount))
+        ? Number(status.recordCount)
+        : Math.max(0, Number(recordCount) || 0);
+    const warnLevel = status ? status.level : getHistoryDeleteWarnLevel(displayRecordCount);
     if (warnLevel === 'warning') {
         clearBtn.classList.add('history-delete-warning');
     } else if (warnLevel === 'danger') {
@@ -895,8 +967,9 @@ function applyPopupDeleteHistoryButtonWarningState(recordCount, lang = 'zh_CN') 
 
     const isEn = lang === 'en';
     const baseLabel = isEn ? 'Delete records' : '删除记录';
-    const title = `${baseLabel} (${recordCount})`;
+    const title = `${baseLabel} (${displayRecordCount})`;
     clearBtn.setAttribute('aria-label', title);
+    renderPopupHistoryWarningPrompt(status, lang);
 }
 
 function bindHistoryActionButtonTooltip(button) {
@@ -3834,6 +3907,7 @@ function updateSyncHistory(passedLang, options = {}) { // Added passedLang param
         window.__popupHistoryTotalRecords = totalRecords;
         window.__popupHistoryTotalRecordsLoaded = true;
         applyPopupDeleteHistoryButtonWarningState(totalRecords, currentLang);
+        refreshPopupHistoryWarningStatus(currentLang).catch(() => { });
 
         const historyList = document.getElementById('syncHistoryList');
         if (!historyList) return;
@@ -9517,7 +9591,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const backupHistorySlimmingSettingsTooltip = document.querySelector('#backupHistorySlimmingSettingsBtn .tooltip');
     if (backupHistorySlimmingSettingsTooltip) {
-        backupHistorySlimmingSettingsTooltip.textContent = lang === 'en' ? 'Compaction settings' : '精简设置';
+        backupHistorySlimmingSettingsTooltip.textContent = lang === 'en' ? 'New Record Storage Selection' : '新记录存储选择';
     }
 
     const backupHistorySafetyCheckpointTooltip = document.querySelector('#backupHistorySafetyCheckpointBtn .tooltip');
@@ -21456,7 +21530,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     const getLocalizedSlimmingLabels = (lang) => ({
-        title: lang === 'en' ? 'Compaction Settings' : '精简设置',
+        title: lang === 'en' ? 'New Record Storage Selection' : '新记录存储选择',
         snapshotLabel: lang === 'en' ? 'Save snapshot data' : '保存快照数据',
         changeLabel: lang === 'en' ? 'Save change data' : '保存变化数据',
         noteText: lang === 'en'
@@ -21532,7 +21606,7 @@ document.addEventListener('DOMContentLoaded', function () {
             try {
                 await persistBackupHistorySlimmingSettings(nextSettings, {
                     silent: false,
-                    successMessage: lang === 'en' ? 'Backup history compaction settings saved' : '备份历史精简设置已保存'
+                    successMessage: lang === 'en' ? 'Backup history new record storage selection saved' : '备份历史新记录存储选择已保存'
                 });
                 syncDialogInputsToState();
             } finally {
@@ -21935,6 +22009,7 @@ document.addEventListener('DOMContentLoaded', function () {
             Number(window.__popupHistoryTotalRecords) || 0,
             currentLang
         );
+        refreshPopupHistoryWarningStatus(currentLang).catch(() => { });
     });
 
     if (clearHistoryBtn && !clearHistoryBtn.hasAttribute('data-listener-attached')) {
@@ -22646,6 +22721,10 @@ document.addEventListener('DOMContentLoaded', function () {
                         lang
                     );
                 });
+            }
+
+            if (Object.prototype.hasOwnProperty.call(changes, 'backupHistoryWarningSettings')) {
+                refreshPopupHistoryWarningStatus().catch(() => { });
             }
         }
 

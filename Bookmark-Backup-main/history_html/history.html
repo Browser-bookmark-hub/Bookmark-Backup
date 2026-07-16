@@ -160,14 +160,11 @@
                             <div class="history-header-title-line">
                                 <h2 id="historyViewTitle">备份历史</h2>
                                 <div id="historyHistoryControls" class="backup-history-title-tools">
-                                    <button id="historySlimmingSettingsBtn" class="action-btn compact backup-history-title-icon-btn" type="button" data-title="精简设置" data-slimming-state="all">
-                                        <i class="fas fa-cog backup-history-settings-icon"></i>
-                                        <span class="btn-tooltip" id="historySlimmingSettingsTooltip">精简设置</span>
+                                    <button id="clearBackupHistoryBtn" class="action-btn compact" data-title="清除记录">
+                                        <i class="fas fa-trash-alt"></i>
+                                        <span class="btn-tooltip" id="clearBackupHistoryTooltip">清除记录</span>
                                     </button>
-                                    <button id="historySafetyCheckpointBtn" class="action-btn compact backup-history-title-icon-btn" type="button" data-title="临时安全快照">
-                                        <i class="fas fa-shield-alt"></i>
-                                        <span class="btn-tooltip" id="historySafetyCheckpointTooltip">临时安全快照</span>
-                                    </button>
+                                    <div id="historyWarningPrompt" class="backup-history-warning-prompt" style="display: none;" aria-live="polite"></div>
                                 </div>
                             </div>
                             <div id="historyPagination" class="history-pagination-inline">
@@ -188,18 +185,14 @@
                         </div>
                     </div>
                     <div class="view-header-right">
-
-                        <!-- 清除备份历史记录（与主UI一致） -->
-                        <button id="clearBackupHistoryBtn" class="action-btn compact" data-title="清除记录">
-                            <i class="fas fa-trash-alt"></i>
-                            <span class="btn-tooltip" id="clearBackupHistoryTooltip">清除记录</span>
+                        <button id="historySafetyCheckpointBtn" class="action-btn compact backup-history-title-icon-btn" type="button" data-title="临时安全快照">
+                            <i class="fas fa-shield-alt"></i>
+                            <span class="btn-tooltip" id="historySafetyCheckpointTooltip">临时安全快照</span>
                         </button>
-                        <!-- 全局导出按钮 -->
                         <button id="globalExportBtn" class="action-btn compact" data-title="全局导出">
                             <i class="fas fa-file-export"></i>
                             <span class="btn-tooltip" id="globalExportTooltip">全局导出</span>
                         </button>
-
                         <!-- 详略切换按钮 -->
                         <div class="toggle-btn-group" id="historyDetailModeToggle">
                             <button id="historyDetailModeSimple" class="toggle-btn" data-mode="simple"
@@ -462,45 +455,6 @@
         <div class="revert-overlay-content">
             <div class="revert-spinner"></div>
             <div class="revert-text" id="revertOverlayText">正在处理中...</div>
-        </div>
-    </div>
-
-    <div id="historySlimmingSettingsModal" class="modal">
-        <div class="modal-content backup-history-secondary-modal" style="max-width: 460px;">
-            <div class="modal-header compact">
-                <h3 id="historySlimmingSettingsModalTitle" style="margin: 0; white-space: nowrap;">精简设置</h3>
-                <button class="modal-close" id="historySlimmingSettingsModalClose">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body history-slimming-modal-body backup-history-secondary-stack">
-                <div id="historySlimmingSettingsDesc" class="backup-history-secondary-note">
-                    <div>选择写入<span style="color: #f97316; font-weight: 500;">插件内部存储（chrome.storage）</span>的历史详情数据。未勾选的数据将不会被保存，以节省<span style="color: #f97316; font-weight: 500;">浏览器</span>的存储空间。</div>
-                </div>
-                <div class="backup-history-choice-grid">
-                    <label class="backup-history-choice-card">
-                        <input class="backup-history-choice-input" type="checkbox" id="historySlimmingSaveSnapshotData">
-                        <span class="backup-history-choice-content">
-                            <span class="backup-history-choice-title">
-                                <i class="fas fa-bookmark"></i>
-                                <span id="historySlimmingSaveSnapshotDataText">保存快照数据</span>
-                            </span>
-                            <span class="backup-history-choice-check"><i class="fas fa-check"></i></span>
-                        </span>
-                    </label>
-                    <label class="backup-history-choice-card">
-                        <input class="backup-history-choice-input" type="checkbox" id="historySlimmingSaveChangeData">
-                        <span class="backup-history-choice-content">
-                            <span class="backup-history-choice-title">
-                                <i class="fas fa-code-branch"></i>
-                                <span id="historySlimmingSaveChangeDataText">保存变化数据</span>
-                            </span>
-                            <span class="backup-history-choice-check"><i class="fas fa-check"></i></span>
-                        </span>
-                    </label>
-                </div>
-                <div id="historySlimmingSettingsStatus" class="backup-history-secondary-status"></div>
-            </div>
         </div>
     </div>
 
@@ -1039,7 +993,7 @@
     <div id="clearBackupHistoryModal" class="modal">
         <div class="modal-content backup-history-secondary-modal" style="max-width: 480px;">
             <div class="modal-header compact">
-                <h3 id="clearBackupHistoryModalTitle">清除记录</h3>
+                <h3 id="clearBackupHistoryModalTitle">清理</h3>
                 <button class="modal-close" id="clearBackupHistoryModalClose">
                     <i class="fas fa-times"></i>
                 </button>
@@ -1050,6 +1004,37 @@
                 </p>
 
                 <div id="clearBackupHistoryOptions" class="clear-history-section-stack">
+                    <section id="clearHistorySlimmingSettingsPanel" class="clear-history-section">
+                        <div class="clear-history-section-header">
+                            <div>
+                                <div id="clearHistorySlimmingSectionTitle" class="clear-history-section-title">新记录存储选择</div>
+                                <div id="historySlimmingSettingsDesc" class="clear-history-section-desc"></div>
+                            </div>
+                        </div>
+                        <div class="backup-history-choice-grid">
+                            <label class="backup-history-choice-card">
+                                <input class="backup-history-choice-input" type="checkbox" id="historySlimmingSaveSnapshotData">
+                                <span class="backup-history-choice-content">
+                                    <span class="backup-history-choice-title">
+                                        <i class="fas fa-bookmark"></i>
+                                        <span id="historySlimmingSaveSnapshotDataText">保存快照数据</span>
+                                    </span>
+                                    <span class="backup-history-choice-check"><i class="fas fa-check"></i></span>
+                                </span>
+                            </label>
+                            <label class="backup-history-choice-card">
+                                <input class="backup-history-choice-input" type="checkbox" id="historySlimmingSaveChangeData">
+                                <span class="backup-history-choice-content">
+                                    <span class="backup-history-choice-title">
+                                        <i class="fas fa-code-branch"></i>
+                                        <span id="historySlimmingSaveChangeDataText">保存变化数据</span>
+                                    </span>
+                                    <span class="backup-history-choice-check"><i class="fas fa-check"></i></span>
+                                </span>
+                            </label>
+                        </div>
+                        <div id="historySlimmingSettingsStatus" class="backup-history-secondary-status"></div>
+                    </section>
                     <section class="clear-history-section clear-history-manual-section">
                         <div class="clear-history-section-header">
                             <div>
@@ -1146,13 +1131,27 @@
                         <div class="clear-history-section-header">
                             <div>
                                 <div id="clearHistoryWarningThresholdTitle" class="clear-history-section-title">
-                                    删除按钮颜色提醒阈值
+                                    备份历史提醒
                                 </div>
                                 <div id="clearHistoryWarnThresholdHint" class="clear-history-section-desc">
-                                    默认 25 / 50，可手动修改。
+                                    可按历史条数、插件本地存储或两者同时提醒。
                                 </div>
                             </div>
                         </div>
+                        <label class="clear-history-warning-toggle" for="historyWarningStatusEnabled">
+                            <span id="historyWarningStatusEnabledText">显示超限信息</span>
+                            <span class="clear-history-switch">
+                                <input type="checkbox" id="historyWarningStatusEnabled">
+                                <span class="clear-history-switch-track"></span>
+                            </span>
+                        </label>
+                        <label class="clear-history-warning-toggle" for="historyCountWarningEnabled">
+                            <span id="historyCountWarningEnabledText">按历史条数提醒</span>
+                            <span class="clear-history-switch">
+                                <input type="checkbox" id="historyCountWarningEnabled">
+                                <span class="clear-history-switch-track"></span>
+                            </span>
+                        </label>
                         <div class="clear-history-threshold-row">
                             <label class="clear-history-threshold-item" for="clearHistoryWarnYellowInput">
                                 <span id="clearHistoryWarnYellowLabel">淡黄色起始条数</span>
@@ -1163,6 +1162,28 @@
                                 <span id="clearHistoryWarnRedLabel">淡红色起始条数</span>
                                 <input id="clearHistoryWarnRedInput" class="clear-history-threshold-input" type="number" min="2"
                                     max="999999" step="1" inputmode="numeric">
+                            </label>
+                        </div>
+                        <label class="clear-history-warning-toggle" for="historyStorageWarningEnabled">
+                            <span id="historyStorageWarningEnabledText">按插件本地存储提醒</span>
+                            <span class="clear-history-warning-toggle-actions">
+                                <span id="historyStorageWarningCurrentUsage" class="clear-history-warning-current-usage">当前：-- MB</span>
+                                <span class="clear-history-switch">
+                                    <input type="checkbox" id="historyStorageWarningEnabled">
+                                    <span class="clear-history-switch-track"></span>
+                                </span>
+                            </span>
+                        </label>
+                        <div class="clear-history-threshold-row">
+                            <label class="clear-history-threshold-item" for="historyStorageWarnYellowInput">
+                                <span id="historyStorageWarnYellowLabel">淡黄色起始容量（MB）</span>
+                                <input id="historyStorageWarnYellowInput" class="clear-history-threshold-input" type="number" min="0.1"
+                                    max="999999" step="0.1" inputmode="decimal">
+                            </label>
+                            <label class="clear-history-threshold-item" for="historyStorageWarnRedInput">
+                                <span id="historyStorageWarnRedLabel">淡红色起始容量（MB）</span>
+                                <input id="historyStorageWarnRedInput" class="clear-history-threshold-input" type="number" min="0.2"
+                                    max="999999" step="0.1" inputmode="decimal">
                             </label>
                         </div>
                     </section>

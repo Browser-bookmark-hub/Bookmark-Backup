@@ -977,6 +977,7 @@
             border-radius: 0;
             background: transparent;
             box-sizing: border-box;
+            position: relative;
         }
 
         .backup-history-header-btn .tooltip {
@@ -2004,54 +2005,16 @@
             box-shadow: 0 2px 6px rgba(0, 122, 255, 0.3);
         }
 
-        @keyframes warning-breath {
-            0% {
-                background: rgba(255, 193, 7, 0.16);
-                border-color: rgba(255, 193, 7, 0.45);
-                box-shadow: 0 0 0 0px rgba(255, 193, 7, 0.2);
-            }
-            50% {
-                background: rgba(255, 193, 7, 0.32);
-                border-color: rgba(255, 193, 7, 0.85);
-                box-shadow: 0 0 4px 2px rgba(255, 193, 7, 0.35);
-            }
-            100% {
-                background: rgba(255, 193, 7, 0.16);
-                border-color: rgba(255, 193, 7, 0.45);
-                box-shadow: 0 0 0 0px rgba(255, 193, 7, 0.2);
-            }
-        }
-
-        @keyframes danger-breath {
-            0% {
-                background: rgba(244, 67, 54, 0.14);
-                border-color: rgba(244, 67, 54, 0.4);
-                box-shadow: 0 0 0 0px rgba(244, 67, 54, 0.2);
-            }
-            50% {
-                background: rgba(244, 67, 54, 0.28);
-                border-color: rgba(244, 67, 54, 0.8);
-                box-shadow: 0 0 5px 3px rgba(244, 67, 54, 0.3);
-            }
-            100% {
-                background: rgba(244, 67, 54, 0.14);
-                border-color: rgba(244, 67, 54, 0.4);
-                box-shadow: 0 0 0 0px rgba(244, 67, 54, 0.2);
-            }
-        }
-
         .action-button.history-nav-btn.history-delete-warning {
             background: rgba(255, 193, 7, 0.16);
             border-color: rgba(255, 193, 7, 0.45);
             color: #9a6b00;
-            animation: warning-breath 2s infinite ease-in-out;
         }
 
         .action-button.history-nav-btn.history-delete-warning:hover {
             background: rgba(255, 193, 7, 0.24);
             border-color: rgba(255, 193, 7, 0.56);
             color: #875d00;
-            animation: none;
             box-shadow: 0 2px 6px rgba(255, 193, 7, 0.3);
         }
 
@@ -2059,19 +2022,17 @@
             background: rgba(244, 67, 54, 0.14);
             border-color: rgba(244, 67, 54, 0.4);
             color: #b53c30;
-            animation: danger-breath 1.5s infinite ease-in-out;
         }
 
         .action-button.history-nav-btn.history-delete-danger:hover {
             background: rgba(244, 67, 54, 0.22);
             border-color: rgba(244, 67, 54, 0.54);
             color: #a62e23;
-            animation: none;
             box-shadow: 0 2px 6px rgba(244, 67, 54, 0.3);
         }
 
-        .action-button.history-nav-btn.history-delete-auto-cleanup,
-        .action-button.history-nav-btn.history-delete-auto-cleanup:hover {
+        .action-button.history-nav-btn.history-delete-auto-cleanup:not(.history-delete-warning):not(.history-delete-danger),
+        .action-button.history-nav-btn.history-delete-auto-cleanup:not(.history-delete-warning):not(.history-delete-danger):hover {
             border-color: rgba(76, 175, 80, 0.85) !important;
         }
 
@@ -6235,8 +6196,8 @@
         .web-snapshot-shortcut-prompt {
             display: inline-flex;
             align-items: center;
-            background: var(--theme-bg-elevated, #fff);
-            border: 1px solid var(--theme-border-primary, #e2e8f0);
+            background: rgba(37, 99, 235, 0.08);
+            border: 1px solid rgba(37, 99, 235, 0.58);
             border-radius: 6px;
             padding: 2px 8px;
             gap: 6px;
@@ -6246,13 +6207,7 @@
             color: var(--theme-text-primary, #1a202c);
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
             position: relative;
-            animation: pulseHint 2s infinite ease-in-out;
             white-space: nowrap;
-        }
-        
-        @keyframes pulseHint {
-            0%, 100% { box-shadow: 0 2px 8px rgba(0, 122, 255, 0.1), 0 0 0 1px rgba(0, 122, 255, 0.05); }
-            50% { box-shadow: 0 2px 12px rgba(0, 122, 255, 0.25), 0 0 0 2px rgba(0, 122, 255, 0.15); }
         }
 
         .web-snapshot-shortcut-prompt kbd {
@@ -6284,6 +6239,41 @@
         .web-snapshot-shortcut-prompt .prompt-close-btn:hover {
             color: var(--theme-error-color, #e53e3e);
             background: rgba(229, 62, 62, 0.1);
+        }
+
+        .backup-history-warning-prompt {
+            display: inline-flex;
+            align-items: center;
+            gap: 0;
+            position: absolute;
+            left: calc(100% + 7px);
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 12;
+            width: max-content;
+            max-width: calc(100vw - 40px);
+            min-height: 22px;
+            box-sizing: border-box;
+            padding: 4px 8px;
+            border: 1px solid var(--theme-border-primary, #e2e8f0);
+            border-radius: 6px;
+            background: var(--theme-bg-elevated, #fff);
+            color: var(--theme-text-primary, #1a202c);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            font-size: 10px;
+            line-height: 1.35;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        .backup-history-warning-prompt.warning {
+            border-color: rgba(255, 193, 7, 0.62);
+            background: rgba(255, 193, 7, 0.09);
+        }
+
+        .backup-history-warning-prompt.danger {
+            border-color: rgba(244, 67, 54, 0.58);
+            background: rgba(244, 67, 54, 0.08);
         }
 
     </style>
@@ -6951,20 +6941,13 @@
                             <div class="sync-history-title-row">
                                 <h3 style="margin: 0;">备份历史</h3>
                                 <div class="sync-history-title-tools">
-                                    <button id="backupHistorySlimmingSettingsBtn"
-                                        class="action-button history-nav-btn backup-history-header-btn"
-                                        type="button" data-slimming-state="all" style="display: inline-flex;">
-                                        <i class="fas fa-cog backup-history-settings-icon"></i>
+                                    <button id="clearHistoryBtn" class="action-button history-nav-btn"
+                                        style="display: inline-flex;">
+                                        <i class="fas fa-trash-alt"></i>
                                         <span class="tooltip"
-                                            style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">精简设置</span>
+                                            style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">清空记录</span>
                                     </button>
-                                    <button id="backupHistorySafetyCheckpointBtn"
-                                        class="action-button history-nav-btn backup-history-header-btn"
-                                        type="button" style="display: inline-flex;">
-                                        <i class="fas fa-shield-alt"></i>
-                                        <span class="tooltip"
-                                            style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; left: 50%; transform: translateX(-50%);">临时安全快照</span>
-                                    </button>
+                                    <div id="popupHistoryWarningPrompt" class="backup-history-warning-prompt" style="display: none;" aria-live="polite"></div>
 
                                 </div>
                                 <!-- 分页控件（10条/页）- 紧靠“备份历史”标题右侧 -->
@@ -6984,11 +6967,12 @@
                                 </div>
                             </div>
                             <div class="sync-history-header-actions">
-                                <button id="clearHistoryBtn" class="action-button history-nav-btn"
-                                    style="display: inline-flex;">
-                                    <i class="fas fa-trash-alt"></i>
+                                <button id="backupHistorySafetyCheckpointBtn"
+                                    class="action-button history-nav-btn backup-history-header-btn"
+                                    type="button" style="display: inline-flex;">
+                                    <i class="fas fa-shield-alt"></i>
                                     <span class="tooltip"
-                                        style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -25px; left: 50%; transform: translateX(-50%);">清空记录</span>
+                                        style="position: absolute; background-color: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; visibility: hidden; opacity: 0; transition: opacity 0.3s; pointer-events: none; top: -24px; left: 50%; transform: translateX(-50%);">临时安全快照</span>
                                 </button>
                                 <button id="exportHistoryBtn" class="action-button history-nav-btn"
                                     style="display: inline-flex;">

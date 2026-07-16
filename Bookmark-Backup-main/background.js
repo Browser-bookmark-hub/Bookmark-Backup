@@ -96,6 +96,20 @@ const DEFAULT_BACKUP_HISTORY_AUTO_CLEANUP_SETTINGS = Object.freeze({
     threshold: 30,
     batchSize: 5
 });
+const BACKUP_HISTORY_WARNING_SETTINGS_KEY = 'backupHistoryWarningSettings';
+const BACKUP_HISTORY_LEGACY_WARNING_KEYS = Object.freeze({
+    yellow: 'backupHistoryDeleteWarnYellowThreshold',
+    red: 'backupHistoryDeleteWarnRedThreshold'
+});
+const DEFAULT_BACKUP_HISTORY_WARNING_SETTINGS = Object.freeze({
+    prompt: Object.freeze({ showStatus: true }),
+    count: Object.freeze({ enabled: true, yellow: 25, red: 50 }),
+    storage: Object.freeze({ enabled: true, yellowMb: 50, redMb: 100 })
+});
+const BACKUP_HISTORY_WARNING_STATUS_CACHE_TTL_MS = 15000;
+let backupHistoryWarningStatusCache = null;
+let backupHistoryWarningStatusCacheExpiresAt = 0;
+let backupHistoryWarningStatusPromise = null;
 const BACKUP_PROGRESS_FINAL_STATE_LINGER_MS = 1600;
 const BACKUP_PROGRESS_SUCCESS_HIDE_DELAY_MS = 80;
 const ANALYSIS_QUICK_REOPEN_CACHE_MS = 2000;
@@ -494,6 +508,182 @@ async function setBackupHistoryAutoCleanupSettings(rawSettings = {}) {
     });
     return nextSettings;
 }
+
+function normalizeBackupHistoryWarningInteger(rawValue, fallbackValue, min = 1, max = 999999) {
+    const parsed = Math.floor(Number(rawValue));
+    if (!Number.isFinite(parsed)) return fallbackValue;
+    return Math.max(min, Math.min(max, parsed));
+}
+
+function normalizeBackupHistoryWarningMb(rawValue, fallbackValue) {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) return fallbackValue;
+    return Math.max(0.1, Math.min(999999, Math.round(parsed * 10) / 10));
+}
+
+function normalizeBackupHistoryWarningThresholdPair(rawYellow, rawRed, normalizeValue, defaults) {
+    let yellow = normalizeValue(rawYellow, defaults.yellow);
+    let red = normalizeValue(rawRed, defaults.red);
+    if (red <= yellow) {
+        red = normalizeValue(yellow + (Number.isInteger(yellow) ? 1 : 0.1), defaults.red);
+        if (red <= yellow) yellow = normalizeValue(red - (Number.isInteger(red) ? 1 : 0.1), defaults.yellow);
+    }
+    return { yellow, red };
+}
+
+function normalizeBackupHistoryWarningSettings(rawSettings = null, legacySettings = null) {
+    const source = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    const legacy = legacySettings && typeof legacySettings === 'object' ? legacySettings : {};
+    const defaultCount = DEFAULT_BACKUP_HISTORY_WARNING_SETTINGS.count;
+    const defaultStorage = DEFAULT_BACKUP_HISTORY_WARNING_SETTINGS.storage;
+    const countSource = source.count && typeof source.count === 'object' ? source.count : {};
+    const storageSource = source.storage && typeof source.storage === 'object' ? source.storage : {};
+    const promptSource = source.prompt && typeof source.prompt === 'object' ? source.prompt : {};
+    const legacyShowPrompt = source.showPrompt !== false;
+    const countThresholds = normalizeBackupHistoryWarningThresholdPair(
+        countSource.yellow ?? legacy[BACKUP_HISTORY_LEGACY_WARNING_KEYS.yellow],
+        countSource.red ?? legacy[BACKUP_HISTORY_LEGACY_WARNING_KEYS.red],
+        normalizeBackupHistoryWarningInteger,
+        defaultCount
+    );
+    const storageThresholds = normalizeBackupHistoryWarningThresholdPair(
+        storageSource.yellowMb,
+        storageSource.redMb,
+        normalizeBackupHistoryWarningMb,
+        { yellow: defaultStorage.yellowMb, red: defaultStorage.redMb }
+    );
+
+    return {
+        prompt: {
+            showStatus: promptSource.showStatus ?? legacyShowPrompt
+        },
+        count: {
+            enabled: countSource.enabled !== false,
+            ...countThresholds
+        },
+        storage: {
+            enabled: storageSource.enabled !== false,
+            yellowMb: storageThresholds.yellow,
+            redMb: storageThresholds.red
+        }
+    };
+}
+
+function getBackupHistoryWarningLevel(currentValue, thresholds, enabled) {
+    if (!enabled) return 'normal';
+    const value = Math.max(0, Number(currentValue) || 0);
+    if (value >= Number(thresholds.red)) return 'danger';
+    if (value >= Number(thresholds.yellow)) return 'warning';
+    return 'normal';
+}
+
+function mergeBackupHistoryWarningLevels(...levels) {
+    if (levels.includes('danger')) return 'danger';
+    if (levels.includes('warning')) return 'warning';
+    return 'normal';
+}
+
+function invalidateBackupHistoryWarningStatusCache() {
+    backupHistoryWarningStatusCache = null;
+    backupHistoryWarningStatusCacheExpiresAt = 0;
+}
+
+async function getStorageLocalBytesInUse() {
+    if (!browserAPI?.storage?.local?.getBytesInUse) return 0;
+    return await new Promise((resolve) => {
+        try {
+            browserAPI.storage.local.getBytesInUse(null, (bytes) => {
+                if (browserAPI.runtime?.lastError) {
+                    resolve(0);
+                    return;
+                }
+                resolve(Math.max(0, Number(bytes) || 0));
+            });
+        } catch (_) {
+            resolve(0);
+        }
+    });
+}
+
+async function getBackupHistoryWarningSettings() {
+    const store = await browserAPI.storage.local.get([
+        BACKUP_HISTORY_WARNING_SETTINGS_KEY,
+        BACKUP_HISTORY_LEGACY_WARNING_KEYS.yellow,
+        BACKUP_HISTORY_LEGACY_WARNING_KEYS.red
+    ]);
+    return normalizeBackupHistoryWarningSettings(store?.[BACKUP_HISTORY_WARNING_SETTINGS_KEY], store);
+}
+
+async function setBackupHistoryWarningSettings(rawSettings = {}) {
+    const current = await getBackupHistoryWarningSettings();
+    const source = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    const nextSettings = normalizeBackupHistoryWarningSettings({
+        ...current,
+        ...source,
+        count: { ...current.count, ...(source.count || {}) },
+        storage: { ...current.storage, ...(source.storage || {}) }
+    });
+    await browserAPI.storage.local.set({
+        [BACKUP_HISTORY_WARNING_SETTINGS_KEY]: nextSettings,
+        [BACKUP_HISTORY_LEGACY_WARNING_KEYS.yellow]: nextSettings.count.yellow,
+        [BACKUP_HISTORY_LEGACY_WARNING_KEYS.red]: nextSettings.count.red
+    });
+    invalidateBackupHistoryWarningStatusCache();
+    return nextSettings;
+}
+
+async function getBackupHistoryWarningStatus() {
+    const now = Date.now();
+    if (backupHistoryWarningStatusCache && now < backupHistoryWarningStatusCacheExpiresAt) {
+        return backupHistoryWarningStatusCache;
+    }
+    if (backupHistoryWarningStatusPromise) return backupHistoryWarningStatusPromise;
+
+    backupHistoryWarningStatusPromise = (async () => {
+        const store = await browserAPI.storage.local.get([
+            'syncHistory',
+            BACKUP_HISTORY_WARNING_SETTINGS_KEY,
+            BACKUP_HISTORY_LEGACY_WARNING_KEYS.yellow,
+            BACKUP_HISTORY_LEGACY_WARNING_KEYS.red
+        ]);
+        const settings = normalizeBackupHistoryWarningSettings(store?.[BACKUP_HISTORY_WARNING_SETTINGS_KEY], store);
+        const recordCount = Array.isArray(store?.syncHistory) ? store.syncHistory.length : 0;
+        const storageBytes = await getStorageLocalBytesInUse();
+        const storageMb = storageBytes == null ? null : storageBytes / (1024 * 1024);
+        const countLevel = getBackupHistoryWarningLevel(recordCount, settings.count, settings.count.enabled);
+        const storageLevel = storageMb == null
+            ? 'normal'
+            : getBackupHistoryWarningLevel(storageMb, {
+                yellow: settings.storage.yellowMb,
+                red: settings.storage.redMb
+            }, settings.storage.enabled);
+        const status = {
+            settings,
+            recordCount,
+            storageBytes,
+            storageMb,
+            countLevel,
+            storageLevel,
+            level: mergeBackupHistoryWarningLevels(countLevel, storageLevel),
+            hasWarning: countLevel !== 'normal' || storageLevel !== 'normal'
+        };
+        backupHistoryWarningStatusCache = status;
+        backupHistoryWarningStatusCacheExpiresAt = Date.now() + BACKUP_HISTORY_WARNING_STATUS_CACHE_TTL_MS;
+        return status;
+    })();
+
+    try {
+        return await backupHistoryWarningStatusPromise;
+    } finally {
+        backupHistoryWarningStatusPromise = null;
+    }
+}
+
+try {
+    browserAPI.storage.onChanged.addListener((_changes, areaName) => {
+        if (areaName === 'local') invalidateBackupHistoryWarningStatusCache();
+    });
+} catch (_) { }
 
 function shouldRetainBackupHistorySnapshotData(settings = null) {
     const normalized = normalizeBackupHistorySlimmingSettings(settings);
@@ -12681,6 +12871,21 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (message.action === "setBackupHistorySlimmingSettings") {
             setBackupHistorySlimmingSettings(message.settings)
                 .then(settings => sendResponse({ success: true, settings }))
+                .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
+            return true;
+        } else if (message.action === "getBackupHistoryWarningSettings") {
+            getBackupHistoryWarningSettings()
+                .then(settings => sendResponse({ success: true, settings }))
+                .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
+            return true;
+        } else if (message.action === "setBackupHistoryWarningSettings") {
+            setBackupHistoryWarningSettings(message.settings)
+                .then(settings => sendResponse({ success: true, settings }))
+                .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
+            return true;
+        } else if (message.action === "getBackupHistoryWarningStatus") {
+            getBackupHistoryWarningStatus()
+                .then(status => sendResponse({ success: true, status }))
                 .catch(error => sendResponse({ success: false, error: error?.message || String(error) }));
             return true;
         } else if (message.action === "getBackupHistoryAutoCleanupSettings") {
