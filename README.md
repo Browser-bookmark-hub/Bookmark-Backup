@@ -60,19 +60,15 @@ Bookmark-Backup-main/
 ### Changelog
 
 > [!NOTE]
-> #### v3.6.5
+> #### v3.7.0
 >
 > **Primary updates**
-> - **Reload/initial-load performance optimization** (commit: `d685b5b`, tag: `重载get(null)优化`): replaced broad `storage.local.get(null)` reads during reload, startup, and tab cleanup with a lightweight key registry, noticeably reducing stalls on large local datasets; startup/install listeners were also consolidated so the badge can recover automatically after reload.
-> - **Automatic backup-history cleanup** (commit: `afdb3c6`, tag: `备份历史--自动清理`): added an opt-in cleanup setting for backup history, with retention thresholds and cleanup batches that delete the oldest records and their detached snapshot/change-data keys; the popup and history page now show thresholds, warnings, and cleanup state.
-> - **Local-backup download UI upgrade** (commit: `b177265`, tag: `静默`): migrated to Chrome's recommended `downloads.ui` / `chrome.downloads.setUiOptions()` APIs and restores the download UI after completion, errors, or background recovery.
-> - **Standardized post-operation backup policy for high-risk actions** (commit: `c3c8675`, tag: `高危操作后续策略`): after restore, patch restore, overwrite restore, or import merge, follow-up backup writes now use the current `Overwrite / Versioned` setting instead of inheriting the source record strategy. Revert flows still avoid ordinary backup writes and keep only transactions, temporary safety snapshots, and required boundary records.
-> - **Added Bookmark Canvas compatibility for change data** (commit: `d5efb4e`, tag: `变化数据--书签画布格式`): this adds an optional Canvas format on top of the native Changes JSON format. Current Changes / History Changes can be exported as an importable temporary section for [Bookmark-Canvas](https://github.com/Browser-bookmark-hub/Bookmark-Canvas), preserving added, deleted, moved, and modified tags; the original format remains available, and cloud, local, single-file, and folder restore flows detect both JSON formats.
+> - **Web Snapshot now supports parallel multi-target backups** (commit: `57f76ee`, tag: `网页存档--云端`): export MHTML or Markdown snapshots to any combination of Local, WebDAV (Cloud 1), and GitHub Repository (Cloud 2), with unavailable cloud targets disabled automatically and per-target progress/results shown.
+> - **Current Changes now observes child reorder events** (commit: `08af046`): added foreground handling for `onChildrenReordered`, covering same-folder sorting and batch reorder operations that may not emit `onMoved`, including **Sort by name** in the browser's built-in Bookmark Manager.
+> - **Backup-history capacity reminders** (commit: `795aa96`): added configurable extension-storage warning thresholds, measured with `chrome.storage.local.getBytesInUse()`; defaults are **50 MB** for a yellow warning and **100 MB** for a red warning.
 >
 > **Other improvements**
-> - **Markdown body navigation and highlighter improvements** (commit: `1913b65`, tag: `md正文定位`): refined highlighter tools, Markdown formatting/refresh handling, and Markdown body table-of-contents navigation.
-> - **Maintainability cleanup** (commit: `98cae09`, tag: `重构js`): settings now save automatically; helper buttons work more reliably across pages; core JavaScript comments and sections were reorganized and obsolete split-file scripts were removed to improve AI/developer code navigation.
-> - **Documented current restore/import safeguards**: high-risk writes continue to rely on confirmation, preflight checks, and temporary safety snapshots; after completion, backup writes only flow from the current browser bookmark state to local, WebDAV, or GitHub targets. Policy details are in the [`post-operation backup policy plan`](docs/归档/19--恢复与导入合并后备份写出策略-已落地计划.md).
+> - **UI, documentation, and localization groundwork**: reorganized Chinese/English README entry points and documentation structure, refined History and popup details, and prepared related UI strings for localization.
 
 ### Core Algorithm
 

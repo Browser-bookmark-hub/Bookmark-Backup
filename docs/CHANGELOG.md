@@ -7,6 +7,18 @@
 
 ---
 
+## v3.7.0
+
+### 主要更新
+
+- **网页存档支持多目标并行备份**（commit: `57f76ee`）：网页快照的 MHTML / Markdown 导出可按需同时保存到本地、WebDAV（云端 1）和 GitHub 仓库（云端 2）；未配置或未启用的云端目标会自动禁用，并补充保存进度与分目标结果提示。
+- **当前变化页面补全排序变动监听**（commit: `08af046`）：新增 `onChildrenReordered` 前台监听，处理同一文件夹内排序或批量调整仅触发重排事件的情况，覆盖浏览器自带书签管理器右上角「Sort by name」等常见排序操作。
+- **备份历史容量提醒**（commit: `795aa96`）：新增可配置的扩展本地存储容量提醒，通过 `chrome.storage.local.getBytesInUse()` 获取用量；默认 **50 MB 黄色提醒**、**100 MB 红色提醒**。
+
+### 其他改进
+
+- **界面、文档与多语言准备**：整理 README 的中英文入口与文档结构，同步优化历史页、弹窗等细节，并补齐相关多语言文案基础。
+
 ## v3.6.5
 
 相对 `v3.5.8(2)` 的累计未发行更新。
@@ -151,6 +163,18 @@
 # Release Notes
 
 ---
+
+## v3.7.0
+
+### Primary updates
+
+- **Web Snapshot now supports parallel multi-target backups** (commit: `57f76ee`): export MHTML or Markdown snapshots to any combination of Local, WebDAV (Cloud 1), and GitHub Repository (Cloud 2), with unavailable cloud targets disabled automatically and per-target progress/results shown.
+- **Current Changes now observes child reorder events** (commit: `08af046`): added foreground handling for `onChildrenReordered`, covering same-folder sorting and batch reorder operations that may not emit `onMoved`, including **Sort by name** in the browser's built-in Bookmark Manager.
+- **Backup-history capacity reminders** (commit: `795aa96`): added configurable extension-storage warning thresholds, measured with `chrome.storage.local.getBytesInUse()`; defaults are **50 MB** for a yellow warning and **100 MB** for a red warning.
+
+### Other improvements
+
+- **UI, documentation, and localization groundwork**: reorganized Chinese/English README entry points and documentation structure, refined History and popup details, and prepared related UI strings for localization.
 
 ## v3.6.5
 
