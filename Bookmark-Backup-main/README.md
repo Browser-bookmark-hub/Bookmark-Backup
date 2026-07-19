@@ -1,4 +1,4 @@
-## Switch to [中文文档](../docs/README/README.zh.md)...
+## Switch to [中文文档](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/README/README.zh.md)...
 
 [![Linux.do](https://img.shields.io/badge/Linux.do-Portfolio-FFD700?logo=discourse&logoColor=white)](https://linux.do/u/kk1/activity/portfolio)
 [![GitHub Releases](https://img.shields.io/github/v/release/Browser-bookmark-hub/Bookmark-Backup?logo=github&logoColor=white&label=GitHub+Releases)](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases)
@@ -38,18 +38,18 @@ Bookmark-Backup-main/
 
 ### Roadmap
 
-- [ ] **More languages and UI QA**: the current UI is built around Simplified Chinese and English. Traditional Chinese, French, Russian, Spanish, Arabic, Japanese, Korean, and other languages need complete copy coverage and layout QA. README translations can be added under [`../docs/README/`](../docs/README/). See [`docs/LIMITATIONS_AND_COMPROMISES.md`](../docs/LIMITATIONS_AND_COMPROMISES.md).
+- [ ] **More languages and UI QA**: the current UI is built around Simplified Chinese and English. Traditional Chinese, French, Russian, Spanish, Arabic, Japanese, Korean, and other languages need complete copy coverage and layout QA. README translations can be added under [`docs/README/`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/tree/main/docs/README). See [`docs/LIMITATIONS_AND_COMPROMISES.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/LIMITATIONS_AND_COMPROMISES.md).
 - [ ] **Ecosystem data tooling**: explore a CLI for validating, organizing, converting, and interoperating with backup, history, and web-snapshot exports. Unlike the possible standalone-client direction of Bookmark Record and Recommend, this project will prioritize small, composable command-line tools.
-- [ ] **External-change follow-up tracking**: keep tracking browser updates, browser bug fixes, related API behavior changes, and external constraints such as GitHub hashes and upload limits that may affect this project. Tracking doc: [`docs/LIMITATIONS_AND_COMPROMISES.md`](../docs/LIMITATIONS_AND_COMPROMISES.md).
+- [ ] **External-change follow-up tracking**: keep tracking browser updates, browser bug fixes, related API behavior changes, and external constraints such as GitHub hashes and upload limits that may affect this project. Tracking doc: [`docs/LIMITATIONS_AND_COMPROMISES.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/LIMITATIONS_AND_COMPROMISES.md).
 
 ### Docs
 
-- [`docs/PROJECT_STRUCTURE.md`](../docs/PROJECT_STRUCTURE.md): current project structure and module map.
-- [`docs/CHANGELOG.md`](../docs/CHANGELOG.md): complete release history.
-- [`docs/归档/19--恢复与导入合并后备份写出策略-已落地计划.md`](../docs/归档/19--恢复与导入合并后备份写出策略-已落地计划.md): backup write policy after high-risk restore and import-merge operations.
-- [`docs/归档/20--备份历史自动清理-已落地计划.md`](../docs/归档/20--备份历史自动清理-已落地计划.md): implementation plan and landing notes for automatic backup-history cleanup.
-- [`docs/LIMITATIONS_AND_COMPROMISES.md`](../docs/LIMITATIONS_AND_COMPROMISES.md): browser limitations, implementation compromises, and compatibility notes.
-- [`docs/归档/00--归档索引-请先读.md`](../docs/%E5%BD%92%E6%A1%A3/00--%E5%BD%92%E6%A1%A3%E7%B4%A2%E5%BC%95-%E8%AF%B7%E5%85%88%E8%AF%BB.md): index of historical plans, audits, and design notes.
+- [`docs/PROJECT_STRUCTURE.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/PROJECT_STRUCTURE.md): current project structure and module map.
+- [`docs/CHANGELOG.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/CHANGELOG.md): complete release history.
+- [`docs/归档/19--恢复与导入合并后备份写出策略-已落地计划.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/%E5%BD%92%E6%A1%A3/19--%E6%81%A2%E5%A4%8D%E4%B8%8E%E5%AF%BC%E5%85%A5%E5%90%88%E5%B9%B6%E5%90%8E%E5%A4%87%E4%BB%BD%E5%86%99%E5%87%BA%E7%AD%96%E7%95%A5-%E5%B7%B2%E8%90%BD%E5%9C%B0%E8%AE%A1%E5%88%92.md): backup write policy after high-risk restore and import-merge operations.
+- [`docs/归档/20--备份历史自动清理-已落地计划.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/%E5%BD%92%E6%A1%A3/20--%E5%A4%87%E4%BB%BD%E5%8E%86%E5%8F%B2%E8%87%AA%E5%8A%A8%E6%B8%85%E7%90%86-%E5%B7%B2%E8%90%BD%E5%9C%B0%E8%AE%A1%E5%88%92.md): implementation plan and landing notes for automatic backup-history cleanup.
+- [`docs/LIMITATIONS_AND_COMPROMISES.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/LIMITATIONS_AND_COMPROMISES.md): browser limitations, implementation compromises, and compatibility notes.
+- [`docs/归档/00--归档索引-请先读.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/%E5%BD%92%E6%A1%A3/00--%E5%BD%92%E6%A1%A3%E7%B4%A2%E5%BC%95-%E8%AF%B7%E5%85%88%E8%AF%BB.md): index of historical plans, audits, and design notes.
 
 ### Changelog
 
