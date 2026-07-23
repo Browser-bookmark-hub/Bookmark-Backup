@@ -4,10 +4,11 @@
 [![GitHub Releases](https://img.shields.io/github/v/release/Browser-bookmark-hub/Bookmark-Backup?logo=github&logoColor=white&label=GitHub+Releases)](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases)
 [![Microsoft Edge Add-ons](https://img.shields.io/badge/Edge_Add--ons-Available-0078D7?logo=microsoftedge&logoColor=white)](https://microsoftedge.microsoft.com/addons/detail/%E4%B9%A6%E7%AD%BE%E5%A4%87%E4%BB%BDbookmark-backup/klopopehpngheikchkjgkmplgmbfodek)
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/dbdpgedioldmeooemjanbjlhgpocafbc?color=0F9D58&logo=googlechrome&logoColor=white&label=Chrome+Web+Store)](https://chromewebstore.google.com/detail/dbdpgedioldmeooemjanbjlhgpocafbc)
+[![GitHub Bookmark-Canvas](https://img.shields.io/badge/GitHub-Bookmark--Canvas-181717?logo=github&logoColor=white)](https://github.com/Browser-bookmark-hub/Bookmark-Canvas) [![GitHub Bookmark-Record-Recommend](https://img.shields.io/badge/GitHub-Bookmark--Record--Recommend-181717?logo=github&logoColor=white)](https://github.com/Browser-bookmark-hub/Bookmark-Record-Recommend)
 
 ### Overview
 
-`Bookmark Backup` is a Git-style bookmark versioning, backup-history tracking, and safety-recovery extension for Chrome / Edge.
+`Bookmark-Backup` is a Git-style bookmark versioning, backup-history tracking, and safety-recovery extension for Chrome / Edge.
 
 It treats the browser bookmark tree as a versioned asset. Each backup creates a time-stamped, fingerprinted snapshot/history record that can preserve the full bookmark tree and track current changes against historical states. These versions can be synced to local storage, WebDAV, or a GitHub repository, then used later for restore, revert, or import-merge workflows.
 
@@ -63,6 +64,19 @@ Bookmark-Backup-main/
 >
 > **Other improvements**
 > - **UI, documentation, and localization groundwork**: reorganized Chinese/English README entry points and documentation structure, refined History and popup details, and prepared related UI strings for localization.
+
+### References
+
+**Bookmark ecosystem**
+
+- [Bookmark-Canvas](https://github.com/Browser-bookmark-hub/Bookmark-Canvas)
+- [Bookmark-Record-Recommend](https://github.com/Browser-bookmark-hub/Bookmark-Record-Recommend)
+- [Bookmark-Backup](https://github.com/Browser-bookmark-hub/Bookmark-Backup)
+
+**External projects**
+
+- [Obsidian Clipper](https://github.com/obsidianmd/obsidian-clipper) (MIT License)
+- [`defuddle`](https://github.com/kepano/defuddle) conversion core, embedded in a compatible form (MIT ecosystem).
 
 ### Core Algorithm
 
@@ -217,11 +231,6 @@ The main UI restore preview does not force an external tree without IDs into a m
 - Permissions include bookmarks, storage, downloads, tabs, windows, page capture, and related APIs to support backup, restore, snapshot, and helper features.
 - Favicons, web snapshots, and exported files may be generated or cached according to user actions; manage backup targets and download folders according to your privacy needs.
 - Please refer to the [Privacy Policy](PRIVACY_POLICY.md) for detailed principles and permission justifications.
-
-### Third-party Open Source & License (Web Snapshot MD)
-
-- The Web Snapshot MD export in this project is migrated from **Obsidian Clipper** (MIT License): https://github.com/obsidianmd/obsidian-clipper
-- The conversion core comes from its **defuddle**-based MIT ecosystem and is embedded in a compatible form inside this extension.
 
 ---
 

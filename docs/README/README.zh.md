@@ -4,10 +4,11 @@
 [![GitHub Releases](https://img.shields.io/github/v/release/Browser-bookmark-hub/Bookmark-Backup?logo=github&logoColor=white&label=GitHub+Releases)](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases)
 [![Microsoft Edge Add-ons](https://img.shields.io/badge/Edge_Add--ons-Available-0078D7?logo=microsoftedge&logoColor=white)](https://microsoftedge.microsoft.com/addons/detail/%E4%B9%A6%E7%AD%BE%E5%A4%87%E4%BB%BDbookmark-backup/klopopehpngheikchkjgkmplgmbfodek)
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/dbdpgedioldmeooemjanbjlhgpocafbc?color=0F9D58&logo=googlechrome&logoColor=white&label=Chrome+Web+Store)](https://chromewebstore.google.com/detail/dbdpgedioldmeooemjanbjlhgpocafbc)
+[![GitHub Bookmark-Canvas](https://img.shields.io/badge/GitHub-Bookmark--Canvas-181717?logo=github&logoColor=white)](https://github.com/Browser-bookmark-hub/Bookmark-Canvas) [![GitHub Bookmark-Record-Recommend](https://img.shields.io/badge/GitHub-Bookmark--Record--Recommend-181717?logo=github&logoColor=white)](https://github.com/Browser-bookmark-hub/Bookmark-Record-Recommend)
 
 ### 简介
 
-`书签备份` 是一款面向 Chrome / Edge 的 Git 式书签版本管理、备份历史追踪与安全恢复扩展。
+`书签备份（Bookmark-Backup）` 是一款面向 Chrome / Edge 的 Git 式书签版本管理、备份历史追踪与安全恢复扩展。
 
 它把浏览器书签当作可持续留痕的版本资产：每次备份会形成带时间、指纹和快照数据的版本记录，既能保存完整书签树，也能记录当前变化与历史差异。你可以将这些版本同步到本地、WebDAV 或 GitHub 仓库，并在需要时按历史节点恢复、撤销或合并导入。
 
@@ -69,6 +70,19 @@ Bookmark-Backup-main/
 >
 > **其他改进**
 > - **界面、文档与多语言准备**：整理 README 的中英文入口与文档结构，同步优化历史页、弹窗等细节，并补齐相关多语言文案基础。
+
+### 参考
+
+**生态项目**
+
+- 书签画布（[Bookmark-Canvas](https://github.com/Browser-bookmark-hub/Bookmark-Canvas)）
+- 书签记录与推荐（[Bookmark-Record-Recommend](https://github.com/Browser-bookmark-hub/Bookmark-Record-Recommend)）
+- 书签备份（[Bookmark-Backup](https://github.com/Browser-bookmark-hub/Bookmark-Backup)）
+
+**外部参考**
+
+- [Obsidian Clipper](https://github.com/obsidianmd/obsidian-clipper)（MIT License）
+- [`defuddle`](https://github.com/kepano/defuddle) 转换核心以兼容方式内置于扩展中（MIT 生态）。
 
 ### 核心算法
 
@@ -225,11 +239,6 @@ async function applyModified(id, currentNode, targetNode) {
 - 扩展会请求书签、存储、下载、标签页、窗口、网页捕获等权限，以实现备份、恢复、快照和辅助工具能力。
 - favicon、网页快照和导出文件会根据用户操作生成或缓存，请按自己的隐私需求管理备份目标和下载目录。
 - 详细的隐私处理原则与权限说明请参阅 [隐私政策](../../PRIVACY_POLICY.md)。
-
-### 第三方开源与许可（网页快照 MD）
-
-- 本项目网页快照 MD 导出能力移植自 **Obsidian Clipper**（MIT License）：https://github.com/obsidianmd/obsidian-clipper
-- 核心依赖的转换算法来自其使用的 **defuddle**（同为 MIT 生态）并以兼容方式内置于扩展中。
 
 ---
 
