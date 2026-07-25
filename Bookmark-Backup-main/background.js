@@ -26613,13 +26613,55 @@ async function getCurrentBookmarkCountsInternal() {
 
 // [New] 获取远程文件列表 (WebDAV/GitHub)
 // 说明：用于“恢复/同步”扫描；会返回 ZIP / HTML / 合并历史(JSON) 的候选文件。
+const RESTORE_CLOUD_SETTINGS_KEYS = [
+    'serverAddress', 'username', 'password',
+    'githubRepoToken', 'githubRepoOwner', 'githubRepoName', 'githubRepoBranch', 'githubRepoBasePath',
+    'webdavDraftServerAddress', 'webdavDraftUsername', 'webdavDraftPassword',
+    'githubRepoDraftToken', 'githubRepoDraftOwner', 'githubRepoDraftName', 'githubRepoDraftBranch', 'githubRepoDraftBasePath'
+];
+
+function resolveRestoreCloudSettings(rawSettings = {}) {
+    const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+    const draftWebDAVComplete = !!(
+        String(settings.webdavDraftServerAddress || '').trim()
+        && String(settings.webdavDraftUsername || '').trim()
+        && String(settings.webdavDraftPassword || '').trim()
+    );
+    const draftGitHubComplete = !!(
+        String(settings.githubRepoDraftToken || '').trim()
+        && String(settings.githubRepoDraftOwner || '').trim()
+        && String(settings.githubRepoDraftName || '').trim()
+        && String(settings.githubRepoDraftBranch || '').trim()
+    );
+
+    const fromDraftOrSaved = (draftKey, savedKey, useDraft) => {
+        const value = useDraft ? settings[draftKey] : settings[savedKey];
+        return String(value || '').trim();
+    };
+
+    return {
+        ...settings,
+        serverAddress: fromDraftOrSaved('webdavDraftServerAddress', 'serverAddress', draftWebDAVComplete),
+        username: fromDraftOrSaved('webdavDraftUsername', 'username', draftWebDAVComplete),
+        password: fromDraftOrSaved('webdavDraftPassword', 'password', draftWebDAVComplete),
+        githubRepoToken: fromDraftOrSaved('githubRepoDraftToken', 'githubRepoToken', draftGitHubComplete),
+        githubRepoOwner: fromDraftOrSaved('githubRepoDraftOwner', 'githubRepoOwner', draftGitHubComplete),
+        githubRepoName: fromDraftOrSaved('githubRepoDraftName', 'githubRepoName', draftGitHubComplete),
+        githubRepoBranch: fromDraftOrSaved('githubRepoDraftBranch', 'githubRepoBranch', draftGitHubComplete),
+        githubRepoBasePath: fromDraftOrSaved('githubRepoDraftBasePath', 'githubRepoBasePath', draftGitHubComplete)
+    };
+}
+
+async function getRestoreCloudSettings() {
+    return resolveRestoreCloudSettings(
+        await browserAPI.storage.local.get(RESTORE_CLOUD_SETTINGS_KEYS)
+    );
+}
+
 async function listRemoteFiles(source, options = {}) {
     try {
         const lang = await getCurrentLang();
-        const settings = await browserAPI.storage.local.get([
-            'serverAddress', 'username', 'password',
-            'githubRepoToken', 'githubRepoOwner', 'githubRepoName', 'githubRepoBranch', 'githubRepoBasePath'
-        ]);
+        const settings = await getRestoreCloudSettings();
 
         const files = [];
         const useIndexOptimizedScan = options?.useIndexOptimizedScan === true;
@@ -27326,6 +27368,10 @@ async function listRemoteFiles(source, options = {}) {
                         && item.source === 'webdav'
                         && item.type === 'index_markdown'
                         && String(item.manifestMode || '').trim().toLowerCase() === 'tree').length;
+                    const treeOverwriteSnapshotCount = files.filter((item) => item
+                        && item.source === 'webdav'
+                        && String(item.manifestMode || '').trim().toLowerCase() === 'tree'
+                        && isOverwriteRestoreCandidate(item)).length;
 
                     // 部分 WebDAV 服务对 Depth: infinity 响应不完整（仅返回根层 log 文件）。
                     // 这里不能在“零快照结果”时直接返回；否则会跳过后面的覆盖目录/版本化目录兜底扫描，
@@ -27334,8 +27380,11 @@ async function listRemoteFiles(source, options = {}) {
                         throw new Error('WebDAV tree manifest missing snapshot candidates; fallback to directory scan');
                     }
 
-                    const shouldReturnTreeOnly = treeSnapshotCandidateCount > 0
-                        || (!useIndexOptimizedScan && treeIndexCandidateCount > 0);
+                    // A partial tree response can contain versioned snapshots while omitting
+                    // the overwrite directory. Keep the explicit overwrite-directory scan
+                    // as a fallback until the current overwrite snapshot is present.
+                    const shouldReturnTreeOnly = treeOverwriteSnapshotCount > 0
+                        || (!useIndexOptimizedScan && treeSnapshotCandidateCount > 0 && treeIndexCandidateCount > 0);
                     if (shouldReturnTreeOnly) {
                         const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
                         return await finalizeRemoteRestoreFiles(deduped);
@@ -27866,8 +27915,16 @@ async function listRemoteFiles(source, options = {}) {
                         }
                     }
 
-                    const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
-                    return await finalizeRemoteRestoreFiles(deduped);
+                    const hasTreeOverwriteSnapshot = files.some((item) => (
+                        item
+                        && item.source === 'github'
+                        && String(item.manifestMode || '').trim().toLowerCase() === 'tree'
+                        && isOverwriteRestoreCandidate(item)
+                    ));
+                    if (hasTreeOverwriteSnapshot) {
+                        const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
+                        return await finalizeRemoteRestoreFiles(deduped);
+                    }
                 }
             } catch (treeScanError) {
                 
@@ -28262,10 +28319,10 @@ async function downloadRemoteFile({ url, source }) {
     try {
         const headers = {};
         if (source === 'webdav') {
-            const settings = await browserAPI.storage.local.get(['username', 'password']);
+            const settings = await getRestoreCloudSettings();
             headers['Authorization'] = 'Basic ' + safeBase64(`${settings.username}:${settings.password}`);
         } else if (source === 'github') {
-            const settings = await browserAPI.storage.local.get(['githubRepoToken']);
+            const settings = await getRestoreCloudSettings();
             headers['Authorization'] = `token ${settings.githubRepoToken}`;
             headers['Accept'] = 'application/vnd.github.v3.raw';
         }
@@ -30933,16 +30990,7 @@ async function fetchRemoteVersionedInfoLog(source, settings, options = {}) {
 }
 
 async function scanAndParseRemoteRestoreSourceByVersionedLog(source, options = {}) {
-    const settings = await browserAPI.storage.local.get([
-        'serverAddress',
-        'username',
-        'password',
-        'githubRepoToken',
-        'githubRepoOwner',
-        'githubRepoName',
-        'githubRepoBranch',
-        'githubRepoBasePath'
-    ]);
+    const settings = await getRestoreCloudSettings();
 
     const versionedLogResult = await fetchRemoteInfoLog(source, settings, {
         preloadedIndexCandidates: options?.preloadedIndexCandidates,
@@ -31179,6 +31227,25 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
         if (source === 'local') {
             candidates = Array.isArray(localFiles) ? localFiles : [];
         } else {
+            const restoreSettings = await getRestoreCloudSettings();
+            const hasWebDAVCredentials = !!(
+                restoreSettings.serverAddress
+                && restoreSettings.username
+                && restoreSettings.password
+            );
+            const hasGitHubCredentials = !!(
+                restoreSettings.githubRepoToken
+                && restoreSettings.githubRepoOwner
+                && restoreSettings.githubRepoName
+                && restoreSettings.githubRepoBranch
+            );
+            if (source === 'webdav' && !hasWebDAVCredentials) {
+                return { success: false, error: 'WebDAV 配置不完整，请填写并测试连接' };
+            }
+            if (source === 'github' && !hasGitHubCredentials) {
+                return { success: false, error: 'GitHub 仓库配置不完整，请填写并测试连接' };
+            }
+
             const useIndexOptimizedScan = remoteIndexOptimizedMode;
             const indexedSnapshotKeys = [];
             candidates = await listRemoteFiles(source, { useIndexOptimizedScan, indexedSnapshotKeys });

@@ -27,6 +27,8 @@ import {
 let webDAVConfigPanelOpen = false;
 let githubRepoConfigPanelOpen = false;
 let localConfigPanelOpen = false;
+// Keep a successful connection test visible until the corresponding draft changes.
+let cloudRestoreConnectionState = { webdav: false, github: false };
 
 let isBackgroundConnected = false;
 let connectionAttempts = 0;
@@ -1869,7 +1871,10 @@ function initializeWebdavDraftPersistence() {
         return;
     }
 
-    const onInput = () => scheduleSaveWebdavDraft();
+    const onInput = () => {
+        cloudRestoreConnectionState.webdav = false;
+        scheduleSaveWebdavDraft();
+    };
     serverAddressInput.addEventListener('input', onInput);
     usernameInput.addEventListener('input', onInput);
     passwordInput.addEventListener('input', onInput);
@@ -2026,7 +2031,10 @@ function initializeGitHubRepoDraftPersistence() {
         return;
     }
 
-    const onInput = () => scheduleSaveGitHubRepoDraft();
+    const onInput = () => {
+        cloudRestoreConnectionState.github = false;
+        scheduleSaveGitHubRepoDraft();
+    };
     [ownerInput, nameInput, branchInput, basePathInput, tokenInput].filter(Boolean).forEach((el) => {
         el.addEventListener('input', onInput);
     });
@@ -2453,6 +2461,7 @@ async function initializeWebDAVConfigSection() {
             try {
                 const result = await testWebdavConnection({ serverAddress, username, password });
                 if (result && result.success === true) {
+                    cloudRestoreConnectionState.webdav = true;
                     let successMsg = '';
                     if (lang === 'en') {
                         if (result.folderCreated) {
@@ -2474,10 +2483,12 @@ async function initializeWebDAVConfigSection() {
                     showStatus(successMsg, 'success', 3000);
                     updateRestorePanelStatus({ type: 'manual-refresh' });
                 } else {
+                    cloudRestoreConnectionState.webdav = false;
                     const failPrefix = lang === 'en' ? 'Test failed: ' : '测试失败: ';
                     showStatus(`${failPrefix}${result?.error || '未知错误'}`, 'error', 6000);
                 }
             } catch (error) {
+                cloudRestoreConnectionState.webdav = false;
                 const failPrefix = lang === 'en' ? 'Test failed: ' : '测试失败: ';
                 showStatus(`${failPrefix}${error.message || '未知错误'}`, 'error', 4500);
             }
@@ -2654,6 +2665,13 @@ async function initializeGitHubRepoConfigSection() {
             try {
                 const result = await testGitHubRepoConnection({ token, owner, repo, branch, basePath });
                 if (result && result.success === true) {
+                    const resolvedBranch = branch || result.resolvedBranch || '';
+                    const { branchInput } = getGitHubRepoInputElements();
+                    if (!branch && resolvedBranch && branchInput) {
+                        branchInput.value = resolvedBranch;
+                        saveGitHubRepoDraftNow();
+                    }
+                    cloudRestoreConnectionState.github = true;
                     showStatus(
                         result.branchWillBeCreated === true
                             ? 'GitHub仓库连接测试成功，首次备份会自动创建该分支'
@@ -2669,7 +2687,7 @@ async function initializeGitHubRepoConfigSection() {
                         renderGitHubRepoConnectionInfoDisplay({
                             owner,
                             repo,
-                            branch,
+                            branch: resolvedBranch,
                             basePath,
                             result,
                             lang
@@ -2677,9 +2695,11 @@ async function initializeGitHubRepoConfigSection() {
                     } catch (_) {
                     }
                 } else {
+                    cloudRestoreConnectionState.github = false;
                     showStatus(`GitHub仓库连接测试失败: ${result?.error || '未知错误'}`, 'error', 4500);
                 }
             } catch (error) {
+                cloudRestoreConnectionState.github = false;
                 showStatus(`GitHub仓库连接测试失败: ${error.message || '未知错误'}`, 'error', 4500);
             }
         });
@@ -2957,7 +2977,29 @@ function initializeWebDAVToggle() {
     if (webDAVToggle) {
         webDAVToggle.addEventListener('change', function () {
             const enabled = webDAVToggle.checked;
-            chrome.storage.local.set({ webDAVEnabled: enabled }, function () { // 使用 chrome.storage
+            const { serverAddress, username, password } = readWebdavInputs({ trimPassword: true });
+            const updates = { webDAVEnabled: enabled };
+
+            if (enabled && serverAddress && username && password) {
+                Object.assign(updates, {
+                    serverAddress,
+                    username,
+                    password,
+                    [WEBDAV_DRAFT_KEYS.serverAddress]: serverAddress,
+                    [WEBDAV_DRAFT_KEYS.username]: username,
+                    [WEBDAV_DRAFT_KEYS.password]: password
+                });
+            }
+
+            chrome.storage.local.set(updates, function () { // 使用 chrome.storage
+                if (enabled && serverAddress && username && password) {
+                    const configStatus = document.getElementById('configStatus');
+                    if (configStatus) {
+                        configStatus.classList.remove('not-configured');
+                        configStatus.classList.add('configured');
+                    }
+                }
+                updateRestorePanelStatus();
                 showStatus(`WebDAV备份已${enabled ? '启用' : '禁用'}`, 'success');
             });
         });
@@ -2972,7 +3014,33 @@ function initializeGitHubRepoToggle() {
     if (toggle) {
         toggle.addEventListener('change', function () {
             const enabled = toggle.checked;
-            chrome.storage.local.set({ githubRepoEnabled: enabled }, function () {
+            const { owner, repo, branch, basePath, token } = readGitHubRepoInputs({ trimToken: true });
+            const updates = { githubRepoEnabled: enabled };
+
+            if (enabled && owner && repo && branch && token) {
+                Object.assign(updates, {
+                    githubRepoToken: token,
+                    githubRepoOwner: owner,
+                    githubRepoName: repo,
+                    githubRepoBranch: branch,
+                    githubRepoBasePath: basePath || '',
+                    [GITHUB_REPO_DRAFT_KEYS.owner]: owner,
+                    [GITHUB_REPO_DRAFT_KEYS.name]: repo,
+                    [GITHUB_REPO_DRAFT_KEYS.branch]: branch,
+                    [GITHUB_REPO_DRAFT_KEYS.basePath]: basePath || '',
+                    [GITHUB_REPO_DRAFT_KEYS.token]: token
+                });
+            }
+
+            chrome.storage.local.set(updates, function () {
+                if (enabled && owner && repo && branch && token) {
+                    const configStatus = document.getElementById('githubRepoConfigStatus');
+                    if (configStatus) {
+                        configStatus.classList.remove('not-configured');
+                        configStatus.classList.add('configured');
+                    }
+                }
+                updateRestorePanelStatus();
                 showStatus(`GitHub仓库备份已${enabled ? '启用' : '禁用'}`, 'success');
             });
         });
@@ -3291,7 +3359,10 @@ async function loadAndDisplayWebDAVConfig() {
         usernameInput.value = displayUsername;
         passwordInput.value = displayPassword;
 
-        const isConfigured = data.serverAddress && data.username && data.password;
+        const isConfigured = !!(
+            (data.serverAddress && data.username && data.password)
+            || (draftServerAddress && draftUsername && draftPassword)
+        );
         const isEnabled = data.webDAVEnabled === true; // 明确检查true
 
         webDAVToggle.checked = isEnabled;
@@ -3403,7 +3474,10 @@ async function loadAndDisplayGitHubRepoConfig() {
             lang
         });
 
-        const isConfigured = !!(data.githubRepoToken && data.githubRepoOwner && data.githubRepoName);
+        const isConfigured = !!(
+            (data.githubRepoToken && data.githubRepoOwner && data.githubRepoName && data.githubRepoBranch)
+            || (draftToken && draftOwner && draftName && draftBranch)
+        );
         const isEnabled = data.githubRepoEnabled === true;
 
         toggle.checked = isEnabled;
@@ -20421,14 +20495,33 @@ function updateRestorePanelStatus(event) {
         chrome.storage.local.get([
             'webDAVEnabled', 'githubRepoEnabled', 'defaultDownloadEnabled',
             'serverAddress', 'username', 'password',
-            'githubRepoToken', 'githubRepoOwner', 'githubRepoName'
+            'githubRepoToken', 'githubRepoOwner', 'githubRepoName', 'githubRepoBranch',
+            WEBDAV_DRAFT_KEYS.serverAddress, WEBDAV_DRAFT_KEYS.username, WEBDAV_DRAFT_KEYS.password,
+            GITHUB_REPO_DRAFT_KEYS.owner, GITHUB_REPO_DRAFT_KEYS.name,
+            GITHUB_REPO_DRAFT_KEYS.branch, GITHUB_REPO_DRAFT_KEYS.token
         ], (res) => {
             const webdavEnabled = res.webDAVEnabled === true;
             const githubEnabled = res.githubRepoEnabled === true;
             const localEnabled = res.defaultDownloadEnabled === true;
 
-            const webdavConfigured = !!(res.serverAddress && res.username && res.password);
-            const githubConfigured = !!(res.githubRepoToken && res.githubRepoOwner && res.githubRepoName);
+            const webdavConfigured = cloudRestoreConnectionState.webdav
+                || !!(res.serverAddress && res.username && res.password)
+                || !!(
+                    res[WEBDAV_DRAFT_KEYS.serverAddress]
+                    && res[WEBDAV_DRAFT_KEYS.username]
+                    && res[WEBDAV_DRAFT_KEYS.password]
+                );
+            const githubConfigured = cloudRestoreConnectionState.github
+                || !!(
+                    res.githubRepoToken && res.githubRepoOwner
+                    && res.githubRepoName && res.githubRepoBranch
+                )
+                || !!(
+                    res[GITHUB_REPO_DRAFT_KEYS.token]
+                    && res[GITHUB_REPO_DRAFT_KEYS.owner]
+                    && res[GITHUB_REPO_DRAFT_KEYS.name]
+                    && res[GITHUB_REPO_DRAFT_KEYS.branch]
+                );
             const localConfigured = res.defaultDownloadEnabled === true;
 
             apply(webdavEnabled, githubEnabled, localEnabled, webdavConfigured, githubConfigured, localConfigured);
@@ -20440,8 +20533,15 @@ function updateRestorePanelStatus(event) {
     const serverAddressValue = document.getElementById('serverAddress')?.value?.trim() || '';
     const usernameValue = document.getElementById('username')?.value?.trim() || '';
     const passwordValue = document.getElementById('password')?.value || '';
-    const webdavConfigured = !!(serverAddressValue && usernameValue && passwordValue);
-    const githubConfigured = !!(document.getElementById('githubRepoToken')?.value?.trim() && document.getElementById('githubRepoOwner')?.value?.trim() && document.getElementById('githubRepoName')?.value?.trim());
+    const webdavConfigured = cloudRestoreConnectionState.webdav
+        || !!(serverAddressValue && usernameValue && passwordValue);
+    const githubConfigured = cloudRestoreConnectionState.github
+        || !!(
+            document.getElementById('githubRepoToken')?.value?.trim()
+            && document.getElementById('githubRepoOwner')?.value?.trim()
+            && document.getElementById('githubRepoName')?.value?.trim()
+            && document.getElementById('githubRepoBranch')?.value?.trim()
+        );
     const localConfigured =
         Boolean(defaultDownloadToggle && defaultDownloadToggle.checked) ||
         Boolean(document.getElementById('customDownloadPath')?.value?.trim());
