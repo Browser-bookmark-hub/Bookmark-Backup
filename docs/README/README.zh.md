@@ -52,7 +52,6 @@ Bookmark-Backup-main/
 ### 相关文档
 
 - [`PROJECT_STRUCTURE.md`](../PROJECT_STRUCTURE.md)：当前项目结构与主要模块说明。
-- [`CHANGELOG.md`](../CHANGELOG.md)：完整版本更新记录。
 - [`归档/19--恢复与导入合并后备份写出策略-已落地计划.md`](../归档/19--恢复与导入合并后备份写出策略-已落地计划.md)：恢复、导入合并等高危操作后的备份写出策略。
 - [`归档/20--备份历史自动清理-已落地计划.md`](../归档/20--备份历史自动清理-已落地计划.md)：备份历史自动清理的实现计划与落地记录。
 - [`LIMITATIONS_AND_COMPROMISES.md`](../LIMITATIONS_AND_COMPROMISES.md)：浏览器限制、功能妥协与兼容性说明。
@@ -60,16 +59,7 @@ Bookmark-Backup-main/
 
 ### 更新日志
 
-> [!NOTE]
-> #### v3.7.0
->
-> **主要更新**
-> - **网页存档支持多目标并行备份**（commit: `57f76ee`，tag: `网页存档--云端`）：网页快照的 MHTML / Markdown 导出可按需同时保存到本地、WebDAV（云端 1）和 GitHub 仓库（云端 2）；未配置或未启用的云端目标会自动禁用，并补充保存进度与分目标结果提示。
-> - **当前变化页面补全排序变动监听**（commit: `08af046`）：新增 `onChildrenReordered` 前台监听，处理同一文件夹内排序或批量调整仅触发重排事件的情况，覆盖浏览器自带书签管理器右上角「Sort by name」等常见排序操作。
-> - **备份历史容量提醒**（commit: `795aa96`）：新增可配置的扩展本地存储容量提醒，通过 `chrome.storage.local.getBytesInUse()` 获取用量；默认 **50 MB 黄色提醒**、**100 MB 红色提醒**。
->
-> **其他改进**
-> - **界面、文档与多语言准备**：整理 README 的中英文入口与文档结构，同步优化历史页、弹窗等细节，并补齐相关多语言文案基础。
+[GitHub Releases](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases)
 
 ### 参考
 

@@ -46,7 +46,6 @@ Bookmark-Backup-main/
 ### Docs
 
 - [`docs/PROJECT_STRUCTURE.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/PROJECT_STRUCTURE.md): current project structure and module map.
-- [`docs/CHANGELOG.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/CHANGELOG.md): complete release history.
 - [`docs/归档/19--恢复与导入合并后备份写出策略-已落地计划.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/%E5%BD%92%E6%A1%A3/19--%E6%81%A2%E5%A4%8D%E4%B8%8E%E5%AF%BC%E5%85%A5%E5%90%88%E5%B9%B6%E5%90%8E%E5%A4%87%E4%BB%BD%E5%86%99%E5%87%BA%E7%AD%96%E7%95%A5-%E5%B7%B2%E8%90%BD%E5%9C%B0%E8%AE%A1%E5%88%92.md): backup write policy after high-risk restore and import-merge operations.
 - [`docs/归档/20--备份历史自动清理-已落地计划.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/%E5%BD%92%E6%A1%A3/20--%E5%A4%87%E4%BB%BD%E5%8E%86%E5%8F%B2%E8%87%AA%E5%8A%A8%E6%B8%85%E7%90%86-%E5%B7%B2%E8%90%BD%E5%9C%B0%E8%AE%A1%E5%88%92.md): implementation plan and landing notes for automatic backup-history cleanup.
 - [`docs/LIMITATIONS_AND_COMPROMISES.md`](https://github.com/Browser-bookmark-hub/Bookmark-Backup/blob/main/docs/LIMITATIONS_AND_COMPROMISES.md): browser limitations, implementation compromises, and compatibility notes.
@@ -54,16 +53,7 @@ Bookmark-Backup-main/
 
 ### Changelog
 
-> [!NOTE]
-> #### v3.7.0
->
-> **Primary updates**
-> - **Web Snapshot now supports parallel multi-target backups** (commit: `57f76ee`, tag: `网页存档--云端`): export MHTML or Markdown snapshots to any combination of Local, WebDAV (Cloud 1), and GitHub Repository (Cloud 2), with unavailable cloud targets disabled automatically and per-target progress/results shown.
-> - **Current Changes now observes child reorder events** (commit: `08af046`): added foreground handling for `onChildrenReordered`, covering same-folder sorting and batch reorder operations that may not emit `onMoved`, including **Sort by name** in the browser's built-in Bookmark Manager.
-> - **Backup-history capacity reminders** (commit: `795aa96`): added configurable extension-storage warning thresholds, measured with `chrome.storage.local.getBytesInUse()`; defaults are **50 MB** for a yellow warning and **100 MB** for a red warning.
->
-> **Other improvements**
-> - **UI, documentation, and localization groundwork**: reorganized Chinese/English README entry points and documentation structure, refined History and popup details, and prepared related UI strings for localization.
+[GitHub Releases](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases)
 
 ### References
 

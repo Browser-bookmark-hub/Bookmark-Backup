@@ -52,7 +52,6 @@ Bookmark-Backup-main/
 ### Docs
 
 - [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md): current project structure and module map.
-- [`docs/CHANGELOG.md`](docs/CHANGELOG.md): complete release history.
 - [`docs/归档/19--恢复与导入合并后备份写出策略-已落地计划.md`](docs/归档/19--恢复与导入合并后备份写出策略-已落地计划.md): backup write policy after high-risk restore and import-merge operations.
 - [`docs/归档/20--备份历史自动清理-已落地计划.md`](docs/归档/20--备份历史自动清理-已落地计划.md): implementation plan and landing notes for automatic backup-history cleanup.
 - [`docs/LIMITATIONS_AND_COMPROMISES.md`](docs/LIMITATIONS_AND_COMPROMISES.md): browser limitations, implementation compromises, and compatibility notes.
@@ -60,16 +59,7 @@ Bookmark-Backup-main/
 
 ### Changelog
 
-> [!NOTE]
-> #### v3.7.0
->
-> **Primary updates**
-> - **Web Snapshot now supports parallel multi-target backups** (commit: `57f76ee`, tag: `网页存档--云端`): export MHTML or Markdown snapshots to any combination of Local, WebDAV (Cloud 1), and GitHub Repository (Cloud 2), with unavailable cloud targets disabled automatically and per-target progress/results shown.
-> - **Current Changes now observes child reorder events** (commit: `08af046`): added foreground handling for `onChildrenReordered`, covering same-folder sorting and batch reorder operations that may not emit `onMoved`, including **Sort by name** in the browser's built-in Bookmark Manager.
-> - **Backup-history capacity reminders** (commit: `795aa96`): added configurable extension-storage warning thresholds, measured with `chrome.storage.local.getBytesInUse()`; defaults are **50 MB** for a yellow warning and **100 MB** for a red warning.
->
-> **Other improvements**
-> - **UI, documentation, and localization groundwork**: reorganized Chinese/English README entry points and documentation structure, refined History and popup details, and prepared related UI strings for localization.
+[GitHub Releases](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases)
 
 ### References
 
