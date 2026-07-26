@@ -10276,7 +10276,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     }
 
-                    const normalizedServerAddress = serverAddress.replace(/\/+$/, '/') || serverAddress;
+                    const normalizedServerAddress = normalizeWebDAVServerBaseUrl(serverAddress) || serverAddress;
                     const authHeader = 'Basic ' + safeBase64(`${username}:${password}`);
                     const propfindBody = '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>';
 
@@ -10613,7 +10613,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
 
                     // 构建WebDAV路径 - 使用统一文件夹结构（根据语言动态选择）
-                    const serverAddress = config.serverAddress.replace(/\/+$/, '/');
+                    const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress);
                     const historyFolder = resolveExportSubFolderByKey('history', lang);
                     const exportRootFolder = getExportRootFolderByLang(lang);
                     const folderPath = `${exportRootFolder}/${historyFolder}/`;
@@ -14015,7 +14015,7 @@ async function uploadBookmarks(bookmarks, options = {}) {
         snapshotFormat: options.snapshotFormat || snapshotSettings.format
     };
 
-    const serverAddress = config.serverAddress.replace(/\/+$/, '/');
+    const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress);
     const exportRootFolder = await getExportRootFolder();
 
     const snapshotOutput = buildSnapshotBackupOutput(bookmarks, outputOptions, effectiveOverwriteMode);
@@ -17401,8 +17401,16 @@ function encodeWebDAVPathSegment(segment) {
     }
 }
 
+// 服务器地址一律补成以 "/" 结尾：各家文档写法不一（有的带结尾斜杠有的不带），
+// 而所有路径拼接都是 `${serverAddress}${path}`，少一个斜杠就会拼成 .../dav书签同步/。
+function normalizeWebDAVServerBaseUrl(serverAddress) {
+    const raw = String(serverAddress || '').trim();
+    if (!raw) return '';
+    return `${raw.replace(/\/+$/, '')}/`;
+}
+
 function buildWebDAVResourceUrl(serverAddress, pathLike, { collection = false } = {}) {
-    const base = String(serverAddress || '').trim().replace(/\/+$/, '/') || '';
+    const base = normalizeWebDAVServerBaseUrl(serverAddress);
     const encodedPath = normalizeWebDAVPathSegments(pathLike)
         .map((segment) => encodeWebDAVPathSegment(segment))
         .join('/');
@@ -17432,6 +17440,120 @@ function normalizeWebDAVFetchUrl(urlLike) {
     } catch (_) {
         return raw;
     }
+}
+
+function decodeWebDAVXmlEntities(value) {
+    return String(value || '')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/&amp;/g, '&');
+}
+
+function normalizeWebDAVPathText(pathText) {
+    return String(pathText || '')
+        .split('?')[0]
+        .split('#')[0]
+        .replace(/\/{2,}/g, '/')
+        .trim();
+}
+
+function safeDecodeWebDAVPath(pathText) {
+    const raw = String(pathText || '');
+    try {
+        return decodeURIComponent(raw);
+    } catch (_) {
+        return raw;
+    }
+}
+
+// PROPFIND 响应的写法各家差别很大：Apache mod_dav 输出 <D:response xmlns:lp1="DAV:">，
+// SabreDAV 输出 <d:response>，还有的用默认命名空间或自定义前缀。因此这里对前缀、
+// 大小写和标签属性一律不作假设。
+// 名称一律从 href 取：RFC 4918 要求每个 response 必须带 href，而 displayname 是可选属性
+// （Apache mod_dav 默认就不提供），只能作为兜底。
+const WEBDAV_RESPONSE_BLOCK_PATTERN = '<(?:[\\w.-]+:)?response(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?response\\s*>';
+const WEBDAV_HREF_REG = /<(?:[\w.-]+:)?href(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?href\s*>/i;
+const WEBDAV_DISPLAYNAME_REG = /<(?:[\w.-]+:)?displayname(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?displayname\s*>/i;
+const WEBDAV_COLLECTION_REG = /<(?:[\w.-]+:)?collection(?:\s[^>]*)?\s*\/?>/i;
+const WEBDAV_LAST_MODIFIED_REG = /<(?:[\w.-]+:)?getlastmodified(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?getlastmodified\s*>/i;
+
+// 只统计 response 元素个数：集合自身也占一条，所以 <= 1 条时"解析不出子项"是正常的空目录。
+function countWebDAVResponseElements(xmlText) {
+    const matches = String(xmlText || '').match(/<(?:[\w.-]+:)?response(?:\s|>)/gi);
+    return matches ? matches.length : 0;
+}
+
+function parseWebDAVLastModifiedFromXml(xmlText) {
+    const match = WEBDAV_LAST_MODIFIED_REG.exec(String(xmlText || ''));
+    return match ? decodeWebDAVXmlEntities(match[1]).trim() : '';
+}
+
+// 解析 multistatus，返回请求集合下的条目：{ name, relativePath, isCollection, href }
+// 请求集合自身那一条会被剔除；Depth: 1 时 relativePath 只有一段，Depth: infinity 时可能多段。
+function parseWebDAVMultiStatusEntries(xmlText, requestUrl) {
+    const text = String(xmlText || '');
+    if (!text) return [];
+
+    let rootPath = '/';
+    try {
+        rootPath = safeDecodeWebDAVPath(new URL(requestUrl).pathname || '/');
+    } catch (_) {
+        rootPath = '/';
+    }
+    rootPath = normalizeWebDAVPathText(rootPath).replace(/\/+$/, '');
+
+    const entries = [];
+    const seen = new Set();
+    const blockReg = new RegExp(WEBDAV_RESPONSE_BLOCK_PATTERN, 'gi');
+    let match;
+
+    while ((match = blockReg.exec(text)) !== null) {
+        const block = String(match[1] || '');
+        const hrefMatch = WEBDAV_HREF_REG.exec(block);
+        if (!hrefMatch) continue;
+
+        const hrefRaw = decodeWebDAVXmlEntities(hrefMatch[1]).trim();
+        if (!hrefRaw) continue;
+
+        let pathname = hrefRaw;
+        try {
+            pathname = new URL(hrefRaw, requestUrl).pathname || hrefRaw;
+        } catch (_) { }
+
+        const decodedPath = normalizeWebDAVPathText(safeDecodeWebDAVPath(pathname));
+        const isCollection = WEBDAV_COLLECTION_REG.test(block) || /\/$/.test(decodedPath);
+        const trimmedPath = decodedPath.replace(/\/+$/, '');
+        if (!trimmedPath || trimmedPath === rootPath) continue;
+
+        let relativePath = '';
+        if (!rootPath) {
+            relativePath = trimmedPath.replace(/^\/+/, '');
+        } else if (trimmedPath.startsWith(`${rootPath}/`)) {
+            relativePath = trimmedPath.slice(rootPath.length + 1).replace(/^\/+/, '');
+        } else {
+            continue;
+        }
+        if (!relativePath) continue;
+
+        const segments = relativePath.split('/').filter(Boolean);
+        let name = segments.length > 0 ? String(segments[segments.length - 1] || '').trim() : '';
+        if (!name) {
+            const displayNameMatch = WEBDAV_DISPLAYNAME_REG.exec(block);
+            name = displayNameMatch ? decodeWebDAVXmlEntities(displayNameMatch[1]).trim() : '';
+        }
+        if (!name) continue;
+
+        const dedupKey = `${relativePath}|${isCollection ? 'collection' : 'file'}`;
+        if (seen.has(dedupKey)) continue;
+        seen.add(dedupKey);
+
+        entries.push({ name, relativePath, isCollection, href: hrefRaw });
+    }
+
+    return entries;
 }
 
 async function ensureWebDAVCollectionPathExists(serverAddress, pathLike, authHeader, errorPrefix) {
@@ -17473,7 +17595,7 @@ async function uploadExportFileToWebDAV({ lang, folderKey, fileName, content, co
         return { success: false, skipped: true, error: "WebDAV 已禁用" };
     }
 
-    const serverAddress = config.serverAddress.replace(/\/+$/, '/');
+    const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress);
     const exportRootFolder = getExportRootFolderByLang(lang);
     const exportSubFolder = resolveExportSubFolderByKey(folderKey, lang);
     const folderPath = `${exportRootFolder}/${exportSubFolder}`;
@@ -18317,7 +18439,7 @@ async function exportHistoryToTxt(records, lang) {
     // WebDAV导出（根据语言动态选择文件夹名）
     if (webDAVConfigured && webDAVEnabled) {
         try {
-            const serverAddress = config.serverAddress.replace(/\/+$/, '/');
+            const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress);
             const archiveHistoryFolder = await getHistoryFolder();
             const exportRootFolder = await getExportRootFolder();
             const folderPath = `${exportRootFolder}/${archiveHistoryFolder}`; // 使用统一的文件夹结构（根据语言动态选择）
@@ -19391,7 +19513,7 @@ async function downloadsEraseSafe(query) {
 // 辅助函数：上传二进制文件到 WebDAV (用于 ZIP)
 async function uploadHistoryBinaryToWebDAV(base64Content, fileName, rootFolder, subFolder, settings) {
     try {
-        const serverAddress = settings.serverAddress.replace(/\/+$/, '/');
+        const serverAddress = normalizeWebDAVServerBaseUrl(settings.serverAddress);
         const folderPath = `${rootFolder}/${subFolder}`;
         const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
 
@@ -19549,7 +19671,7 @@ async function downloadHistoryBinaryLocal(blob, fileName, rootFolder, subFolder,
 // 辅助函数：上传到 WebDAV
 async function uploadHistoryToWebDAV(content, fileName, rootFolder, subFolder, settings) {
     try {
-        const serverAddress = settings.serverAddress.replace(/\/+$/, '/');
+        const serverAddress = normalizeWebDAVServerBaseUrl(settings.serverAddress);
         const folderPath = `${rootFolder}/${subFolder}`;
         const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
 
@@ -26863,8 +26985,8 @@ async function listRemoteFiles(source, options = {}) {
 
                 if (propfindResponse.ok) {
                     const text = await propfindResponse.text();
-                    const match = /<(?:d:)?getlastmodified>([\s\S]*?)<\/(?:d:)?getlastmodified>/i.exec(text);
-                    resolvedMs = parseRestoreRemoteLastModifiedMs(match ? match[1] : '');
+                    // Apache mod_dav 把 getlastmodified 输出成 <lp1:getlastmodified>，前缀不固定。
+                    resolvedMs = parseRestoreRemoteLastModifiedMs(parseWebDAVLastModifiedFromXml(text));
                 }
             } catch (_) { }
 
@@ -27048,20 +27170,17 @@ async function listRemoteFiles(source, options = {}) {
             const onlyCollections = options?.onlyCollections === true;
 
             const text = await response.text();
-            const entries = [];
-            const responseReg = /<d:response>([\s\S]*?)<\/d:response>/g;
-            let match;
-            while ((match = responseReg.exec(text)) !== null) {
-                const content = match[1];
-                const isCollection = content.includes('<d:collection/>');
-                if (onlyCollections && !isCollection) continue;
-                if (!onlyCollections && isCollection) continue;
-                const nameMatch = /<d:displayname>(.*?)<\/d:displayname>/.exec(content);
-                const name = nameMatch ? nameMatch[1] : '';
-                if (!name) continue;
-                entries.push(name);
+            const entries = parseWebDAVMultiStatusEntries(text, requestUrl);
+
+            if (entries.length === 0 && countWebDAVResponseElements(text) > 1) {
+                console.warn('[WebDAV] PROPFIND 返回了子项但未能解析出任何名称：', requestUrl, text.slice(0, 400));
             }
-            return entries;
+
+            return entries
+                .filter((entry) => entry.isCollection === onlyCollections)
+                // Depth: 1 只应返回直接子项；个别服务端会忽略 Depth，这里再挡一次。
+                .filter((entry) => !entry.relativePath.includes('/'))
+                .map((entry) => entry.name);
         }
 
         const webdavPropfindCache = new Map();
@@ -27088,23 +27207,6 @@ async function listRemoteFiles(source, options = {}) {
             return finalResult.slice();
         }
 
-        function decodeXmlEntities(value) {
-            return String(value || '')
-                .replace(/&amp;/g, '&')
-                .replace(/&lt;/g, '<')
-                .replace(/&gt;/g, '>')
-                .replace(/&quot;/g, '"')
-                .replace(/&#39;/g, "'");
-        }
-
-        function normalizeWebDavPathname(pathname) {
-            return String(pathname || '')
-                .split('?')[0]
-                .split('#')[0]
-                .replace(/\/{2,}/g, '/')
-                .trim();
-        }
-
         async function webdavPropfindTree(folderUrl, authHeader) {
             const requestUrl = normalizeWebDAVFetchUrl(folderUrl);
             const response = await fetch(requestUrl, {
@@ -27114,77 +27216,30 @@ async function listRemoteFiles(source, options = {}) {
                     'Depth': 'infinity',
                     'Content-Type': 'application/xml'
                 },
-                body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><href/><displayname/><resourcetype/></prop></propfind>'
+                body: '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><displayname/><resourcetype/></prop></propfind>'
             });
 
             if (response.status === 404) return null;
             if (!response.ok) {
-                throw new Error(`WebDAV Tree Error: ${response.status}`);
-            }
-
-            const rootPathnameRaw = (() => {
-                try {
-                    return new URL(requestUrl).pathname || '/';
-                } catch (_) {
-                    return '/';
+                const error = new Error(`WebDAV Tree Error: ${response.status}`);
+                // 不少服务端（Apache mod_dav 默认关闭 DavDepthInfinity、InfiniCLOUD 文档亦明示不支持）
+                // 会直接拒绝 Depth: infinity。标记出来，让调用方跳过其余根目录的同类请求。
+                if (response.status === 403 || response.status === 400 || response.status === 501) {
+                    error.webdavDepthInfinityUnsupported = true;
                 }
-            })();
-            let rootPathname = normalizeWebDavPathname(rootPathnameRaw);
-            try {
-                rootPathname = decodeURIComponent(rootPathname);
-            } catch (_) { }
-            rootPathname = normalizeWebDavPathname(rootPathname).replace(/\/+$/, '');
+                throw error;
+            }
 
             const text = await response.text();
-            const entries = [];
-            const responseReg = /<(?:d:)?response>([\s\S]*?)<\/(?:d:)?response>/gi;
-            let match;
-
-            while ((match = responseReg.exec(text)) !== null) {
-                const content = String(match[1] || '');
-                const hrefMatch = /<(?:d:)?href>([\s\S]*?)<\/(?:d:)?href>/i.exec(content);
-                if (!hrefMatch) continue;
-
-                const hrefRaw = decodeXmlEntities(hrefMatch[1]);
-                let pathname = '';
-                try {
-                    pathname = new URL(hrefRaw, requestUrl).pathname || '';
-                } catch (_) {
-                    pathname = hrefRaw;
-                }
-
-                try {
-                    pathname = decodeURIComponent(pathname);
-                } catch (_) { }
-
-                const normalizedPathname = normalizeWebDavPathname(pathname).replace(/\/+$/, '');
-                if (!normalizedPathname) continue;
-                if (normalizedPathname === rootPathname) continue;
-
-                let relativePath = '';
-                if (!rootPathname) {
-                    relativePath = normalizedPathname.replace(/^\/+/, '');
-                } else if (normalizedPathname.startsWith(`${rootPathname}/`)) {
-                    relativePath = normalizedPathname.slice(rootPathname.length + 1).replace(/^\/+/, '');
-                } else {
-                    continue;
-                }
-
-                if (!relativePath) continue;
-
-                const isCollection = /<(?:d:)?collection\s*\/?>/i.test(content);
-                entries.push({
-                    relativePath,
-                    isCollection
-                });
-            }
-
-            return entries;
+            return parseWebDAVMultiStatusEntries(text, requestUrl).map((entry) => ({
+                relativePath: entry.relativePath,
+                isCollection: entry.isCollection
+            }));
         }
 
         // WebDAV
         if (source === 'webdav') {
-            const serverAddress = (settings.serverAddress || '').replace(/\/+$/, '/');
+            const serverAddress = normalizeWebDAVServerBaseUrl(settings.serverAddress);
             if (!serverAddress) return [];
 
             const authHeader = 'Basic ' + safeBase64(`${settings.username || ''}:${settings.password || ''}`);
@@ -27277,10 +27332,12 @@ async function listRemoteFiles(source, options = {}) {
             try {
                 const treeFilePaths = [];
                 let treeScanSupported = false;
+                let treeDepthInfinityUnsupported = false;
 
                 await runBatchedTasks(exportRootFolderCandidates, async (exportRootFolder) => {
                     const rootFolder = String(exportRootFolder || '').trim();
                     if (!rootFolder) return 0;
+                    if (treeDepthInfinityUnsupported) return 0;
 
                     const rootUrl = `${serverAddress}${rootFolder}/`;
                     try {
@@ -27297,7 +27354,9 @@ async function listRemoteFiles(source, options = {}) {
 
                         return treeEntries.length;
                     } catch (error) {
-                        
+                        if (error?.webdavDepthInfinityUnsupported) {
+                            treeDepthInfinityUnsupported = true;
+                        }
                         return 0;
                     }
                 }, 3);
@@ -30728,7 +30787,7 @@ function buildRemoteFileUrlCandidatesForIndexEntry({ source, settings, relativeP
     if (list.length === 0) return [];
 
     if (source === 'webdav') {
-        const serverAddress = String(settings?.serverAddress || '').replace(/\/+$/, '/');
+        const serverAddress = normalizeWebDAVServerBaseUrl(settings?.serverAddress);
         if (!serverAddress) return [];
         return list.map((path) => buildWebDAVResourceUrl(serverAddress, path));
     }
@@ -30978,7 +31037,7 @@ async function fetchRemoteInfoLog(source, settings, options = {}) {
     }
 
     if (source === 'webdav') {
-        const serverAddress = String(settings?.serverAddress || '').replace(/\/+$/, '/');
+        const serverAddress = normalizeWebDAVServerBaseUrl(settings?.serverAddress);
         const username = settings?.username;
         const password = settings?.password;
         if (!serverAddress || !username || !password) {
