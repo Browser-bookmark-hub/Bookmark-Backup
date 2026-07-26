@@ -245,6 +245,50 @@ function formatPopupHistoryStorageMb(value, lang = 'zh_CN') {
     }).format(mb);
 }
 
+// 提示内容偶尔会超出可视宽度：鼠标停在左半边滚到开头，停在右半边滚到末尾。
+function bindPopupHistoryWarningPromptHoverScroll(prompt) {
+    if (!prompt || prompt.dataset.hoverScrollBound === '1') return;
+    prompt.dataset.hoverScrollBound = '1';
+
+    let lastSide = '';
+    const scrollTo = (left) => {
+        try {
+            prompt.scrollTo({ left, behavior: 'smooth' });
+        } catch (_) {
+            prompt.scrollLeft = left;
+        }
+    };
+
+    prompt.addEventListener('mousemove', (event) => {
+        const maxScroll = prompt.scrollWidth - prompt.clientWidth;
+        if (maxScroll <= 0) {
+            lastSide = '';
+            return;
+        }
+
+        const rect = prompt.getBoundingClientRect();
+        if (rect.width <= 0) return;
+
+        // 中线两侧留一段死区：鼠标在中间微动时保持当前方向，不来回翻转
+        const ratio = (event.clientX - rect.left) / rect.width;
+        let side = lastSide;
+        if (ratio <= 0.4) {
+            side = 'left';
+        } else if (ratio >= 0.6) {
+            side = 'right';
+        }
+        if (!side || side === lastSide) return;
+
+        lastSide = side;
+        scrollTo(side === 'right' ? maxScroll : 0);
+    });
+
+    prompt.addEventListener('mouseleave', () => {
+        lastSide = '';
+        scrollTo(0);
+    });
+}
+
 function renderPopupHistoryWarningPrompt(status, lang = 'zh_CN') {
     const prompt = document.getElementById('popupHistoryWarningPrompt');
     if (!prompt) return;
@@ -284,6 +328,8 @@ function renderPopupHistoryWarningPrompt(status, lang = 'zh_CN') {
         <span>${summaryParts.join(isEn ? ' | ' : ' ｜ ')}</span>
     `;
     prompt.style.display = 'inline-flex';
+    prompt.scrollLeft = 0;
+    bindPopupHistoryWarningPromptHoverScroll(prompt);
 }
 
 async function refreshPopupHistoryWarningStatus(lang = getCachedPopupLanguage()) {

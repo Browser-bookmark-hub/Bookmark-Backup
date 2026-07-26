@@ -6245,16 +6245,16 @@
             display: inline-flex;
             align-items: center;
             gap: 0;
-            position: absolute;
-            left: calc(100% + 7px);
-            top: 50%;
-            transform: translateY(-50%);
-            z-index: 12;
-            width: max-content;
+            /* 在流内占位：出现时把右侧的分页按钮顶到文字右边；隐藏时不占位，分页按钮回到原位 */
+            flex: 0 1 auto;
+            min-width: 0;
             max-width: calc(100vw - 40px);
-            min-height: 22px;
+            /* 与左侧删除按钮等高，保证两个方块的上下边缘完全对齐在同一行 */
+            height: 22px;
             box-sizing: border-box;
-            padding: 4px 8px;
+            /* 清掉全局 .warning 带来的 margin-bottom:15px，否则会被居中算法把整块顶上去 */
+            margin: 0;
+            padding: 0 8px;
             border: 1px solid var(--theme-border-primary, #e2e8f0);
             border-radius: 6px;
             background: var(--theme-bg-elevated, #fff);
@@ -6263,7 +6263,16 @@
             font-size: 10px;
             line-height: 1.35;
             white-space: nowrap;
-            pointer-events: none;
+            /* 文字过长时裁掉超出部分；悬停左/右半边会横向滚动查看（见 popup.js） */
+            overflow: hidden;
+            /* 滚动时文字会从光标下滑过，固定成箭头并禁止选中，避免光标在 I 型/箭头之间闪烁 */
+            cursor: default;
+            user-select: none;
+        }
+
+        .backup-history-warning-prompt>span {
+            flex: 0 0 auto;
+            white-space: nowrap;
         }
 
         .backup-history-warning-prompt.warning {
