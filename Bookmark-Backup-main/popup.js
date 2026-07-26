@@ -71,10 +71,15 @@ let exportHistoryFailedStrings, historyExportErrorStrings, historyClearedStrings
 let clearHistoryFailedStrings, unknownErrorStrings;
 
 let webdavDraftSaveTimer = null;
+const cloudConfigurationRevisions = {
+    webdav: { changed: 0, saved: 0 },
+    github: { changed: 0, saved: 0 }
+};
 const WEBDAV_DRAFT_KEYS = {
     serverAddress: 'webdavDraftServerAddress',
     username: 'webdavDraftUsername',
-    password: 'webdavDraftPassword'
+    password: 'webdavDraftPassword',
+    basePath: 'webdavDraftBasePath'
 };
 
 const WEBDAV_UI_STATE_KEYS = {
@@ -1869,34 +1874,189 @@ function sendMessageToBackground(message, callback) {
 // UI 初始化函数 (UI Initialization Functions)
 // =============================================================================
 
+/**
+ * 规范化 WebDAV 前缀目录：去首尾空白 + 去首尾斜杠。
+ * popup 侧只做最基本清洗，真正的路径编码由 background 负责。
+ */
+function normalizeWebdavBasePathInput(basePath) {
+    return String(basePath || '').trim().replace(/^\/+/, '').replace(/\/+$/, '').trim();
+}
+
+function getCloudPathPreviewLang() {
+    return document.documentElement.getAttribute('lang') === 'en' ? 'en' : 'zh_CN';
+}
+
+function normalizeCloudPathPreviewBasePath(basePath) {
+    return String(basePath || '')
+        .trim()
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '')
+        .replace(/\/+$/, '')
+        .replace(/\/{2,}/g, '/');
+}
+
+function getCloudPathPreviewRoot(lang = getCloudPathPreviewLang()) {
+    return lang === 'en' ? 'Bookmark Backup' : '书签备份';
+}
+
+const cloudAutoSaveStatusTimers = {
+    webdav: null,
+    github: null
+};
+
+function setCloudAutoSaveStatus(provider, saved = false) {
+    const statusElement = document.getElementById(
+        provider === 'github' ? 'githubRepoAutoSaveStatus' : 'webdavAutoSaveStatus'
+    );
+    if (!statusElement) return;
+
+    if (cloudAutoSaveStatusTimers[provider]) {
+        clearTimeout(cloudAutoSaveStatusTimers[provider]);
+        cloudAutoSaveStatusTimers[provider] = null;
+    }
+
+    const isEn = getCloudPathPreviewLang() === 'en';
+    statusElement.textContent = saved ? (isEn ? 'Saved automatically' : '已自动保存') : '';
+    statusElement.title = statusElement.textContent;
+
+    if (saved) {
+        cloudAutoSaveStatusTimers[provider] = setTimeout(() => {
+            setCloudAutoSaveStatus(provider, false);
+        }, 2000);
+    }
+}
+
+function markCloudConfigurationChanged(provider) {
+    cloudConfigurationRevisions[provider].changed += 1;
+}
+
+function markCloudConfigurationSaved(provider, revision = cloudConfigurationRevisions[provider].changed) {
+    cloudConfigurationRevisions[provider].saved = revision;
+}
+
+function hasPendingCloudConfigurationSave(provider) {
+    const state = cloudConfigurationRevisions[provider];
+    return state.changed !== state.saved;
+}
+
+function getWebdavBackupFolderDisplayPath({ serverAddress = '', basePath = '', lang = getCloudPathPreviewLang() } = {}) {
+    const normalizedServerAddress = String(serverAddress || '').trim().replace(/\/+$/, '');
+    const normalizedBasePath = normalizeCloudPathPreviewBasePath(basePath);
+    const relativePath = [normalizedBasePath, getCloudPathPreviewRoot(lang)].filter(Boolean).join('/');
+    return normalizedServerAddress ? `${normalizedServerAddress}/${relativePath}/` : `${relativePath}/`;
+}
+
+function updateCurrentPathPreview(elementId, path) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    const lang = getCloudPathPreviewLang();
+    const prefix = lang === 'en' ? 'Path: ' : '当前路径：';
+    const displayPath = String(path || '').trim() || getCloudPathPreviewRoot(lang);
+    element.textContent = `${prefix}${displayPath}`;
+    element.title = displayPath;
+}
+
+function updateWebdavBasePathPreview() {
+    const { serverAddressInput, basePathInput } = getWebdavInputElements();
+    const fullPath = getWebdavBackupFolderDisplayPath({
+        serverAddress: serverAddressInput?.value,
+        basePath: basePathInput?.value
+    });
+    updateCurrentPathPreview('webdavBasePathCurrentPath', fullPath);
+}
+
+function updateGitHubRepoBasePathPreview() {
+    const { basePathInput } = getGitHubRepoInputElements();
+    const basePath = normalizeCloudPathPreviewBasePath(basePathInput?.value);
+    const path = [basePath, getCloudPathPreviewRoot()].filter(Boolean).join('/');
+    updateCurrentPathPreview('githubRepoBasePathCurrentPath', `${path}/`);
+}
+
+function hasInvalidWebdavBasePathSegment(basePath) {
+    return normalizeWebdavBasePathInput(basePath)
+        .split('/')
+        .some((segment) => {
+            const normalized = String(segment || '').trim();
+            try {
+                const decoded = decodeURIComponent(normalized);
+                return decoded === '.' || decoded === '..';
+            } catch (_) {
+                return normalized === '.' || normalized === '..';
+            }
+        });
+}
+
 function getWebdavInputElements() {
     const serverAddressInput = document.getElementById('serverAddress');
     const usernameInput = document.getElementById('username');
     const passwordInput = document.getElementById('password');
-    return { serverAddressInput, usernameInput, passwordInput };
+    const basePathInput = document.getElementById('webdavBasePath');
+    return { serverAddressInput, usernameInput, passwordInput, basePathInput };
 }
 
 function readWebdavInputs({ trimPassword = true } = {}) {
-    const { serverAddressInput, usernameInput, passwordInput } = getWebdavInputElements();
+    const { serverAddressInput, usernameInput, passwordInput, basePathInput } = getWebdavInputElements();
     const serverAddress = serverAddressInput ? serverAddressInput.value.trim() : '';
     const username = usernameInput ? usernameInput.value.trim() : '';
     const rawPassword = passwordInput ? passwordInput.value : '';
     const password = trimPassword ? rawPassword.trim() : rawPassword;
-    return { serverAddress, username, password, rawPassword };
+    const basePath = basePathInput ? normalizeWebdavBasePathInput(basePathInput.value) : '';
+    return { serverAddress, username, password, rawPassword, basePath };
 }
 
 function saveWebdavDraftNow() {
-    const { serverAddress, username, password, rawPassword } = readWebdavInputs({ trimPassword: true });
-    if (!serverAddress && !username && !password && !rawPassword) {
+    const { serverAddress, username, password, rawPassword, basePath } = readWebdavInputs({ trimPassword: true });
+    if (!serverAddress && !username && !password && !rawPassword && !basePath) {
         return;
     }
     try {
         chrome.storage.local.set({
             [WEBDAV_DRAFT_KEYS.serverAddress]: serverAddress,
             [WEBDAV_DRAFT_KEYS.username]: username,
-            [WEBDAV_DRAFT_KEYS.password]: password
+            [WEBDAV_DRAFT_KEYS.password]: password,
+            [WEBDAV_DRAFT_KEYS.basePath]: basePath
         });
     } catch (e) {
+    }
+}
+
+function saveWebdavConfigurationNow() {
+    if (!hasPendingCloudConfigurationSave('webdav')) {
+        return;
+    }
+
+    const { serverAddress, username, password, basePath } = readWebdavInputs({ trimPassword: true });
+    if (hasInvalidWebdavBasePathSegment(basePath)) {
+        setCloudAutoSaveStatus('webdav', false);
+        return;
+    }
+
+    const revision = cloudConfigurationRevisions.webdav.changed;
+    try {
+        chrome.storage.local.set({
+            serverAddress,
+            username,
+            password,
+            webdavBasePath: basePath,
+            [WEBDAV_DRAFT_KEYS.serverAddress]: serverAddress,
+            [WEBDAV_DRAFT_KEYS.username]: username,
+            [WEBDAV_DRAFT_KEYS.password]: password,
+            [WEBDAV_DRAFT_KEYS.basePath]: basePath
+        }, () => {
+            if (chrome.runtime.lastError) {
+                setCloudAutoSaveStatus('webdav', false);
+                return;
+            }
+            if (cloudConfigurationRevisions.webdav.changed !== revision) {
+                return;
+            }
+            markCloudConfigurationSaved('webdav', revision);
+            setCloudAutoSaveStatus('webdav', true);
+            updateRestorePanelStatus();
+        });
+    } catch (e) {
+        setCloudAutoSaveStatus('webdav', false);
     }
 }
 
@@ -1912,28 +2072,44 @@ function scheduleSaveWebdavDraft() {
 }
 
 function initializeWebdavDraftPersistence() {
-    const { serverAddressInput, usernameInput, passwordInput } = getWebdavInputElements();
+    const { serverAddressInput, usernameInput, passwordInput, basePathInput } = getWebdavInputElements();
     if (!serverAddressInput || !usernameInput || !passwordInput) {
         return;
     }
 
     const onInput = () => {
         cloudRestoreConnectionState.webdav = false;
+        markCloudConfigurationChanged('webdav');
+        setCloudAutoSaveStatus('webdav', false);
+        updateWebdavBasePathPreview();
         scheduleSaveWebdavDraft();
     };
     serverAddressInput.addEventListener('input', onInput);
     usernameInput.addEventListener('input', onInput);
     passwordInput.addEventListener('input', onInput);
+    if (basePathInput) {
+        basePathInput.addEventListener('input', onInput);
+        basePathInput.addEventListener('blur', () => {
+            const normalized = normalizeWebdavBasePathInput(basePathInput.value);
+            if (normalized !== basePathInput.value) {
+                basePathInput.value = normalized;
+                markCloudConfigurationChanged('webdav');
+            }
+            updateWebdavBasePathPreview();
+            saveWebdavConfigurationNow();
+        });
+    }
 
-    serverAddressInput.addEventListener('blur', saveWebdavDraftNow);
-    usernameInput.addEventListener('blur', saveWebdavDraftNow);
+    serverAddressInput.addEventListener('blur', saveWebdavConfigurationNow);
+    usernameInput.addEventListener('blur', saveWebdavConfigurationNow);
     passwordInput.addEventListener('blur', () => {
         const trimmed = passwordInput.value.trim();
         if (trimmed !== passwordInput.value) {
             passwordInput.value = trimmed;
+            markCloudConfigurationChanged('webdav');
             showStatus('已自动去除密码首尾空格/换行', 'info', 2200);
         }
-        saveWebdavDraftNow();
+        saveWebdavConfigurationNow();
     });
 
     window.addEventListener('beforeunload', saveWebdavDraftNow);
@@ -2011,11 +2187,12 @@ function setWebdavConfigPanelOpen(open, { persist = true } = {}) {
     }
 }
 
-async function testWebdavConnection({ serverAddress, username, password }) {
+async function testWebdavConnection({ serverAddress, username, password, basePath }) {
     return await callBackgroundFunction('testWebDAVConnection', {
         serverAddress,
         username,
-        password
+        password,
+        basePath: normalizeWebdavBasePathInput(basePath)
     });
 }
 
@@ -2060,6 +2237,42 @@ function saveGitHubRepoDraftNow() {
     }
 }
 
+function saveGitHubRepoConfigurationNow() {
+    if (!hasPendingCloudConfigurationSave('github')) {
+        return;
+    }
+
+    const { owner, repo, branch, basePath, token } = readGitHubRepoInputs({ trimToken: true });
+    const revision = cloudConfigurationRevisions.github.changed;
+    try {
+        chrome.storage.local.set({
+            githubRepoToken: token,
+            githubRepoOwner: owner,
+            githubRepoName: repo,
+            githubRepoBranch: branch,
+            githubRepoBasePath: basePath,
+            [GITHUB_REPO_DRAFT_KEYS.owner]: owner,
+            [GITHUB_REPO_DRAFT_KEYS.name]: repo,
+            [GITHUB_REPO_DRAFT_KEYS.branch]: branch,
+            [GITHUB_REPO_DRAFT_KEYS.basePath]: basePath,
+            [GITHUB_REPO_DRAFT_KEYS.token]: token
+        }, () => {
+            if (chrome.runtime.lastError) {
+                setCloudAutoSaveStatus('github', false);
+                return;
+            }
+            if (cloudConfigurationRevisions.github.changed !== revision) {
+                return;
+            }
+            markCloudConfigurationSaved('github', revision);
+            setCloudAutoSaveStatus('github', true);
+            updateRestorePanelStatus();
+        });
+    } catch (e) {
+        setCloudAutoSaveStatus('github', false);
+    }
+}
+
 function scheduleSaveGitHubRepoDraft() {
     if (githubRepoDraftSaveTimer) {
         clearTimeout(githubRepoDraftSaveTimer);
@@ -2079,6 +2292,9 @@ function initializeGitHubRepoDraftPersistence() {
 
     const onInput = () => {
         cloudRestoreConnectionState.github = false;
+        markCloudConfigurationChanged('github');
+        setCloudAutoSaveStatus('github', false);
+        updateGitHubRepoBasePathPreview();
         scheduleSaveGitHubRepoDraft();
     };
     [ownerInput, nameInput, branchInput, basePathInput, tokenInput].filter(Boolean).forEach((el) => {
@@ -2090,13 +2306,15 @@ function initializeGitHubRepoDraftPersistence() {
         const trimmed = el.value.trim();
         if (trimmed !== el.value) {
             el.value = trimmed;
+            markCloudConfigurationChanged('github');
         }
     };
 
     [ownerInput, nameInput, branchInput, basePathInput].filter(Boolean).forEach((el) => {
         el.addEventListener('blur', () => {
             trimField(el);
-            saveGitHubRepoDraftNow();
+            updateGitHubRepoBasePathPreview();
+            saveGitHubRepoConfigurationNow();
         });
     });
 
@@ -2104,9 +2322,10 @@ function initializeGitHubRepoDraftPersistence() {
         const trimmed = tokenInput.value.trim();
         if (trimmed !== tokenInput.value) {
             tokenInput.value = trimmed;
+            markCloudConfigurationChanged('github');
             showStatus('已自动去除Token首尾空格/换行', 'info', 2200);
         }
-        saveGitHubRepoDraftNow();
+        saveGitHubRepoConfigurationNow();
     });
 
     window.addEventListener('beforeunload', saveGitHubRepoDraftNow);
@@ -2414,8 +2633,13 @@ async function initializeWebDAVConfigSection() {
     const saveButton = document.getElementById('saveKey');
     if (saveButton) {
         saveButton.addEventListener('click', async function () {
-            const { serverAddress, username, password, rawPassword } = readWebdavInputs({ trimPassword: true });
-            const { passwordInput } = getWebdavInputElements();
+            const { serverAddress, username, password, rawPassword, basePath } = readWebdavInputs({ trimPassword: true });
+            const { passwordInput, basePathInput } = getWebdavInputElements();
+
+            // 前缀目录做基础清洗（trim + 去首尾斜杠），并回写到输入框
+            if (basePathInput && basePathInput.value !== basePath) {
+                basePathInput.value = basePath;
+            }
 
             // 先保存草稿，避免关闭弹窗丢失输入
             saveWebdavDraftNow();
@@ -2433,10 +2657,21 @@ async function initializeWebDAVConfigSection() {
             const { preferredLang, currentLang } = await chrome.storage.local.get(['preferredLang', 'currentLang']);
             const lang = currentLang || preferredLang || 'zh_CN';
 
+            if (hasInvalidWebdavBasePathSegment(basePath)) {
+                showStatus(
+                    lang === 'en'
+                        ? 'Base Folder cannot contain . or .. path segments'
+                        : '前缀目录不能包含 . 或 .. 路径段',
+                    'error',
+                    5000
+                );
+                return;
+            }
+
             showStatus(lang === 'en' ? 'Testing WebDAV connection and folder...' : '正在测试WebDAV连接与文件夹...', 'info', 3500);
             let testResult;
             try {
-                testResult = await testWebdavConnection({ serverAddress, username, password });
+                testResult = await testWebdavConnection({ serverAddress, username, password, basePath });
             } catch (error) {
                 const failPrefix = lang === 'en' ? 'Test failed: ' : '测试失败: ';
                 showStatus(`${failPrefix}${error.message || '未知错误'}`, 'error', 4500);
@@ -2454,11 +2689,14 @@ async function initializeWebDAVConfigSection() {
                 serverAddress,
                 username,
                 password,
+                webdavBasePath: basePath || '',
                 webDAVEnabled: true,
                 [WEBDAV_DRAFT_KEYS.serverAddress]: serverAddress,
                 [WEBDAV_DRAFT_KEYS.username]: username,
-                [WEBDAV_DRAFT_KEYS.password]: password
+                [WEBDAV_DRAFT_KEYS.password]: password,
+                [WEBDAV_DRAFT_KEYS.basePath]: basePath || ''
             }, function () {
+                markCloudConfigurationSaved('webdav');
                 const webDAVToggle = document.getElementById('webDAVToggle');
                 if (webDAVToggle) {
                     webDAVToggle.checked = true;
@@ -2486,8 +2724,14 @@ async function initializeWebDAVConfigSection() {
     const testBtn = document.getElementById('testWebdavBtn');
     if (testBtn) {
         testBtn.addEventListener('click', async function () {
-            const { serverAddress, username, password, rawPassword } = readWebdavInputs({ trimPassword: true });
-            const { passwordInput } = getWebdavInputElements();
+            const { serverAddress, username, password, rawPassword, basePath } = readWebdavInputs({ trimPassword: true });
+            const { passwordInput, basePathInput } = getWebdavInputElements();
+
+            // 前缀目录做基础清洗（trim + 去首尾斜杠），并回写到输入框
+            if (basePathInput && basePathInput.value !== basePath) {
+                basePathInput.value = basePath;
+            }
+
             saveWebdavDraftNow();
 
             if (!serverAddress || !username || !password) {
@@ -2503,25 +2747,41 @@ async function initializeWebDAVConfigSection() {
             const { preferredLang, currentLang } = await chrome.storage.local.get(['preferredLang', 'currentLang']);
             const lang = currentLang || preferredLang || 'zh_CN';
 
+            if (hasInvalidWebdavBasePathSegment(basePath)) {
+                showStatus(
+                    lang === 'en'
+                        ? 'Base Folder cannot contain . or .. path segments'
+                        : '前缀目录不能包含 . 或 .. 路径段',
+                    'error',
+                    5000
+                );
+                return;
+            }
+
             showStatus(lang === 'en' ? 'Testing WebDAV connection and folder...' : '正在测试WebDAV连接与文件夹...', 'info', 3500);
             try {
-                const result = await testWebdavConnection({ serverAddress, username, password });
+                const result = await testWebdavConnection({ serverAddress, username, password, basePath });
                 if (result && result.success === true) {
                     cloudRestoreConnectionState.webdav = true;
+                    const backupFolderPath = getWebdavBackupFolderDisplayPath({
+                        serverAddress,
+                        basePath,
+                        lang
+                    });
                     let successMsg = '';
                     if (lang === 'en') {
                         if (result.folderCreated) {
-                            successMsg = 'WebDAV connected; backup folder created!';
+                            successMsg = `WebDAV connected; backup folder created: ${backupFolderPath}`;
                         } else if (result.folderExisted) {
-                            successMsg = 'WebDAV connected; backup folder exists!';
+                            successMsg = `WebDAV connected; backup folder exists: ${backupFolderPath}`;
                         } else {
                             successMsg = 'WebDAV connection and folder test succeeded!';
                         }
                     } else {
                         if (result.folderCreated) {
-                            successMsg = 'WebDAV连接成功，已自动创建“书签备份”文件夹';
+                            successMsg = `WebDAV连接成功，已自动创建：${backupFolderPath}`;
                         } else if (result.folderExisted) {
-                            successMsg = 'WebDAV连接成功，检测到“书签备份”文件夹已存在';
+                            successMsg = `WebDAV连接成功，检测到路径已存在：${backupFolderPath}`;
                         } else {
                             successMsg = 'WebDAV连接与文件夹测试成功';
                         }
@@ -2640,6 +2900,7 @@ async function initializeGitHubRepoConfigSection() {
             };
 
             chrome.storage.local.set(updates, async function () {
+                markCloudConfigurationSaved('github');
                 const toggle = document.getElementById('githubRepoToggle');
                 if (toggle) {
                     toggle.checked = true;
@@ -3023,7 +3284,14 @@ function initializeWebDAVToggle() {
     if (webDAVToggle) {
         webDAVToggle.addEventListener('change', function () {
             const enabled = webDAVToggle.checked;
-            const { serverAddress, username, password } = readWebdavInputs({ trimPassword: true });
+            const { serverAddress, username, password, basePath } = readWebdavInputs({ trimPassword: true });
+
+            if (enabled && hasInvalidWebdavBasePathSegment(basePath)) {
+                webDAVToggle.checked = false;
+                showStatus('前缀目录不能包含 . 或 .. 路径段', 'error', 5000);
+                return;
+            }
+
             const updates = { webDAVEnabled: enabled };
 
             if (enabled && serverAddress && username && password) {
@@ -3031,9 +3299,11 @@ function initializeWebDAVToggle() {
                     serverAddress,
                     username,
                     password,
+                    webdavBasePath: basePath || '',
                     [WEBDAV_DRAFT_KEYS.serverAddress]: serverAddress,
                     [WEBDAV_DRAFT_KEYS.username]: username,
-                    [WEBDAV_DRAFT_KEYS.password]: password
+                    [WEBDAV_DRAFT_KEYS.password]: password,
+                    [WEBDAV_DRAFT_KEYS.basePath]: basePath || ''
                 });
             }
 
@@ -3367,6 +3637,7 @@ async function loadAndDisplayWebDAVConfig() {
     const serverAddressInput = document.getElementById('serverAddress');
     const usernameInput = document.getElementById('username');
     const passwordInput = document.getElementById('password');
+    const basePathInput = document.getElementById('webdavBasePath');
     const webDAVToggle = document.getElementById('webDAVToggle');
     const configStatus = document.getElementById('configStatus');
 
@@ -3377,8 +3648,9 @@ async function loadAndDisplayWebDAVConfig() {
     try {
         const data = await new Promise((resolve, reject) => {
             chrome.storage.local.get([
-                'serverAddress', 'username', 'password', 'webDAVEnabled',
-                WEBDAV_DRAFT_KEYS.serverAddress, WEBDAV_DRAFT_KEYS.username, WEBDAV_DRAFT_KEYS.password
+                'serverAddress', 'username', 'password', 'webdavBasePath', 'webDAVEnabled',
+                WEBDAV_DRAFT_KEYS.serverAddress, WEBDAV_DRAFT_KEYS.username, WEBDAV_DRAFT_KEYS.password,
+                WEBDAV_DRAFT_KEYS.basePath
             ], (result) => {
                 if (chrome.runtime.lastError) {
                     return reject(chrome.runtime.lastError);
@@ -3390,6 +3662,7 @@ async function loadAndDisplayWebDAVConfig() {
         const draftServerAddress = data[WEBDAV_DRAFT_KEYS.serverAddress];
         const draftUsername = data[WEBDAV_DRAFT_KEYS.username];
         const draftPassword = data[WEBDAV_DRAFT_KEYS.password];
+        const draftBasePath = data[WEBDAV_DRAFT_KEYS.basePath];
 
         const displayServerAddress = (typeof draftServerAddress === 'string' && draftServerAddress.length > 0)
             ? draftServerAddress
@@ -3400,10 +3673,17 @@ async function loadAndDisplayWebDAVConfig() {
         const displayPassword = (typeof draftPassword === 'string' && draftPassword.length > 0)
             ? draftPassword
             : (data.password || '');
+        const displayBasePath = (typeof draftBasePath === 'string' && draftBasePath.length > 0)
+            ? draftBasePath
+            : (data.webdavBasePath || '');
 
         serverAddressInput.value = displayServerAddress;
         usernameInput.value = displayUsername;
         passwordInput.value = displayPassword;
+        if (basePathInput) {
+            basePathInput.value = displayBasePath;
+        }
+        updateWebdavBasePathPreview();
 
         const isConfigured = !!(
             (data.serverAddress && data.username && data.password)
@@ -3429,6 +3709,10 @@ async function loadAndDisplayWebDAVConfig() {
         serverAddressInput.value = '';
         usernameInput.value = '';
         passwordInput.value = '';
+        if (basePathInput) {
+            basePathInput.value = '';
+        }
+        updateWebdavBasePathPreview();
         webDAVToggle.checked = false;
         configStatus.classList.remove('configured');
         configStatus.classList.add('not-configured');
@@ -3511,6 +3795,7 @@ async function loadAndDisplayGitHubRepoConfig() {
         branchInput.value = displayBranch;
         basePathInput.value = displayBasePath;
         tokenInput.value = displayToken;
+        updateGitHubRepoBasePathPreview();
 
         renderGitHubRepoConnectionInfoDisplay({
             owner: displayOwner,
@@ -3541,6 +3826,7 @@ async function loadAndDisplayGitHubRepoConfig() {
         branchInput.value = '';
         basePathInput.value = '';
         tokenInput.value = '';
+        updateGitHubRepoBasePathPreview();
         githubRepoInfoDisplay.textContent = '—';
         toggle.checked = false;
         configStatus.classList.remove('configured');
@@ -7502,7 +7788,7 @@ function exportSyncHistory() {
     chrome.storage.local.get([
         'syncHistory', 'preferredLang',
         // 云端1：WebDAV配置
-        'serverAddress', 'username', 'password', 'webDAVEnabled',
+        'serverAddress', 'username', 'password', 'webdavBasePath', 'webDAVEnabled',
         // 云端2：GitHub Repository 配置
         'githubRepoToken', 'githubRepoOwner', 'githubRepoName', 'githubRepoBranch', 'githubRepoBasePath', 'githubRepoEnabled',
         // 本地配置
@@ -8336,6 +8622,16 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         'en': "WebDAV App Password"
     };
 
+    const webdavBasePathLabelStrings = {
+        'zh_CN': "前缀目录（可选）",
+        'en': "Base Folder (optional)"
+    };
+
+    const webdavBasePathPlaceholderStrings = {
+        'zh_CN': "留空=服务器地址根目录；例如：我的备份/书签备份",
+        'en': "Empty = server address root; e.g. MyBackups/Bookmarks"
+    };
+
     const saveConfigButtonStrings = {
         'zh_CN': "保存配置",
         'en': "Save Config"
@@ -8347,8 +8643,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     };
 
     const webdavRootFolderNoticeStrings = {
-        'zh_CN': "⚠️ <b>提示</b>：可先点击下方的 <b>“测试：连接与创建文件夹”</b>，检测当前 WebDAV 配置能否创建存储目录。若创建失败，请更换 WebDAV 服务，或改用其他云端备份或本地备份。",
-        'en': "⚠️ <b>Tip</b>: Click <b>\"Test: Connection & Folder Creation\"</b> below to check whether the current WebDAV configuration can create storage folders. If creation fails, use another WebDAV service, another cloud backup target, or local backup."
+        'zh_CN': "⚠️ <b>提示</b>：可先点击下方的 <b>“测试：连接与创建文件夹”</b>，检测当前 WebDAV 配置能否创建存储目录。若创建失败，请更换 WebDAV 服务，或改用其他云端备份或本地备份。<br>⚠️ <b>多版本策略</b>：云端1 的恢复列表<b>只能</b>依赖 <b>版本化/备份历史log.md</b> 索引，最多记录 <b>3000</b> 条；超出后最早的版本不再显示（快照文件仍完整保存在网盘中）。云端2（GitHub）无此限制，长期使用多版本建议优先用云端2。可自行进入网盘清理，或填写上方的 <b>前缀目录</b>（例如 <b>我的备份/书签备份</b>）换一个目录重新开始。",
+        'en': "⚠️ <b>Tip</b>: Click <b>\"Test: Connection & Folder Creation\"</b> below to check whether the current WebDAV configuration can create storage folders. If creation fails, use another WebDAV service, another cloud backup target, or local backup.<br>⚠️ <b>Versioned strategy</b>: Cloud 1's restore list relies <b>solely</b> on the <b>Versioned/backup-history-log.md</b> index, which keeps at most <b>3000</b> entries; beyond that the oldest versions stop showing (their snapshot files remain intact in your drive). Cloud 2 (GitHub) has no such limit, so Cloud 2 is recommended for long-term versioned use. You can clean up in your drive, or fill in the <b>Base Folder</b> field above (e.g. <b>MyBackups/Bookmarks</b>) to start fresh in a different folder."
     };
 
     // 云端2：GitHub Repository 配置部分
@@ -9041,6 +9337,8 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     const usernamePlaceholderText = usernamePlaceholderStrings[lang] || usernamePlaceholderStrings['zh_CN'];
     const passwordLabelText = passwordLabelStrings[lang] || passwordLabelStrings['zh_CN'];
     const passwordPlaceholderText = passwordPlaceholderStrings[lang] || passwordPlaceholderStrings['zh_CN'];
+    const webdavBasePathLabelText = webdavBasePathLabelStrings[lang] || webdavBasePathLabelStrings['zh_CN'];
+    const webdavBasePathPlaceholderText = webdavBasePathPlaceholderStrings[lang] || webdavBasePathPlaceholderStrings['zh_CN'];
     const saveConfigButtonText = saveConfigButtonStrings[lang] || saveConfigButtonStrings['zh_CN'];
     const githubRepoConfigTitleText = githubRepoConfigTitleStrings[lang] || githubRepoConfigTitleStrings['zh_CN'];
     const githubRepoNoticeText = githubRepoNoticeStrings[lang] || githubRepoNoticeStrings['zh_CN'];
@@ -9170,6 +9468,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     if (webdavConfigTitleElement) {
         webdavConfigTitleElement.textContent = webdavConfigTitleText;
     }
+    setCloudAutoSaveStatus('webdav', false);
 
     const serverAddressLabelElement = document.getElementById('serverAddressLabel');
     if (serverAddressLabelElement) {
@@ -9201,6 +9500,17 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
         passwordInput.placeholder = passwordPlaceholderText;
     }
 
+    const webdavBasePathLabelElement = document.getElementById('webdavBasePathLabel');
+    if (webdavBasePathLabelElement) {
+        webdavBasePathLabelElement.textContent = webdavBasePathLabelText;
+    }
+
+    const webdavBasePathInput = document.getElementById('webdavBasePath');
+    if (webdavBasePathInput) {
+        webdavBasePathInput.placeholder = webdavBasePathPlaceholderText;
+    }
+    updateWebdavBasePathPreview();
+
     const saveKeyButton = document.getElementById('saveKey');
     if (saveKeyButton) {
         saveKeyButton.textContent = saveConfigButtonText;
@@ -9221,6 +9531,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     if (githubRepoConfigTitleElement) {
         githubRepoConfigTitleElement.textContent = githubRepoConfigTitleText;
     }
+    setCloudAutoSaveStatus('github', false);
 
     const githubRepoNoticeElement = document.getElementById('githubRepoNotice');
     if (githubRepoNoticeElement) {
@@ -9266,6 +9577,7 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
     if (githubRepoBasePathInput) {
         githubRepoBasePathInput.placeholder = githubRepoBasePathPlaceholderText;
     }
+    updateGitHubRepoBasePathPreview();
 
     const githubRepoTokenLabelElement = document.getElementById('githubRepoTokenLabel');
     if (githubRepoTokenLabelElement) {
@@ -9468,16 +9780,9 @@ const applyLocalizedContent = async (lang) => { // Added lang parameter
 
     const syncRestoreHelpBtnEl = document.getElementById('syncRestoreHelpBtn');
     if (syncRestoreHelpBtnEl) {
-        const syncRestoreHelpTitle = lang === 'en' ? 'Local restore guide' : '本地恢复说明';
+        const syncRestoreHelpTitle = lang === 'en' ? 'Restore guide' : '恢复说明';
         syncRestoreHelpBtnEl.setAttribute('aria-label', syncRestoreHelpTitle);
         syncRestoreHelpBtnEl.setAttribute('title', syncRestoreHelpTitle);
-    }
-
-    const restoreModalHelpBtnEl = document.getElementById('restoreModalHelpBtn');
-    if (restoreModalHelpBtnEl) {
-        const restoreModalHelpTitle = lang === 'en' ? 'Restore strategy guide' : '恢复策略说明';
-        restoreModalHelpBtnEl.setAttribute('aria-label', restoreModalHelpTitle);
-        restoreModalHelpBtnEl.setAttribute('title', restoreModalHelpTitle);
     }
 
     const currentChangesArchiveSavedTextEl = document.getElementById('currentChangesArchiveSavedText');
@@ -10961,6 +11266,8 @@ function initializeWebSnapshotShortcutPrompt() {
 
 const localRestoreFileMap = new Map();
 let lastLocalRestoreSelectionMeta = null;
+// 云端恢复扫描返回的多版本索引统计（条数 / 上限），用于在恢复弹窗里提示索引余量。
+let lastCloudRestoreIndexInfo = null;
 
 function escapeHtml(str) {
     return String(str == null ? '' : str)
@@ -11087,8 +11394,13 @@ async function handleRestoreFromCloud(source, options = {}) {
     try {
         const lang = typeof getLangKey === 'function' ? getLangKey() : (window.currentLang || 'zh_CN');
         const isEn = lang === 'en';
-        const response = await callBackgroundFunction('scanAndParseRestoreSource', { source });
-        if (response?.success && Array.isArray(response.versions) && response.versions.length > 0) {
+        const response = await callBackgroundFunction('scanAndParseRestoreSource', {
+            source,
+            // 云端1首次只读取版本化索引与固定覆盖目录；旧版兼容路径由“非索引项”按需探查。
+            restoreScope: source === 'webdav' ? 'index_and_overwrite' : 'all'
+        });
+        lastCloudRestoreIndexInfo = response?.indexInfo || null;
+        if (response?.success && Array.isArray(response.versions) && (response.versions.length > 0 || source === 'webdav')) {
             showRestoreModal(response.versions, source);
         } else if (response?.success) {
             alert(isEn ? 'No restore versions found in cloud folders.' : '云端文件夹中未找到可恢复版本。');
@@ -11880,6 +12192,8 @@ async function handleLocalRestoreSelection(fileList, options = {}) {
                 updatedAt: Date.now()
             };
 
+            // 本地恢复不涉及云端索引，清掉上一次云端扫描的残留，避免串到本地弹窗里。
+            lastCloudRestoreIndexInfo = null;
             showRestoreModal(response.versions, 'local');
         } else if (response?.success) {
             lastLocalRestoreSelectionMeta = {
@@ -11941,7 +12255,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 // [New] 显示恢复模态框
-function showRestoreModal(versions, source) {
+function showRestoreModal(versions, source, options = {}) {
     const modal = document.getElementById('restoreModal');
     const tableBody = document.getElementById('restoreVersionTableBody');
     const confirmBtn = document.getElementById('confirmRestoreBtnRef');
@@ -12015,6 +12329,7 @@ function showRestoreModal(versions, source) {
     const versionTypeOverwriteText = document.getElementById('restoreVersionTypeOverwriteText');
     const versionTypeManualExportText = document.getElementById('restoreVersionTypeManualExportText');
     const restoreOverwriteGithubHint = document.getElementById('restoreOverwriteGithubHint');
+    const restoreIndexInfoBadge = document.getElementById('restoreIndexInfoBadge');
     const versionTypeVersionedLabelWrap = document.getElementById('restoreVersionTypeVersionedLabelWrap');
     const versionTypeOverwriteLabelWrap = document.getElementById('restoreVersionTypeOverwriteLabelWrap');
     const versionTypeManualExportLabelWrap = document.getElementById('restoreVersionTypeManualExportLabelWrap');
@@ -12059,6 +12374,8 @@ function showRestoreModal(versions, source) {
     popupActiveRestoreProgressSessionId = '';
 
     const allVersions = Array.isArray(versions) ? versions : [];
+    const legacyWebdavProbeCompleted = options?.legacyWebdavProbeCompleted === true;
+    const canProbeLegacyWebdav = source === 'webdav' && !legacyWebdavProbeCompleted;
     let restoreSearchQuery = '';
     let isRestoreSearchOpen = false;
     const isSnapshotLikeVersion = (v) => {
@@ -12821,7 +13138,9 @@ function showRestoreModal(versions, source) {
     };
 
     const currentIndexedFilterByType = {
-        versioned: resolveFirstAvailableIndexFilterForType('versioned')
+        versioned: options?.initialIndexFilter === 'non_indexed'
+            ? 'non_indexed'
+            : resolveFirstAvailableIndexFilterForType('versioned')
     };
 
     const getCurrentIndexFilter = (type = currentVersionType) => {
@@ -12915,7 +13234,7 @@ function showRestoreModal(versions, source) {
 
     const resolveFirstAvailableVersionType = () => {
         if (isLocalFileSelection) return 'versioned';
-        if (versionedVersions.length > 0) return 'versioned';
+        if (versionedVersions.length > 0 || canProbeLegacyWebdav) return 'versioned';
         if (overwriteVersions.length > 0) return 'overwrite';
         if (source === 'local' && manualExportVersions.length > 0) return 'manual_export';
         return 'versioned';
@@ -12953,6 +13272,55 @@ function showRestoreModal(versions, source) {
     };
 
     let currentVersionType = resolveFirstAvailableVersionType();
+    let legacyWebdavProbePending = false;
+
+    const probeLegacyWebdavVersions = async () => {
+        if (!canProbeLegacyWebdav || legacyWebdavProbePending) return;
+
+        legacyWebdavProbePending = true;
+        const lang = typeof getLangKey === 'function' ? getLangKey() : (window.currentLang || 'zh_CN');
+        const isEn = lang === 'en';
+        if (versionedIndexFilterNonIndexedText) {
+            versionedIndexFilterNonIndexedText.textContent = isEn ? 'Scanning legacy backups...' : '正在探查旧版备份...';
+        }
+        showStatus(isEn ? 'Scanning legacy WebDAV backup folders...' : '正在探查旧版 WebDAV 备份目录...', 'info', 6000);
+
+        try {
+            const response = await callBackgroundFunction('scanAndParseRestoreSource', {
+                source: 'webdav',
+                restoreScope: 'legacy'
+            });
+            if (!response?.success) {
+                throw new Error(response?.error || (isEn ? 'Legacy scan failed' : '旧版探查失败'));
+            }
+
+            const mergedById = new Map();
+            [...allVersions, ...(Array.isArray(response.versions) ? response.versions : [])].forEach((version) => {
+                const id = String(version?.id || '').trim();
+                if (id && !mergedById.has(id)) mergedById.set(id, version);
+            });
+            const mergedVersions = Array.from(mergedById.values());
+            showRestoreModal(mergedVersions, source, {
+                legacyWebdavProbeCompleted: true,
+                initialIndexFilter: 'non_indexed'
+            });
+            showStatus(
+                isEn
+                    ? `Legacy scan complete: ${Math.max(0, mergedVersions.length - allVersions.length)} item(s) found.`
+                    : `旧版探查完成：发现 ${Math.max(0, mergedVersions.length - allVersions.length)} 项。`,
+                'success',
+                4500
+            );
+        } catch (error) {
+            legacyWebdavProbePending = false;
+            showStatus(
+                `${isEn ? 'Legacy scan failed: ' : '旧版探查失败：'}${error?.message || (isEn ? 'Unknown error' : '未知错误')}`,
+                'error',
+                5500
+            );
+            updateVersionedIndexFilterUi();
+        }
+    };
 
     const shouldHideRestoreNoteColumn = (type = currentVersionType) => type === 'overwrite' && !isFlattenedOverwriteChangesMode(type);
     const shouldHideRestoreHashColumn = (type = currentVersionType) => type === 'overwrite';
@@ -13750,6 +14118,53 @@ function showRestoreModal(versions, source) {
             : '提示：覆盖策略在扩展内只显示当前覆盖快照。若使用云端2（GitHub），旧的覆盖版本可到仓库提交历史里查看或回退；当前弹窗仍只读取当前分支里的最新文件。';
     };
 
+    // 多版本索引余量：云端1依赖索引发现版本；云端2使用仓库 Tree，不显示这个上限提示。
+    const updateRestoreIndexInfoBadge = (lang = cachedLang) => {
+        if (!restoreIndexInfoBadge) return;
+
+        const isEn = lang === 'en';
+        const info = lastCloudRestoreIndexInfo;
+        const isWebdav = source === 'webdav';
+        const maxRows = Number(info?.maxRows) || 0;
+        const shouldShow = !isLocalFileSelection
+            && isWebdav
+            && currentVersionType === 'versioned'
+            && !!info
+            && maxRows > 0;
+
+        restoreIndexInfoBadge.style.display = shouldShow ? 'inline-block' : 'none';
+        if (!shouldShow) {
+            restoreIndexInfoBadge.textContent = '';
+            restoreIndexInfoBadge.removeAttribute('title');
+            return;
+        }
+
+        const count = Number(info.recordCount) || 0;
+        const warningThreshold = Math.min(maxRows, 2200);
+        const isFull = count >= maxRows;
+        const shouldWarn = count >= warningThreshold;
+
+        restoreIndexInfoBadge.style.color = isFull
+            ? 'var(--theme-error-color, #FF3B30)'
+            : (shouldWarn ? '#F57C00' : 'var(--theme-info-color, #4FC3F7)');
+        restoreIndexInfoBadge.style.fontWeight = shouldWarn ? '700' : '400';
+        const statusLabel = isFull
+            ? (isEn ? 'Index full' : '索引已满')
+            : (shouldWarn ? (isEn ? 'Review index' : '建议整理') : (isEn ? 'Index' : '索引'));
+        restoreIndexInfoBadge.textContent = `${statusLabel} · ${count} / ${maxRows}`;
+        restoreIndexInfoBadge.title = isFull
+            ? (isEn
+                ? 'Cloud 1 index is full. The oldest versions will stop appearing. Manually clean old snapshots, choose a new Base Folder, or switch to Cloud 2.'
+                : '云端1索引已满，最早的版本将不再显示。请手动清理旧快照、换一个前缀目录，或改用云端2。')
+            : (shouldWarn
+                ? (isEn
+                    ? `Cloud 1 index is approaching its limit (${count}/${maxRows}). Consider cleaning old snapshots, choosing a new Base Folder, or switching to Cloud 2.`
+                    : `云端1索引正在接近上限（${count}/${maxRows}）。建议手动清理旧快照、换一个前缀目录，或改用云端2。`)
+                : (isEn
+                    ? `Cloud 1 discovers versions through this index (${count}/${maxRows}).`
+                    : `云端1通过该索引发现版本（${count}/${maxRows}）。`));
+    };
+
     const RESTORE_PATCH_THRESHOLD_DEFAULT_COUNT = 500;
     const RESTORE_PATCH_THRESHOLD_MIN_COUNT = 0;
     const RESTORE_PATCH_THRESHOLD_MAX_COUNT = 100000;
@@ -13960,6 +14375,7 @@ function showRestoreModal(versions, source) {
 
         updateTitleText(lang, currentVersionType);
         updateRestoreOverwriteGithubHint(lang);
+        updateRestoreIndexInfoBadge(lang);
 
         if (thSeq) thSeq.textContent = isEn ? 'Seq' : '序号';
         if (thNote) thNote.textContent = isEn ? 'Note/File Name' : '备注/文件名';
@@ -14015,7 +14431,9 @@ function showRestoreModal(versions, source) {
                 && currentVersionType === 'versioned'
                 && getCurrentRestoreSubMode(currentVersionType) === 'changes';
             const nonIndexedCount = isChangesMode ? versionedChangesNonIndexedVersions.length : versionedSnapshotNonIndexedVersions.length;
-            versionedIndexFilterNonIndexedText.textContent = `${isEn ? 'Non-indexed' : '非索引项'} (${nonIndexedCount})`;
+            versionedIndexFilterNonIndexedText.textContent = canProbeLegacyWebdav && nonIndexedCount === 0
+                ? (isEn ? 'Non-indexed legacy scan' : '非索引项（探查旧版）')
+                : `${isEn ? 'Non-indexed' : '非索引项'} (${nonIndexedCount})`;
         }
         if (versionTypeVersionedLabelWrap) {
             versionTypeVersionedLabelWrap.title = isEn
@@ -15312,7 +15730,7 @@ function showRestoreModal(versions, source) {
 
         return {
             indexed: indexedCount > 0,
-            non_indexed: nonIndexedCount > 0
+            non_indexed: nonIndexedCount > 0 || canProbeLegacyWebdav
         };
     };
 
@@ -15401,7 +15819,9 @@ function showRestoreModal(versions, source) {
             versionedIndexFilterIndexedText.textContent = `${isEn ? 'Indexed' : '索引项'} (${indexedCount})`;
         }
         if (versionedIndexFilterNonIndexedText) {
-            versionedIndexFilterNonIndexedText.textContent = `${isEn ? 'Non-indexed' : '非索引项'} (${nonIndexedCount})`;
+            versionedIndexFilterNonIndexedText.textContent = canProbeLegacyWebdav && nonIndexedCount === 0
+                ? (isEn ? 'Non-indexed legacy scan' : '非索引项（探查旧版）')
+                : `${isEn ? 'Non-indexed' : '非索引项'} (${nonIndexedCount})`;
         }
 
         const availability = getIndexFilterAvailabilityByType(currentVersionType);
@@ -15997,7 +16417,7 @@ function showRestoreModal(versions, source) {
     const getVersionTypeAvailability = () => {
         const counts = getVersionTypeCounts();
         return {
-            versioned: counts.versioned > 0,
+            versioned: counts.versioned > 0 || canProbeLegacyWebdav,
             overwrite: counts.overwrite > 0,
             manual_export: counts.manual_export > 0
         };
@@ -16037,6 +16457,7 @@ function showRestoreModal(versions, source) {
         currentVersionType = resolvedType;
         updateTitleText(cachedLang, currentVersionType);
         updateRestoreOverwriteGithubHint(cachedLang);
+        updateRestoreIndexInfoBadge(cachedLang);
 
         if (versionTypeVersionedRadio) versionTypeVersionedRadio.checked = currentVersionType === 'versioned';
         if (versionTypeOverwriteRadio) versionTypeOverwriteRadio.checked = currentVersionType === 'overwrite';
@@ -16115,6 +16536,11 @@ function showRestoreModal(versions, source) {
     if (versionedIndexFilterNonIndexedRadio) {
         versionedIndexFilterNonIndexedRadio.onchange = () => {
             if (!versionedIndexFilterNonIndexedRadio.checked) return;
+            if (canProbeLegacyWebdav) {
+                currentIndexedFilterByType[currentVersionType] = 'non_indexed';
+                void probeLegacyWebdavVersions();
+                return;
+            }
             if (getCurrentIndexFilter(currentVersionType) === 'non_indexed') return;
             currentIndexedFilterByType[currentVersionType] = 'non_indexed';
             currentPageByType[currentVersionType] = 1;
@@ -21315,11 +21741,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // [New] 同步与恢复帮助按钮
     const syncRestoreHelpBtn = document.getElementById('syncRestoreHelpBtn');
-    const restoreModalHelpBtn = document.getElementById('restoreModalHelpBtn');
     let syncRestoreHelpTooltip = null;
     let restoreModalHelpTooltip = null;
+    let activeRestoreHelpTab = null;
+    let restoreHelpSwitchSequence = 0;
 
-    const buildHelpDialog = ({ title = '', contentHtml = '', width = 520, close, bodyStyle = '', headerActionsHtml = '', footerHtml = '' }) => {
+    const buildHelpDialog = ({ title = '', titleHtml = '', contentHtml = '', width = 520, close, bodyStyle = '', bodyClassName = '', headerActionsHtml = '', footerHtml = '' }) => {
         const overlay = document.createElement('div');
         overlay.style.cssText = `
             position: fixed;
@@ -21350,8 +21777,9 @@ document.addEventListener('DOMContentLoaded', function () {
         header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px 10px 22px;border-bottom:1px solid var(--theme-border-primary);';
 
         const titleEl = document.createElement('div');
-        titleEl.textContent = String(title || 'Help');
-        titleEl.style.cssText = 'min-width:0;font-size:13px;font-weight:700;color:var(--theme-text-primary);line-height:1.35;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        if (titleHtml) titleEl.innerHTML = titleHtml;
+        else titleEl.textContent = String(title || 'Help');
+        titleEl.style.cssText = 'min-width:0;font-size:13px;font-weight:700;color:var(--theme-text-primary);line-height:1.35;text-align:left;';
 
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
@@ -21374,6 +21802,7 @@ document.addEventListener('DOMContentLoaded', function () {
         header.appendChild(headerActions);
 
         const body = document.createElement('div');
+        body.className = bodyClassName;
         body.style.cssText = `padding:12px;overflow:auto;display:flex;flex-direction:column;gap:8px;${bodyStyle || ''}`;
         body.innerHTML = contentHtml;
 
@@ -21400,6 +21829,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!syncRestoreHelpTooltip) return;
         const tooltipToRemove = syncRestoreHelpTooltip;
         syncRestoreHelpTooltip = null;
+        if (activeRestoreHelpTab === 'local') activeRestoreHelpTab = null;
         tooltipToRemove.remove();
     };
 
@@ -21472,69 +21902,173 @@ document.addEventListener('DOMContentLoaded', function () {
         return lines.join('\n');
     };
 
-    const showSyncRestoreHelpTooltip = () => {
+    const getCloudRestoreStructureExample = (isEn, source = 'webdav') => {
+        const isGitHub = source === 'github';
+        const lines = isEn
+            ? [
+                isGitHub ? 'GitHub repository / branch root/' : 'WebDAV / repository root/',
+                ...(isGitHub ? [] : [
+                    '├─ Bookmarks/  [legacy non-indexed probe; fixed legacy folder name]',
+                    '│  └─ 20260506_164914.html  [legacy HTML snapshot]'
+                ]),
+                '└─ Bookmark Backup/',
+                `   ├─ Versioned/  [${isGitHub ? 'Cloud 2 tree enumeration' : 'Cloud 1 reads the index'}]`,
+                '   │  ├─ backup-history-log.md',
+                '   │  └─ 20260225_123456_abcd1234/',
+                '   │     └─ 20260225_123456_abcd1234.html',
+                '   ├─ Overwrite/  [fixed-folder scan]',
+                '   │  └─ bookmark_backup.html',
+                '   └─ Manual Export/  [not scanned for restore]',
+                '      └─ Web Snapshot/  [not scanned for restore]',
+                '         └─ page_snapshot_20260225.html'
+            ]
+            : [
+                isGitHub ? 'GitHub 仓库 / 分支根目录/' : 'WebDAV / 仓库根目录/',
+                ...(isGitHub ? [] : [
+                    '├─ Bookmarks/（仅旧版非索引兼容探查；旧版固定英文目录）',
+                    '│  └─ 20260506_164914.html（旧版 HTML 快照）'
+                ]),
+                '└─ 书签备份/',
+                `   ├─ 版本化/（${isGitHub ? '云端2 Tree 枚举' : '云端1读取索引'}）`,
+                '   │  ├─ 备份历史log.md',
+                '   │  └─ 20260225_123456_abcd1234/',
+                '   │     └─ 20260225_123456_abcd1234.html',
+                '   ├─ 覆盖/（固定目录扫描）',
+                '   │  └─ bookmark_backup.html',
+                '   └─ 手动导出/（恢复不扫描）',
+                '      └─ 网页快照/（恢复不扫描）',
+                '         └─ 网页快照_20260225.html'
+            ];
+        return lines.join('\n');
+    };
+
+    const normalizeRestoreHelpTab = (tab) => ['webdav', 'github', 'local'].includes(tab) ? tab : 'webdav';
+
+    const getRestoreHelpTabHeaderHtml = (isEn, activeTab) => {
+        const normalizedTab = normalizeRestoreHelpTab(activeTab);
+        const tabs = [
+            ['webdav', isEn ? 'Cloud 1' : '云端1'],
+            ['github', isEn ? 'Cloud 2' : '云端2'],
+            ['local', isEn ? 'Local' : '本地']
+        ];
+        return `<div role="tablist" aria-label="${isEn ? 'Restore source' : '恢复来源'}" style="display:inline-flex;align-items:center;gap:3px;white-space:nowrap;">${tabs.map(([tab, label]) => {
+            const active = tab === normalizedTab;
+            return `<button type="button" role="tab" aria-selected="${active}" data-restore-help-tab="${tab}" style="height:25px;padding:0 8px;border:1px solid ${active ? 'var(--theme-warning-color)' : 'var(--theme-border-primary)'};border-radius:4px;background:${active ? 'rgba(255, 152, 0, 0.12)' : 'var(--theme-bg-secondary)'};color:${active ? 'var(--theme-warning-color)' : 'var(--theme-text-secondary)'};font:inherit;font-size:11px;font-weight:${active ? '700' : '600'};cursor:pointer;">${label}</button>`;
+        }).join('')}</div>`;
+    };
+
+    const switchRestoreHelpTab = (tab) => {
+        const normalizedTab = normalizeRestoreHelpTab(tab);
+        if (activeRestoreHelpTab === normalizedTab && (syncRestoreHelpTooltip || restoreModalHelpTooltip)) return;
+        const switchSequence = ++restoreHelpSwitchSequence;
+        chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => {
+            if (switchSequence !== restoreHelpSwitchSequence) return;
+            const lang = res?.currentLang || res?.preferredLang || 'zh_CN';
+            removeSyncRestoreHelpTooltip();
+            removeRestoreModalHelpTooltip();
+            if (normalizedTab === 'local') showSyncRestoreHelpTooltip(lang);
+            else showRestoreModalHelpTooltip(normalizedTab, lang);
+        });
+    };
+
+    const bindRestoreHelpTabs = (dialog) => {
+        dialog.querySelectorAll('[data-restore-help-tab]').forEach((tab) => {
+            tab.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                switchRestoreHelpTab(tab.dataset.restoreHelpTab);
+            });
+        });
+        const strategyLink = dialog.querySelector('[data-open-backup-strategy-help]');
+        if (strategyLink) {
+            strategyLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (backupStrategyHelpTooltip) removeBackupStrategyHelpTooltip();
+                showBackupStrategyHelpTooltip();
+            });
+        }
+    };
+
+    const showSyncRestoreHelpTooltip = (knownLang = '') => {
         if (syncRestoreHelpTooltip || !syncRestoreHelpBtn) return;
 
-        chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => {
-            const lang = res?.currentLang || res?.preferredLang || 'zh_CN';
+        const render = (lang) => {
             const isEn = lang === 'en';
             const structureExample = getRestoreStructureExample(isEn);
 
             syncRestoreHelpTooltip = buildHelpDialog({
-                width: 520,
-                title: isEn ? 'Local Restore Guide' : '本地恢复说明',
+                width: 560,
+                titleHtml: getRestoreHelpTabHeaderHtml(isEn, 'local'),
                 close: removeSyncRestoreHelpTooltip,
-                bodyStyle: 'overflow:hidden;',
+                bodyClassName: 'restore-help-scroll',
+                bodyStyle: 'max-height:min(74vh, 620px);overflow-y:scroll;',
                 contentHtml: `
                     <div style="display:flex;flex-direction:column;gap:8px;height:min(62vh, 620px);min-height:360px;">
-                        <div style="flex:1;min-height:0;overflow-y:auto;font-size: 11px; color: var(--theme-text-secondary); line-height: 1.55; padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
+                        <div class="restore-help-scroll" style="flex:0.85 1 0;min-height:0;overflow-y:scroll;font-size: 11px; color: var(--theme-text-secondary); line-height: 1.55; padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
                             ${isEn
                     ? '<div style="margin-bottom: 8px;"><span style="font-weight: 700;">1. Folder mode</span><br>&nbsp;&nbsp;Recommended root: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>&nbsp;&nbsp;Directory-scan trigger folders: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup / Versioned / Overwrite / Manual Export</span><br>&nbsp;&nbsp;If you pick another folder, such as a specific version folder, the restore list is built by direct file matching instead of full grouped directory scan.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">2. Manual Export</span><br>&nbsp;&nbsp;Manual Export is now <span style="color: var(--theme-warning-color); font-weight: 700;">local only</span>; Cloud 1 / Cloud 2 no longer scan it.<br>&nbsp;&nbsp;Current Changes exports are direct files under <span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export/Current Changes/</span>.<br>&nbsp;&nbsp;Backup History single-entry exports and Backup History ZIP exports are both under <span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export/Backup_History/</span>.<br>&nbsp;&nbsp;Extracted folders with <span style="color: var(--theme-warning-color); font-weight: 700;">backup-history-log*.md</span> are still supported locally.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">3. File compatibility</span><br>&nbsp;&nbsp;File mode accepts snapshots from <span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml bookmark-format HTML</span> and <span style="color: var(--theme-warning-color); font-weight: 700;">Chrome Bookmark API style .json bookmark trees</span>.<br>&nbsp;&nbsp;Versioned restore metadata comes from <span style="color: var(--theme-warning-color); font-weight: 700;">Versioned/backup-history-log.md</span> and local archived files <span style="color: var(--theme-warning-color); font-weight: 700;">backup-history-log_from_*_to_*.md</span>.<br>&nbsp;&nbsp;Overwrite does not generate a backup-history log; the extension only reads the current overwrite snapshot in <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite/</span>. For Cloud 2 (GitHub), older overwrite versions should be checked in repo commit history.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">4. Restore routing</span><br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Snapshot</span> uses <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite Restore</span>.<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Changes</span> and <span style="color: var(--theme-warning-color); font-weight: 700;">Current Changes</span> use <span style="color: var(--theme-warning-color); font-weight: 700;">Import Merge</span> only.<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Backup History ZIP</span> is supported only via <span style="color: var(--theme-warning-color); font-weight: 700;">Local Restore -> Select file</span> (single file).</div><div style="margin-top: 8px; font-size: 10px; color: var(--theme-info-color, #4FC3F7); line-height: 1.55; padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;"><span style="font-weight: 700;">1.</span> Folder restore reads the index first, so the first pass is lighter and less likely to stutter.<br><span style="font-weight: 700;">2.</span> If a manual-export ZIP exceeds <span style="font-weight: 700;">100MB</span>, its filename adds a restore hint; above <span style="font-weight: 700;">500MB</span>, the hint becomes stronger. If you want to restore it later, extract it to a folder first.</div>'
                     : '<div style="margin-bottom: 8px;"><span style="font-weight: 700;">1. 文件夹模式</span><br>&nbsp;&nbsp;推荐优先选择 <span style="color: var(--theme-warning-color); font-weight: 700;">书签备份</span>，或英文精确名称 <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>&nbsp;&nbsp;会触发目录扫描的文件夹：<span style="color: var(--theme-warning-color); font-weight: 700;">书签备份 / 版本化 / 覆盖 / 手动导出</span><br>&nbsp;&nbsp;若选择其他文件夹，例如某个具体版本目录，则按文件直接匹配并展示恢复列表，不走完整分组目录扫描。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">2. 手动导出</span><br>&nbsp;&nbsp;手动导出现在为<span style="color: var(--theme-warning-color); font-weight: 700;">本地专有</span>；云端1 / 云端2不再扫描这类导出包。<br>&nbsp;&nbsp;当前变化导出是直接文件，位于 <span style="color: var(--theme-warning-color); font-weight: 700;">手动导出/当前变化/</span>。<br>&nbsp;&nbsp;备份历史单条导出与备份历史 ZIP 导出都位于 <span style="color: var(--theme-warning-color); font-weight: 700;">手动导出/备份历史/</span>。<br>&nbsp;&nbsp;若你先解压，只要内部仍带有 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史log*.md</span>，本地恢复也仍能识别。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">3. 文件兼容</span><br>&nbsp;&nbsp;文件模式支持快照兼容：<span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml 书签格式 HTML</span>，以及 <span style="color: var(--theme-warning-color); font-weight: 700;">Chrome Bookmark API 风格的 .json 书签树</span>。<br>&nbsp;&nbsp;多版本恢复元数据来自 <span style="color: var(--theme-warning-color); font-weight: 700;">版本化/备份历史log.md</span>，并兼容本地归档文件 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史log_*开始_*截止.md</span>。<br>&nbsp;&nbsp;覆盖策略不生成备份历史 log；扩展内只读取 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖/</span> 目录里的当前覆盖快照。若使用云端2（GitHub），旧覆盖版本请到仓库提交历史里查看。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">4. 恢复路由</span><br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 快照</span> 使用 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖恢复</span>。<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 变化</span> 与 <span style="color: var(--theme-warning-color); font-weight: 700;">当前变化</span> 仅允许 <span style="color: var(--theme-warning-color); font-weight: 700;">导入合并</span>。<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 备份历史 ZIP</span> 仅支持通过 <span style="color: var(--theme-warning-color); font-weight: 700;">本地恢复 -> 选择文件</span>（单文件）导入。</div><div style="margin-top: 8px; font-size: 10px; color: var(--theme-info-color, #4FC3F7); line-height: 1.55; padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;"><span style="font-weight: 700;">1.</span> 文件夹恢复会先读索引，首轮更轻量，也更不容易卡顿。<br><span style="font-weight: 700;">2.</span> 手动导出的 ZIP 超过 <span style="font-weight: 700;">100MB</span> 时，文件名会追加恢复提示；超过 <span style="font-weight: 700;">500MB</span> 时提示会更强。如果后续要恢复，建议先解压为文件夹再恢复。</div>'}
                         </div>
-                        <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;">
-                            <div style="font-size: 10px; color: var(--theme-text-secondary); padding: 6px 8px; background: var(--theme-bg-tertiary, rgba(255,255,255,0.04)); border-radius: 6px;">
-                                ${isEn ? 'Example structure (Local restore)' : '示例结构（本地恢复）'}
+                        <div style="flex:1.15 1 0;min-height:0;display:flex;flex-direction:column;gap:8px;">
+                            <div style="font-size:10px;color:var(--theme-text-secondary);line-height:1.5;padding:6px 8px;background:var(--theme-bg-tertiary, rgba(255,255,255,0.04));border-radius:6px;">
+                                ${isEn ? 'Local restore supports selected folders and files, including Manual Export packages.' : '本地恢复支持选择文件夹或文件，也兼容手动导出的恢复包。'}<br>
+                                <a href="#" data-open-backup-strategy-help style="display:inline-block;margin-top:4px;color:var(--theme-link-color);font-size:10px;font-weight:700;text-decoration:underline;">${isEn ? 'Open Backup Strategy Guide' : '打开备份策略说明'}</a>
                             </div>
-                            <pre style="flex:1;min-height:0;margin: 0; font-size: 10px; line-height: 1.45; color: var(--theme-text-secondary); padding: 8px; background: var(--theme-bg-secondary); border-radius: 6px; border: 1px dashed var(--theme-border-primary); white-space: pre; overflow: auto;">${structureExample}</pre>
+                            <pre class="restore-help-scroll" style="flex:1;min-height:0;margin: 0; font-size: 10px; line-height: 1.45; color: var(--theme-text-secondary); padding: 8px; background: var(--theme-bg-secondary); border-radius: 6px; border: 1px dashed var(--theme-border-primary); white-space: pre; overflow-x:auto; overflow-y:scroll;"><span style="font-family:inherit;color:var(--theme-text-primary);font-weight:700;">${isEn ? 'Reference structure (Local restore)' : '参考结构（本地恢复）'}</span>\n${structureExample}</pre>
                         </div>
                     </div>
                 `
             });
 
             document.body.appendChild(syncRestoreHelpTooltip);
-        });
+            bindRestoreHelpTabs(syncRestoreHelpTooltip);
+            activeRestoreHelpTab = 'local';
+        };
+
+        if (knownLang) render(knownLang);
+        else chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => render(res?.currentLang || res?.preferredLang || 'zh_CN'));
     };
 
     const removeRestoreModalHelpTooltip = () => {
         if (!restoreModalHelpTooltip) return;
         const tooltipToRemove = restoreModalHelpTooltip;
         restoreModalHelpTooltip = null;
+        if (activeRestoreHelpTab === 'webdav' || activeRestoreHelpTab === 'github') activeRestoreHelpTab = null;
         tooltipToRemove.remove();
     };
 
-    const showRestoreModalHelpTooltip = () => {
-        if (restoreModalHelpTooltip || !restoreModalHelpBtn) return;
+    const showRestoreModalHelpTooltip = (source = 'webdav', knownLang = '') => {
+        if (restoreModalHelpTooltip) return;
 
-        chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => {
-            const lang = res?.currentLang || res?.preferredLang || 'zh_CN';
+        const render = (lang) => {
             const isEn = lang === 'en';
-            const structureExample = getRestoreStructureExample(isEn);
-
+            const activeSource = normalizeRestoreHelpTab(source);
+            const structureExample = getCloudRestoreStructureExample(isEn, activeSource);
+            const activeSourceSummary = isEn
+                ? (activeSource === 'github'
+                    ? '<span style="color:var(--theme-warning-color);font-weight:700;">Cloud 2 (GitHub)</span> gets the repository Tree first, so it can enumerate versioned and compatible snapshot paths without a separate legacy scan.'
+                    : '<span style="color:var(--theme-warning-color);font-weight:700;">Cloud 1 (WebDAV)</span> reads <span style="color:var(--theme-warning-color);font-weight:700;">Versioned/backup-history-log.md</span> for versioned recovery. Legacy non-indexed data is checked only after the user starts its dedicated probe.')
+                : (activeSource === 'github'
+                    ? '<span style="color:var(--theme-warning-color);font-weight:700;">云端2（GitHub）</span>会先读取仓库 Tree，因此可枚举版本化及旧版兼容快照路径，无需单独探查。'
+                    : '<span style="color:var(--theme-warning-color);font-weight:700;">云端1（WebDAV）</span>的版本化恢复读取 <span style="color:var(--theme-warning-color);font-weight:700;">版本化/备份历史log.md</span>；旧版非索引数据只会在用户启动专门探查后读取。');
             restoreModalHelpTooltip = buildHelpDialog({
                 width: 560,
-                title: isEn ? 'Restore Strategy Guide' : '恢复策略说明',
+                titleHtml: getRestoreHelpTabHeaderHtml(isEn, activeSource),
                 close: removeRestoreModalHelpTooltip,
+                bodyClassName: 'restore-help-scroll',
+                bodyStyle: 'max-height:min(74vh, 620px);overflow-y:scroll;',
                 contentHtml: `
                     <div style="font-size: 11px; color: var(--theme-text-secondary); line-height: 1.55; padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
                         ${isEn
-                    ? '• Overwrite Restore: deletes current bookmarks, then rebuilds from the target snapshot. This is the main path for snapshots, including <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite / Versioned Snapshot / Manual Export -> Snapshot</span>. Bookmark IDs may change<br>• Import Merge: imports into a new folder and keeps existing bookmarks. This is the main path for <span style="color: var(--theme-warning-color); font-weight: 700;">Current Changes / Manual Export -> Changes</span><br>• <s>Patch Restore: applies add/delete/move/modify by strict ID matching and preserves IDs when possible</s><br>• Note: source chains may differ, so Patch Restore is not the primary path in Main UI for first-time or large-scale restore flows'
-                    : '• 覆盖恢复：先删除当前书签，再按目标快照重建。这是快照类来源的主路径，包括 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖 / 多版本快照 / 手动导出 -> 快照</span>；Bookmark ID 可能变化<br>• 导入合并：导入到新文件夹，保留现有书签。这是 <span style="color: var(--theme-warning-color); font-weight: 700;">当前变化 / 手动导出 -> 变化</span> 的主路径<br>• <s>补丁恢复：按书签 ID 严格匹配执行增删移改，尽量保留原 ID</s><br>• 说明：由于来源链路可能不一致，主 UI 的首次恢复或大规模恢复流程不以补丁恢复作为主路径'}
+                    ? '• Overwrite Restore: deletes current bookmarks, then rebuilds from the target snapshot. This is the main path for <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite / Versioned Snapshot</span>. Bookmark IDs may change<br>• Import Merge: imports <span style="color: var(--theme-warning-color); font-weight: 700;">Current Changes</span> into a new folder and keeps existing bookmarks<br>• <s>Patch Restore: applies add/delete/move/modify by strict ID matching and preserves IDs when possible</s><br>• For long-term <span style="color: var(--theme-warning-color); font-weight: 700;">Versioned</span> recovery, <span style="color: var(--theme-warning-color); font-weight: 700;">Cloud 2</span> is recommended because its repository tree can enumerate restore snapshots.'
+                    : '• 覆盖恢复：先删除当前书签，再按目标快照重建。这是 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖 / 版本化快照</span> 的主路径；Bookmark ID 可能变化<br>• 导入合并：将<span style="color: var(--theme-warning-color); font-weight: 700;">当前变化</span>导入新文件夹，保留现有书签<br>• <s>补丁恢复：按书签 ID 严格匹配执行增删移改，尽量保留原 ID</s><br>• 长期使用<span style="color: var(--theme-warning-color); font-weight: 700;">版本化</span>恢复，建议优先用<span style="color: var(--theme-warning-color); font-weight: 700;">云端2</span>：仓库 Tree 可以枚举恢复快照。'}
                     </div>
-                    <div style="font-size: 10px; color: var(--theme-text-secondary); padding: 6px 8px; background: var(--theme-bg-tertiary, rgba(255,255,255,0.04)); border-radius: 6px;">
-                        ${isEn ? 'Reference structure (Local restore example)' : '参考结构（本地恢复示例）'}
+                    <div style="font-size:10px;color:var(--theme-text-secondary);line-height:1.5;padding:6px 8px;background:var(--theme-bg-tertiary, rgba(255,255,255,0.04));border-radius:6px;">
+                        ${activeSourceSummary}<br>
+                        <a href="#" data-open-backup-strategy-help style="display:inline-block;margin-top:4px;color:var(--theme-link-color);font-size:10px;font-weight:700;text-decoration:underline;">${isEn ? 'Open Backup Strategy Guide' : '打开备份策略说明'}</a>
                     </div>
-                    <pre style="margin: 0; font-size: 10px; line-height: 1.45; color: var(--theme-text-secondary); padding: 8px; background: var(--theme-bg-secondary); border-radius: 6px; border: 1px dashed var(--theme-border-primary); white-space: pre; overflow-x: auto;">${structureExample}</pre>
+                    <pre class="restore-help-scroll" style="max-height: 150px; margin: 0; font-size: 10px; line-height: 1.45; color: var(--theme-text-secondary); padding: 8px; background: var(--theme-bg-secondary); border-radius: 6px; border: 1px dashed var(--theme-border-primary); white-space: pre; overflow-x:auto;overflow-y:scroll;"><span style="font-family:inherit;color:var(--theme-text-primary);font-weight:700;">${isEn ? 'Reference structure (Cloud restore)' : '参考结构（云端恢复）'}</span>\n${structureExample}</pre>
                     <div style="font-size: 10px; color: var(--theme-warning-color); padding: 6px 8px; background: rgba(255, 152, 0, 0.08); border-radius: 4px;">
                         ${isEn ? 'The scanned version list is temporary cache for this popup session.' : '扫描出的版本列表是本次弹窗会话的临时缓存。'}
                     </div>
@@ -21542,32 +22076,37 @@ document.addEventListener('DOMContentLoaded', function () {
             });
 
             document.body.appendChild(restoreModalHelpTooltip);
-        });
+            bindRestoreHelpTabs(restoreModalHelpTooltip);
+            activeRestoreHelpTab = activeSource;
+        };
+
+        if (knownLang) render(knownLang);
+        else chrome.storage.local.get(['preferredLang', 'currentLang'], (res) => render(res?.currentLang || res?.preferredLang || 'zh_CN'));
     };
 
-    if (syncRestoreHelpBtn) {
-        syncRestoreHelpBtn.addEventListener('click', (e) => {
+    const bindRestoreHelpControl = (control, toggleHelp) => {
+        if (!control || control.hasAttribute('data-listener-attached')) return;
+        const activate = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (syncRestoreHelpTooltip) {
-                removeSyncRestoreHelpTooltip();
-            } else {
-                showSyncRestoreHelpTooltip();
-            }
+            toggleHelp();
+        };
+        control.addEventListener('click', activate);
+        control.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            activate(e);
         });
-    }
+        control.setAttribute('data-listener-attached', 'true');
+    };
 
-    if (restoreModalHelpBtn) {
-        restoreModalHelpBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (restoreModalHelpTooltip) {
-                removeRestoreModalHelpTooltip();
-            } else {
-                showRestoreModalHelpTooltip();
-            }
-        });
-    }
+    bindRestoreHelpControl(syncRestoreHelpBtn, () => {
+        if (syncRestoreHelpTooltip || restoreModalHelpTooltip) {
+            removeSyncRestoreHelpTooltip();
+            removeRestoreModalHelpTooltip();
+        } else {
+            showRestoreModalHelpTooltip('webdav');
+        }
+    });
 
     const backupStrategyHelpBtn = document.getElementById('backupStrategyHelpBtn');
     let backupStrategyHelpTooltip = null;
@@ -21590,11 +22129,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 width: 560,
                 title: isEn ? 'Backup Strategy Guide' : '备份策略说明',
                 close: removeBackupStrategyHelpTooltip,
+                bodyClassName: 'restore-help-scroll',
+                bodyStyle: 'overflow-y:scroll;',
                 contentHtml: `
                     <div style="font-size: 11px; color: var(--theme-text-secondary); line-height: 1.58; padding: 8px 10px; background: var(--theme-bg-secondary); border-radius: 6px;">
                         ${isEn
-                    ? '• Overwrite: Cloud 1 / Cloud 2 always replace the fixed files under <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite/</span> and do not generate a backup-history log.<br>• Cloud 2 (GitHub): although the extension only shows the current overwrite snapshot, older overwrite versions can be checked or rolled back from repo commit history.<br>• Local Overwrite: the extension locates the previous file by browser download records (<span style="color: var(--theme-warning-color); font-weight: 700;">downloadId + filename search</span>) before replacing the fixed path. If the download folder changes, download history is cleared, or the old file is moved/deleted manually, precise overwrite may fail and a new file may appear.<br>• Versioned: every backup creates a new folder, and <span style="color: var(--theme-warning-color); font-weight: 700;">Versioned/backup-history-log.md</span> updates on every backup.'
-                    : '• 覆盖：云端1 / 云端2始终覆盖 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖/</span> 下的固定文件，且不生成备份历史 log。<br>• 云端2（GitHub）：虽然扩展内只显示当前覆盖快照，但旧的覆盖版本可以在仓库提交历史里查看或回退。<br>• 本地覆盖：扩展会先根据浏览器下载记录里的 <span style="color: var(--theme-warning-color); font-weight: 700;">downloadId + 文件名搜索</span> 定位旧文件，再回写固定路径。若用户修改下载目录、清空下载记录，或手动移动 / 删除旧文件，精准覆盖可能失效，转而出现新文件。<br>• 多版本：每次备份都会创建新目录，且 <span style="color: var(--theme-warning-color); font-weight: 700;">版本化/备份历史log.md</span> 会在每次备份时更新。'}
+                    ? '• Overwrite: Cloud 1 / Cloud 2 always replace the fixed files under <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite/</span> and do not generate a backup-history log.<br>• Cloud 2 (GitHub): although the extension only shows the current overwrite snapshot, older overwrite versions can be checked or rolled back from repo commit history.<br>• Local Overwrite: the extension locates the previous file by browser download records (<span style="color: var(--theme-warning-color); font-weight: 700;">downloadId + filename search</span>) before replacing the fixed path. If the download folder changes, download history is cleared, or the old file is moved/deleted manually, precise overwrite may fail and a new file may appear.<br>• Versioned: every backup creates a new folder, and <span style="color: var(--theme-warning-color); font-weight: 700;">Versioned/backup-history-log.md</span> updates on every backup.<br>• Versioned + Cloud 1 (WebDAV): Cloud 1 discovers versions <span style="color: var(--theme-error-color, #FF3B30); font-weight: 700;">only through the index file</span>, which keeps at most <span style="color: var(--theme-error-color, #FF3B30); font-weight: 700;">3000</span> entries; beyond that the oldest versions stop appearing in the restore list, while their snapshot files stay intact in your drive. Cloud 2 (GitHub) also enumerates the repository file tree and has no such limit, so <span style="color: var(--theme-error-color, #FF3B30); font-weight: 700;">Cloud 2 is recommended for long-term versioned use</span>.<br>• Snapshot folders are <span style="color: var(--theme-error-color, #FF3B30); font-weight: 700;">never deleted automatically</span>. Clean them up in your drive, or set a new Cloud 1 <span style="color: var(--theme-error-color, #FF3B30); font-weight: 700;">Base Folder</span> to start over.'
+                    : '• 覆盖：云端1 / 云端2始终覆盖 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖/</span> 下的固定文件，且不生成备份历史 log。<br>• 云端2（GitHub）：虽然扩展内只显示当前覆盖快照，但旧的覆盖版本可以在仓库提交历史里查看或回退。<br>• 本地覆盖：扩展会先根据浏览器下载记录里的 <span style="color: var(--theme-warning-color); font-weight: 700;">downloadId + 文件名搜索</span> 定位旧文件，再回写固定路径。若用户修改下载目录、清空下载记录，或手动移动 / 删除旧文件，精准覆盖可能失效，转而出现新文件。<br>• <span style="color: var(--theme-warning-color); font-weight: 700;">版本化</span>：每次备份都会创建新目录，且 <span style="color: var(--theme-warning-color); font-weight: 700;">版本化/备份历史log.md</span> 会在每次备份时更新。<br>• <span style="color: var(--theme-warning-color); font-weight: 700;">版本化</span> + 云端1（WebDAV）：云端1 <span style="color: var(--theme-error-color, #FF3B30); font-weight: 700;">只能通过索引文件</span>发现版本，索引最多保留 <span style="color: var(--theme-error-color, #FF3B30); font-weight: 700;">3000</span> 条；超出后最早的版本不再出现在恢复列表中，快照文件仍完整保存在网盘里。<span style="color: var(--theme-warning-color); font-weight: 700;">云端2（GitHub）</span>还会枚举仓库文件树，没有这个限制，因此长期使用<span style="color: var(--theme-warning-color); font-weight: 700;">版本化</span>建议优先用<span style="color: var(--theme-warning-color); font-weight: 700;">云端2</span>。<br>• 快照目录<span style="color: var(--theme-error-color, #FF3B30); font-weight: 700;">永远不会自动清理</span>。请自行进入网盘删除，或给云端1 设置一个新的<span style="color: var(--theme-error-color, #FF3B30); font-weight: 700;">前缀目录</span>重新开始。'}
                     </div>
                 `
             });

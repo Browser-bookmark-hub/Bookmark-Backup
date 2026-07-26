@@ -4548,7 +4548,7 @@ async function handleTriggerRestoreBackupMessage(message = {}) {
 
         const webDAVconfig = restoreRecordLocalOnly
             ? {}
-            : await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+            : await browserAPI.storage.local.get(['serverAddress', 'webdavBasePath', 'username', 'password', 'webDAVEnabled']);
         const webDAVConfigured = !!(webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password);
         const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
 
@@ -5606,6 +5606,7 @@ async function dev1LoadCloudTargetAvailability() {
     try {
         return dev1ResolveCloudTargetAvailability(await browserAPI.storage.local.get([
             'serverAddress',
+            'webdavBasePath',
             'username',
             'password',
             'webDAVEnabled',
@@ -5624,6 +5625,7 @@ async function dev1LoadSnapshotExportTargets() {
         const store = await browserAPI.storage.local.get([
             DEV1_EXPORT_TARGETS_STORAGE_KEY,
             'serverAddress',
+            'webdavBasePath',
             'username',
             'password',
             'webDAVEnabled',
@@ -10266,23 +10268,38 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const serverAddressRaw = typeof message.serverAddress === 'string' ? message.serverAddress : '';
                     const usernameRaw = typeof message.username === 'string' ? message.username : '';
                     const passwordRaw = typeof message.password === 'string' ? message.password : '';
+                    // 可选的前缀目录（云端1 basePath）：不填时整段逻辑与旧版本完全一致
+                    const basePathRaw = typeof message.basePath === 'string' ? message.basePath : '';
 
                     const serverAddress = serverAddressRaw.trim();
                     const username = usernameRaw.trim();
                     const password = passwordRaw.trim();
+                    const basePath = basePathRaw.trim();
 
                     if (!serverAddress || !username || !password) {
                         sendResponse({ success: false, error: 'WebDAV 配置不完整' });
                         return;
                     }
 
-                    const normalizedServerAddress = normalizeWebDAVServerBaseUrl(serverAddress) || serverAddress;
+                    if (getInvalidWebDAVBasePathSegment(basePath)) {
+                        sendResponse({
+                            success: false,
+                            error: 'WebDAV 前缀目录不能包含 . 或 .. 路径段'
+                        });
+                        return;
+                    }
+
+                    // 连通性探测用「不带前缀目录」的服务器根地址：前缀目录此刻可能还不存在，
+                    // 直接 PROPFIND 带前缀的地址会返回 404，被误判成“服务器地址不正确”。
+                    const serverRootAddress = normalizeWebDAVServerBaseUrl(serverAddress) || serverAddress;
+                    // 后续的备份目录检测用「带前缀目录」的完整基址
+                    const normalizedServerAddress = normalizeWebDAVServerBaseUrl(serverAddress, basePath) || serverAddress;
                     const authHeader = 'Basic ' + safeBase64(`${username}:${password}`);
                     const propfindBody = '<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>';
 
                     let response;
                     try {
-                        response = await fetch(normalizedServerAddress, {
+                        response = await fetch(serverRootAddress, {
                             method: 'PROPFIND',
                             headers: {
                                 'Authorization': authHeader,
@@ -10299,7 +10316,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     // 某些服务不允许 PROPFIND 在特定入口，降级到 OPTIONS
                     if (response && response.status === 405) {
                         try {
-                            response = await fetch(normalizedServerAddress, {
+                            response = await fetch(serverRootAddress, {
                                 method: 'OPTIONS',
                                 headers: { 'Authorization': authHeader }
                             });
@@ -10333,6 +10350,25 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                     // 检查或自动创建备份目录
                     const lang = await getCurrentLang();
+
+                    // 用户填写的前缀目录在网盘上可能还不存在：必须先把这一级（支持多级）建出来，
+                    // 否则后面创建“书签备份”目录会因父目录缺失而报 409 Conflict。
+                    if (basePath) {
+                        try {
+                            await ensureWebDAVCollectionPathExists(serverRootAddress, basePath, authHeader, '创建前缀目录失败');
+                        } catch (basePathError) {
+                            const basePathErrMsg = basePathError?.message || '';
+                            const errChinese = `连接成功，但无法创建前缀目录“${basePath}”${basePathErrMsg ? `（${basePathErrMsg}）` : ''}。请检查该目录的写入权限，或先手动登录网盘创建该目录后再试。`;
+                            const errEnglish = `Connected successfully, but failed to create the base directory "${basePath}"${basePathErrMsg ? ` (${basePathErrMsg})` : ''}. Please check write permissions for this path, or manually create the directory in your WebDAV storage first.`;
+                            sendResponse({
+                                success: false,
+                                error: lang === 'zh_CN' ? errChinese : errEnglish,
+                                connectionOk: true
+                            });
+                            return;
+                        }
+                    }
+
                     const exportRootFolder = getExportRootFolderByLang(lang);
                     const folderUrl = `${normalizedServerAddress}${exportRootFolder}/`;
 
@@ -10601,7 +10637,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const fileName = message.fileName || `${fallbackFileBase}_${new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4)}.txt`;
 
                     // 获取WebDAV配置
-                    const config = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+                    const config = await browserAPI.storage.local.get(['serverAddress', 'webdavBasePath', 'username', 'password', 'webDAVEnabled']);
 
                     // 验证WebDAV配置
                     if (!config.serverAddress || !config.username || !config.password) {
@@ -10613,7 +10649,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
 
                     // 构建WebDAV路径 - 使用统一文件夹结构（根据语言动态选择）
-                    const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress);
+                    const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress, config.webdavBasePath);
                     const historyFolder = resolveExportSubFolderByKey('history', lang);
                     const exportRootFolder = getExportRootFolderByLang(lang);
                     const folderPath = `${exportRootFolder}/${historyFolder}/`;
@@ -11923,7 +11959,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                                 localFileName: null
                             };
 
-                            const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+                            const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'webdavBasePath', 'username', 'password', 'webDAVEnabled']);
                             const webDAVConfigured = webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password;
                             const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
 
@@ -13450,7 +13486,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({ success: false, error: '缺少状态文本' });
             }
         } else if (message.action === 'scanAndParseRestoreSource') {
-            scanAndParseRestoreSource(message.source, message.localFiles)
+            scanAndParseRestoreSource(message.source, message.localFiles, {
+                restoreScope: message.restoreScope
+            })
                 .then(result => sendResponse(result))
                 .catch(err => sendResponse({ success: false, error: err?.message || String(err) }));
             return true;
@@ -13997,7 +14035,7 @@ async function handleBookmarkChange() {
 
 // 修改上传书签到服务器的函数
 async function uploadBookmarks(bookmarks, options = {}) {
-    const config = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'is123Pan']);
+    const config = await browserAPI.storage.local.get(['serverAddress', 'webdavBasePath', 'username', 'password', 'is123Pan']);
     if (!config.serverAddress || !config.username || !config.password) {
         // 不再抛出错误，而是返回一个状态表明WebDAV未配置
         return { success: false, error: "WebDAV 信息未配置", webDAVNotConfigured: true };
@@ -14015,7 +14053,7 @@ async function uploadBookmarks(bookmarks, options = {}) {
         snapshotFormat: options.snapshotFormat || snapshotSettings.format
     };
 
-    const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress);
+    const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress, config.webdavBasePath);
     const exportRootFolder = await getExportRootFolder();
 
     const snapshotOutput = buildSnapshotBackupOutput(bookmarks, outputOptions, effectiveOverwriteMode);
@@ -15498,6 +15536,10 @@ function buildVersionedInfoLogRecordMergeKey(record) {
     return `${time}|${directionKey}|${strategy}|${note}|${seq}`;
 }
 
+// 本地备注账本（info log ledger）最多保留多少条记录：按时间倒序去重后截断，超出的最老记录会被丢弃。
+// 该上限需 >= VERSIONED_INFO_LOG_MAX_ROWS，否则本地账本会先于云端索引成为瓶颈，导致索引文件写不满上限行数。
+const INFO_LOG_LEDGER_MAX_RECORDS = 3000;
+
 function normalizeInfoLogRecordsByMode(value, targetMode = 'versioned') {
     const normalizedTargetMode = normalizeOverwriteMode(targetMode || 'versioned');
     const list = Array.isArray(value) ? value : [];
@@ -15533,7 +15575,7 @@ function normalizeInfoLogRecordsByMode(value, targetMode = 'versioned') {
     }
 
     deduped.sort((a, b) => new Date(b?.time).getTime() - new Date(a?.time).getTime());
-    return deduped.slice(0, 1000);
+    return deduped.slice(0, INFO_LOG_LEDGER_MAX_RECORDS);
 }
 
 function normalizeVersionedInfoLogLedgerRecords(value) {
@@ -15818,6 +15860,11 @@ function formatVersionedInfoLogSectionTitle(section, lang = 'zh_CN') {
         : `## Archive (${reasonText} · up to ${anchorText})`;
 }
 
+// 云端索引文件（备份历史log.md / 覆盖备注log.md）最多保留多少条版本记录。
+// 按时间倒序截断：超出上限的最老记录会从索引里被永久丢弃，对应的快照文件仍然留在云端，
+// 但不会再出现在恢复列表中（因为恢复界面依赖该索引来枚举历史版本）。
+const VERSIONED_INFO_LOG_MAX_ROWS = 3000;
+
 function buildVersionedInfoLogMarkdown(records, lang = 'zh_CN', options = {}) {
     const isZh = lang === 'zh_CN';
     const targetMode = normalizeOverwriteMode(options?.targetMode || 'versioned');
@@ -15829,11 +15876,11 @@ function buildVersionedInfoLogMarkdown(records, lang = 'zh_CN', options = {}) {
         .filter((record) => normalizeOverwriteMode(record?.overwriteMode) === targetMode)
         .slice()
         .sort((a, b) => new Date(b?.time).getTime() - new Date(a?.time).getTime())
-        .slice(0, 300);
+        .slice(0, VERSIONED_INFO_LOG_MAX_ROWS);
 
     let list = modeScopedList
         .filter((record) => shouldIncludeVersionedInfoLogRecord(record, { targetMode }))
-        .slice(0, 300);
+        .slice(0, VERSIONED_INFO_LOG_MAX_ROWS);
 
     if (!list.length && modeScopedList.length > 0) {
         list = [modeScopedList[0]];
@@ -16026,6 +16073,7 @@ async function fetchBestExistingVersionedInfoLogText({ cachedMarkdown = '' } = {
     try {
         const settings = await browserAPI.storage.local.get([
             'serverAddress',
+            'webdavBasePath',
             'username',
             'password',
             'webDAVEnabled',
@@ -16121,6 +16169,7 @@ async function fetchExistingInfoLogCandidates({ cachedMarkdown = '', localRefere
     try {
         const settings = await browserAPI.storage.local.get([
             'serverAddress',
+            'webdavBasePath',
             'username',
             'password',
             'webDAVEnabled',
@@ -17391,6 +17440,18 @@ function normalizeWebDAVPathSegments(pathLike) {
         .filter(Boolean);
 }
 
+function getInvalidWebDAVBasePathSegment(basePath) {
+    return normalizeWebDAVPathSegments(basePath)
+        .find((segment) => {
+            try {
+                const decoded = decodeURIComponent(segment);
+                return decoded === '.' || decoded === '..';
+            } catch (_) {
+                return segment === '.' || segment === '..';
+            }
+        }) || '';
+}
+
 function encodeWebDAVPathSegment(segment) {
     const raw = String(segment || '').trim();
     if (!raw) return '';
@@ -17401,15 +17462,44 @@ function encodeWebDAVPathSegment(segment) {
     }
 }
 
+function normalizeWebDAVBasePath(basePath) {
+    // UI 和连接测试都会拒绝相对路径段；这里再兜底，避免旧配置或外部写入让 URL 退回上级目录。
+    if (getInvalidWebDAVBasePathSegment(basePath)) return '';
+
+    return normalizeWebDAVPathSegments(basePath)
+        .map((segment) => encodeWebDAVPathSegment(segment))
+        .filter(Boolean)
+        .join('/');
+}
+
 // 服务器地址一律补成以 "/" 结尾：各家文档写法不一（有的带结尾斜杠有的不带），
 // 而所有路径拼接都是 `${serverAddress}${path}`，少一个斜杠就会拼成 .../dav书签同步/。
-function normalizeWebDAVServerBaseUrl(serverAddress) {
+//
+// basePath 是云端1（WebDAV）可选的「前缀目录」，与云端2 的 githubRepoBasePath 对标：
+// 填了之后所有备份路径都统一落在 `服务器地址/前缀目录/` 之下（支持多级，如 "备份/书签"）。
+// 每一段都用 encodeWebDAVPathSegment 编码，保证中文目录名可用。
+//
+// 【硬性约束】basePath 为空（未填 / 纯空白 / 只有斜杠）时，返回值必须与加参数之前完全一致，
+// 否则存量用户的备份路径会整体漂移，导致上传与下载走到不同目录、历史备份全部读不到。
+function normalizeWebDAVServerBaseUrl(serverAddress, basePath = '') {
     const raw = String(serverAddress || '').trim();
     if (!raw) return '';
-    return `${raw.replace(/\/+$/, '')}/`;
+
+    const base = `${raw.replace(/\/+$/, '')}/`;
+
+    // 复用已有的分段逻辑：去掉首尾斜杠、丢弃空段，再逐段编码
+    const encodedBasePath = normalizeWebDAVBasePath(basePath);
+
+    // 空前缀 → 原样返回，保持旧行为
+    if (!encodedBasePath) return base;
+
+    return `${base}${encodedBasePath}/`;
 }
 
 function buildWebDAVResourceUrl(serverAddress, pathLike, { collection = false } = {}) {
+    // 注意：这里刻意不传 basePath。调用方传进来的 serverAddress 已经是
+    // normalizeWebDAVServerBaseUrl(serverAddress, basePath) 拼好前缀目录的完整基址，
+    // 此处再拼一次会导致前缀目录重复（.../前缀/前缀/...）。空前缀时该调用是幂等的。
     const base = normalizeWebDAVServerBaseUrl(serverAddress);
     const encodedPath = normalizeWebDAVPathSegments(pathLike)
         .map((segment) => encodeWebDAVPathSegment(segment))
@@ -17587,7 +17677,7 @@ async function ensureWebDAVCollectionPathExists(serverAddress, pathLike, authHea
 }
 
 async function uploadExportFileToWebDAV({ lang, folderKey, fileName, content, contentArrayBuffer, contentType }) {
-    const config = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+    const config = await browserAPI.storage.local.get(['serverAddress', 'webdavBasePath', 'username', 'password', 'webDAVEnabled']);
     if (!config.serverAddress || !config.username || !config.password) {
         return { success: false, skipped: true, error: "WebDAV 配置不完整" };
     }
@@ -17595,7 +17685,7 @@ async function uploadExportFileToWebDAV({ lang, folderKey, fileName, content, co
         return { success: false, skipped: true, error: "WebDAV 已禁用" };
     }
 
-    const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress);
+    const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress, config.webdavBasePath);
     const exportRootFolder = getExportRootFolderByLang(lang);
     const exportSubFolder = resolveExportSubFolderByKey(folderKey, lang);
     const folderPath = `${exportRootFolder}/${exportSubFolder}`;
@@ -17698,7 +17788,7 @@ async function downloadBookmarks() {
 // 从坚果云获取书签
 async function updateBookmarksFromNutstore() {
     try {
-        const config = await browserAPI.storage.local.get(['serverAddress', 'username', 'password']);
+        const config = await browserAPI.storage.local.get(['serverAddress', 'webdavBasePath', 'username', 'password']);
 
         if (!config.serverAddress || !config.username || !config.password) {
             throw new Error("请先配置 WebDAV 信息");
@@ -17707,9 +17797,12 @@ async function updateBookmarksFromNutstore() {
         // 构建完整的 WebDAV URL - 使用统一文件夹结构（根据语言动态选择）
         const backupFolderName = await getBackupFolder();
         const exportRootFolder = await getExportRootFolder();
-        const folderPath = `/${exportRootFolder}/${backupFolderName}/`;
         const fileName = 'chrome_bookmarks.json';
-        const fullUrl = `${config.serverAddress}${folderPath}${fileName}`;
+        const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress, config.webdavBasePath);
+        const fullUrl = buildWebDAVResourceUrl(
+            serverAddress,
+            `${exportRootFolder}/${backupFolderName}/${fileName}`
+        );
 
         // 从 WebDAV 获取书签数据
         const response = await fetch(fullUrl, {
@@ -18419,7 +18512,7 @@ async function exportHistoryToTxt(records, lang) {
     // 获取配置信息，确定导出方式
     const config = await browserAPI.storage.local.get([
         // WebDAV配置
-        'serverAddress', 'username', 'password', 'webDAVEnabled',
+        'serverAddress', 'webdavBasePath', 'username', 'password', 'webDAVEnabled',
         // 本地配置
         'defaultDownloadEnabled', 'hideDownloadShelf'
     ]);
@@ -18439,7 +18532,7 @@ async function exportHistoryToTxt(records, lang) {
     // WebDAV导出（根据语言动态选择文件夹名）
     if (webDAVConfigured && webDAVEnabled) {
         try {
-            const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress);
+            const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress, config.webdavBasePath);
             const archiveHistoryFolder = await getHistoryFolder();
             const exportRootFolder = await getExportRootFolder();
             const folderPath = `${exportRootFolder}/${archiveHistoryFolder}`; // 使用统一的文件夹结构（根据语言动态选择）
@@ -19295,6 +19388,7 @@ async function exportSyncHistoryToCloud(options = {}) {
             'historySyncFormat',
             'historySyncPackMode', // 兼容旧设置；当前统一按 ZIP 归档处理
             'serverAddress',
+            'webdavBasePath',
             'username',
             'password',
             'webDAVEnabled',
@@ -19513,7 +19607,7 @@ async function downloadsEraseSafe(query) {
 // 辅助函数：上传二进制文件到 WebDAV (用于 ZIP)
 async function uploadHistoryBinaryToWebDAV(base64Content, fileName, rootFolder, subFolder, settings) {
     try {
-        const serverAddress = normalizeWebDAVServerBaseUrl(settings.serverAddress);
+        const serverAddress = normalizeWebDAVServerBaseUrl(settings.serverAddress, settings.webdavBasePath);
         const folderPath = `${rootFolder}/${subFolder}`;
         const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
 
@@ -19671,7 +19765,7 @@ async function downloadHistoryBinaryLocal(blob, fileName, rootFolder, subFolder,
 // 辅助函数：上传到 WebDAV
 async function uploadHistoryToWebDAV(content, fileName, rootFolder, subFolder, settings) {
     try {
-        const serverAddress = normalizeWebDAVServerBaseUrl(settings.serverAddress);
+        const serverAddress = normalizeWebDAVServerBaseUrl(settings.serverAddress, settings.webdavBasePath);
         const folderPath = `${rootFolder}/${subFolder}`;
         const fullUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${fileName}`);
 
@@ -19855,7 +19949,7 @@ async function syncBookmarks(isManual = false, direction = null, isSwitchToAutoB
         let syncDirection = direction;
 
         // 检查云端1：WebDAV 配置
-        const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'username', 'password', 'webDAVEnabled']);
+        const webDAVconfig = await browserAPI.storage.local.get(['serverAddress', 'webdavBasePath', 'username', 'password', 'webDAVEnabled']);
         const webDAVConfigured = webDAVconfig.serverAddress && webDAVconfig.username && webDAVconfig.password;
         const webDAVEnabled = webDAVconfig.webDAVEnabled !== false;
 
@@ -26736,9 +26830,9 @@ async function getCurrentBookmarkCountsInternal() {
 // [New] 获取远程文件列表 (WebDAV/GitHub)
 // 说明：用于“恢复/同步”扫描；会返回 ZIP / HTML / 合并历史(JSON) 的候选文件。
 const RESTORE_CLOUD_SETTINGS_KEYS = [
-    'serverAddress', 'username', 'password',
+    'serverAddress', 'webdavBasePath', 'username', 'password',
     'githubRepoToken', 'githubRepoOwner', 'githubRepoName', 'githubRepoBranch', 'githubRepoBasePath',
-    'webdavDraftServerAddress', 'webdavDraftUsername', 'webdavDraftPassword',
+    'webdavDraftServerAddress', 'webdavDraftUsername', 'webdavDraftPassword', 'webdavDraftBasePath',
     'githubRepoDraftToken', 'githubRepoDraftOwner', 'githubRepoDraftName', 'githubRepoDraftBranch', 'githubRepoDraftBasePath'
 ];
 
@@ -26766,6 +26860,9 @@ function resolveRestoreCloudSettings(rawSettings = {}) {
         serverAddress: fromDraftOrSaved('webdavDraftServerAddress', 'serverAddress', draftWebDAVComplete),
         username: fromDraftOrSaved('webdavDraftUsername', 'username', draftWebDAVComplete),
         password: fromDraftOrSaved('webdavDraftPassword', 'password', draftWebDAVComplete),
+        // 前缀目录是可选项，不参与 draftWebDAVComplete 的判定；但草稿态生效时必须一并取草稿值，
+        // 否则恢复扫描会用空前缀拼路径，跟备份写入的目录对不上。
+        webdavBasePath: fromDraftOrSaved('webdavDraftBasePath', 'webdavBasePath', draftWebDAVComplete),
         githubRepoToken: fromDraftOrSaved('githubRepoDraftToken', 'githubRepoToken', draftGitHubComplete),
         githubRepoOwner: fromDraftOrSaved('githubRepoDraftOwner', 'githubRepoOwner', draftGitHubComplete),
         githubRepoName: fromDraftOrSaved('githubRepoDraftName', 'githubRepoName', draftGitHubComplete),
@@ -26787,6 +26884,7 @@ async function listRemoteFiles(source, options = {}) {
 
         const files = [];
         const useIndexOptimizedScan = options?.useIndexOptimizedScan === true;
+        const webdavRestoreScope = String(options?.webdavRestoreScope || 'all').trim().toLowerCase();
         const indexedSnapshotKeyList = Array.from(new Set(
             (Array.isArray(options?.indexedSnapshotKeys) ? options.indexedSnapshotKeys : [])
                 .map((key) => parseSnapshotKeyFromText(key || ''))
@@ -26802,9 +26900,10 @@ async function listRemoteFiles(source, options = {}) {
             if (source === 'webdav') {
                 const serverAddress = String(settings.serverAddress || '').trim();
                 const username = String(settings.username || '').trim();
+                const basePath = normalizeWebDAVBasePath(settings.webdavBasePath || '');
                 if (!serverAddress || !username) return '';
-                const scanMode = `${useIndexOptimizedScan ? 'idx' : 'full'}|overwrite-time-v2|legacy-v2`;
-                return `webdav|${serverAddress}|${username}|${scanMode}|${indexedSnapshotKeyHash}`;
+                const scanMode = `${useIndexOptimizedScan ? 'idx' : 'full'}|${webdavRestoreScope}|overwrite-time-v2|legacy-v2`;
+                return `webdav|${serverAddress}|${username}|${basePath}|${scanMode}|${indexedSnapshotKeyHash}`;
             }
 
             if (source === 'github') {
@@ -27239,10 +27338,14 @@ async function listRemoteFiles(source, options = {}) {
 
         // WebDAV
         if (source === 'webdav') {
-            const serverAddress = normalizeWebDAVServerBaseUrl(settings.serverAddress);
+            const serverAddress = normalizeWebDAVServerBaseUrl(settings.serverAddress, settings.webdavBasePath);
             if (!serverAddress) return [];
 
             const authHeader = 'Basic ' + safeBase64(`${settings.username || ''}:${settings.password || ''}`);
+            const shouldScanWebdavTree = webdavRestoreScope === 'all';
+            const shouldScanLegacyPaths = webdavRestoreScope === 'all' || webdavRestoreScope === 'legacy';
+            const shouldScanOverwritePaths = webdavRestoreScope === 'all' || webdavRestoreScope === 'index_and_overwrite';
+            const shouldScanVersionedPaths = webdavRestoreScope === 'all';
 
             const buildFolderPathFromRelativePath = (relativePath) => {
                 const normalized = String(relativePath || '').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
@@ -27329,7 +27432,7 @@ async function listRemoteFiles(source, options = {}) {
                 }, 2);
             };
 
-            try {
+            if (shouldScanWebdavTree) try {
                 const treeFilePaths = [];
                 let treeScanSupported = false;
                 let treeDepthInfinityUnsupported = false;
@@ -27453,9 +27556,11 @@ async function listRemoteFiles(source, options = {}) {
                 
             }
 
-            await scanLegacyWebDavBackupFolders();
+            if (shouldScanLegacyPaths) {
+                await scanLegacyWebDavBackupFolders();
+            }
 
-            if (!useIndexOptimizedScan) {
+            if (!useIndexOptimizedScan || webdavRestoreScope === 'legacy') {
                 // 1) 兼容旧结构：书签备份目录下直放 HTML
                 for (const exportRootFolder of exportRootFolderCandidates) {
                     for (const backupFolder of backupFolderCandidates) {
@@ -27557,8 +27662,9 @@ async function listRemoteFiles(source, options = {}) {
                 }
             }
 
-            // 3) 覆盖模式：书签备份/覆盖/
-            for (const exportRootFolder of exportRootFolderCandidates) {
+            if (shouldScanOverwritePaths) {
+                // 3) 覆盖模式：书签备份/覆盖/
+                for (const exportRootFolder of exportRootFolderCandidates) {
                 for (const backupFolder of backupFolderCandidates) {
                     for (const overwriteFolder of overwriteFolderCandidates) {
                         try {
@@ -27602,10 +27708,10 @@ async function listRemoteFiles(source, options = {}) {
                         } catch (_) { }
                     }
                 }
-            }
+                }
 
-            // 3.1) 覆盖模式（新结构）：导出根目录/覆盖
-            for (const exportRootFolder of exportRootFolderCandidates) {
+                // 3.1) 覆盖模式（新结构）：导出根目录/覆盖
+                for (const exportRootFolder of exportRootFolderCandidates) {
                 for (const overwriteFolder of overwriteFolderCandidates) {
                     try {
                         const folderUrl = `${serverAddress}${exportRootFolder}/${overwriteFolder}/`;
@@ -27646,6 +27752,7 @@ async function listRemoteFiles(source, options = {}) {
                             }
                         }
                     } catch (_) { }
+                }
                 }
             }
 
@@ -27813,13 +27920,17 @@ async function listRemoteFiles(source, options = {}) {
 
                 const snapshotParentPaths = [];
                 for (const exportRootFolder of exportRootFolderCandidates) {
-                    for (const versionedFolder of versionedFolderCandidates) {
-                        snapshotParentPaths.push(`${exportRootFolder}/${versionedFolder}`);
+                    if (shouldScanVersionedPaths) {
+                        for (const versionedFolder of versionedFolderCandidates) {
+                            snapshotParentPaths.push(`${exportRootFolder}/${versionedFolder}`);
+                        }
                     }
-                    for (const backupFolder of backupFolderCandidates) {
-                        snapshotParentPaths.push(`${exportRootFolder}/${backupFolder}`);
+                    if (shouldScanLegacyPaths) {
+                        for (const backupFolder of backupFolderCandidates) {
+                            snapshotParentPaths.push(`${exportRootFolder}/${backupFolder}`);
+                        }
+                        snapshotParentPaths.push(`${exportRootFolder}`);
                     }
-                    snapshotParentPaths.push(`${exportRootFolder}`);
                 }
 
                 await runBatchedTasks(snapshotParentPaths, async (parentPath) => {
@@ -30787,7 +30898,7 @@ function buildRemoteFileUrlCandidatesForIndexEntry({ source, settings, relativeP
     if (list.length === 0) return [];
 
     if (source === 'webdav') {
-        const serverAddress = normalizeWebDAVServerBaseUrl(settings?.serverAddress);
+        const serverAddress = normalizeWebDAVServerBaseUrl(settings?.serverAddress, settings?.webdavBasePath);
         if (!serverAddress) return [];
         return list.map((path) => buildWebDAVResourceUrl(serverAddress, path));
     }
@@ -30845,8 +30956,9 @@ async function fetchRemoteInfoLog(source, settings, options = {}) {
         if (source === 'webdav') {
             const serverAddress = String(settings?.serverAddress || '').trim();
             const username = String(settings?.username || '').trim();
+            const basePath = normalizeWebDAVBasePath(settings?.webdavBasePath || '');
             if (!serverAddress || !username) return '';
-            return `idxlog|webdav|${targetMode}|${serverAddress}|${username}`;
+            return `idxlog|webdav|${targetMode}|${serverAddress}|${username}|${basePath}`;
         }
 
         if (source === 'github') {
@@ -31037,7 +31149,7 @@ async function fetchRemoteInfoLog(source, settings, options = {}) {
     }
 
     if (source === 'webdav') {
-        const serverAddress = normalizeWebDAVServerBaseUrl(settings?.serverAddress);
+        const serverAddress = normalizeWebDAVServerBaseUrl(settings?.serverAddress, settings?.webdavBasePath);
         const username = settings?.username;
         const password = settings?.password;
         if (!serverAddress || !username || !password) {
@@ -31342,11 +31454,14 @@ function dedupeAndSortRestoreVersions(versions) {
 
 // [New] 扫描并解析恢复数据源，统一返回"可恢复版本"列表
 // 重构：不再使用"优先级短路"模式，而是扫描所有来源并合并
-async function scanAndParseRestoreSource(source, localFiles = null) {
+async function scanAndParseRestoreSource(source, localFiles = null, options = {}) {
     try {
         let candidates = [];
         let remoteIndexScan = null;
         const remoteIndexOptimizedMode = source === 'github' || source === 'webdav';
+        const webdavRestoreScope = source === 'webdav'
+            ? (String(options?.restoreScope || 'index_and_overwrite').trim().toLowerCase() || 'index_and_overwrite')
+            : 'all';
 
         if (source === 'local') {
             candidates = Array.isArray(localFiles) ? localFiles : [];
@@ -31372,14 +31487,20 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
 
             const useIndexOptimizedScan = remoteIndexOptimizedMode;
             const indexedSnapshotKeys = [];
-            candidates = await listRemoteFiles(source, { useIndexOptimizedScan, indexedSnapshotKeys });
+            candidates = await listRemoteFiles(source, {
+                useIndexOptimizedScan,
+                indexedSnapshotKeys,
+                webdavRestoreScope
+            });
             const hasTreeManifest = candidates.some((item) => String(item?.manifestMode || '').trim().toLowerCase() === 'tree');
 
-            remoteIndexScan = await scanAndParseRemoteRestoreSourceByVersionedLog(source, {
-                preloadedIndexCandidates: candidates,
-                // 仅 GitHub 的树清单可视为“完整索引视图”；WebDAV 保留兜底探测，避免服务端树返回不全导致漏索引
-                directoryManifestProvided: source === 'github' && hasTreeManifest
-            });
+            if (!(source === 'webdav' && webdavRestoreScope === 'legacy')) {
+                remoteIndexScan = await scanAndParseRemoteRestoreSourceByVersionedLog(source, {
+                    preloadedIndexCandidates: candidates,
+                    // 仅 GitHub 的树清单可视为“完整索引视图”；WebDAV 保留兜底探测，避免服务端树返回不全导致漏索引
+                    directoryManifestProvided: source === 'github' && hasTreeManifest
+                });
+            }
         }
 
         let localIndexOrder = [];
@@ -31968,6 +32089,11 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
 
             for (const value of values || []) {
                 const segments = splitPathSegmentsLower(value);
+                // Safety snapshots are local manual-export packages, but are not represented
+                // by the manual-export history index and must bypass its duplicate filtering.
+                if (segments.some(seg => SAFETY_SNAPSHOT_FOLDER_SEGMENTS.has(seg))) {
+                    return 'safety_snapshot';
+                }
                 if (segments.some(seg => OVERWRITE_FOLDER_SEGMENTS.has(seg))) {
                     return 'overwrite';
                 }
@@ -32396,10 +32522,14 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
             allVersions.push(standaloneVersion);
         }
 
+        // 索引文件里实际解析出的版本记录条数（无索引来源保持 0），用于向 UI 暴露"当前索引 N 条 / 上限 M 条"
+        let indexRecordCount = 0;
+
         if (source !== 'local' && remoteIndexScan?.indexFound) {
             const indexVersions = Array.isArray(remoteIndexScan?.versions)
                 ? remoteIndexScan.versions.filter((item) => item && typeof item === 'object')
                 : [];
+            indexRecordCount = indexVersions.length;
             const existingIds = new Set((allVersions || []).map((item) => String(item?.id || '')).filter(Boolean));
             let skippedStaleIndexCount = 0;
 
@@ -32694,6 +32824,14 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
                 currentChangesCount: changesArtifactCandidates.length,
                 fromIndex: useLocalIndex || useRemoteIndex
             }
+        };
+
+        // 索引容量信息：供恢复界面展示"当前索引 N 条 / 上限 M 条"，接近上限时提示最老版本将不再出现在列表里
+        response.indexInfo = {
+            source,
+            recordCount: indexRecordCount,
+            maxRows: VERSIONED_INFO_LOG_MAX_ROWS,
+            nearLimit: indexRecordCount >= VERSIONED_INFO_LOG_MAX_ROWS * 0.9
         };
 
         if (useLocalIndex && localIndexMeta) {

@@ -2562,6 +2562,14 @@
             box-shadow: 0 0 0 3px var(--theme-input-focus-shadow);
         }
 
+        /* 云端配置字段统一使用短促的焦点过渡，避免路径预览刷新时显得滞后。 */
+        #configContent .form-group > input,
+        #githubRepoConfigContent .form-group > input,
+        #configContent .password-group-wrapper,
+        #githubRepoConfigContent .password-group-wrapper {
+            transition: border-color 150ms ease-out, box-shadow 150ms ease-out, background-color 150ms ease-out;
+        }
+
         /* 内部真正的输入框：去除所有边框和背景，填满剩余空间 */
         .password-group-wrapper input {
             flex: 1;
@@ -4270,6 +4278,26 @@
             background: var(--theme-bg-elevated);
         }
 
+        .restore-help-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: var(--theme-scrollbar-thumb) rgba(127, 140, 151, 0.18);
+            scrollbar-gutter: stable;
+        }
+
+        .restore-help-scroll::-webkit-scrollbar {
+            display: block !important;
+            width: 4px !important;
+        }
+
+        .restore-help-scroll::-webkit-scrollbar-track {
+            background: rgba(127, 140, 151, 0.18);
+        }
+
+        .restore-help-scroll::-webkit-scrollbar-thumb {
+            background: var(--theme-scrollbar-thumb) !important;
+            border-radius: 2px;
+        }
+
         .current-changes-mode-help-btn {
             width: 16px;
             height: 16px;
@@ -4769,12 +4797,26 @@
             line-height: 1.5;
             position: relative;
             top: 10px;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .restore-modal-header-actions {
             display: inline-flex;
             align-items: center;
             gap: 8px;
+            min-width: 0;
+            flex: 0 1 auto;
+        }
+
+        #restoreIndexInfoBadge {
+            font-size: 10px !important;
+            line-height: 1.35;
+            max-width: min(45vw, 240px);
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .popup-modal-close {
@@ -6332,6 +6374,8 @@
                     <span id="webdavConfigTitle"></span>
                 </h2>
                 <div style="display: flex; align-items: center;">
+                    <span id="webdavAutoSaveStatus" aria-live="polite"
+                        style="margin-right: 8px; color: var(--theme-success-color); font-size: 11px; font-weight: 600; white-space: nowrap;"></span>
                     <label class="switch" style="margin-right: 10px;">
                         <input type="checkbox" id="webDAVToggle" checked>
                         <span class="slider"></span>
@@ -6361,6 +6405,15 @@
                     </div>
                 </div>
 
+                <div class="form-group" style="padding-left: 5px;">
+                    <label for="webdavBasePath" style="display:flex; align-items:center; gap:8px; margin-bottom:5px; min-width:0;">
+                        <span id="webdavBasePathLabel"></span>
+                        <span id="webdavBasePathCurrentPath" style="margin-left:auto; min-width:0; max-width:62%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--theme-text-secondary); font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px;"></span>
+                    </label>
+                    <input type="text" id="webdavBasePath" placeholder="" style="width: 100%;" autocapitalize="none"
+                        autocorrect="off" spellcheck="false">
+                </div>
+
                 <div id="webdavRootFolderNotice"
                     style="font-size: 11px; color: var(--theme-text-secondary); margin: 6px 0 12px 5px; line-height: 1.5; background: rgba(255, 152, 0, 0.08); border: 1px dashed rgba(255, 152, 0, 0.3); border-radius: 6px; padding: 8px 10px;">
                 </div>
@@ -6383,6 +6436,8 @@
                     <span id="githubRepoConfigTitle"></span>
                 </h2>
                 <div style="display: flex; align-items: center;">
+                    <span id="githubRepoAutoSaveStatus" aria-live="polite"
+                        style="margin-right: 8px; color: var(--theme-success-color); font-size: 11px; font-weight: 600; white-space: nowrap;"></span>
                     <label class="switch" style="margin-right: 10px;">
                         <input type="checkbox" id="githubRepoToggle" checked>
                         <span class="slider"></span>
@@ -6429,8 +6484,10 @@
                 </div>
 
                 <div class="form-group" style="padding-left: 5px;">
-                    <label for="githubRepoBasePath" style="display: block; margin-bottom: 5px;"
-                        id="githubRepoBasePathLabel"></label>
+                    <label for="githubRepoBasePath" style="display:flex; align-items:center; gap:8px; margin-bottom:5px; min-width:0;">
+                        <span id="githubRepoBasePathLabel"></span>
+                        <span id="githubRepoBasePathCurrentPath" style="margin-left:auto; min-width:0; max-width:62%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--theme-text-secondary); font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px;"></span>
+                    </label>
                     <input type="text" id="githubRepoBasePath" placeholder="" style="width: 100%;" autocapitalize="none"
                         autocorrect="off" spellcheck="false">
                 </div>
@@ -7330,13 +7387,7 @@
             <div class="restore-modal-header">
                 <h3 id="restoreModalTitle" class="restore-modal-title">Restore History</h3>
                 <div class="restore-modal-header-actions">
-                    <button id="restoreModalHelpBtn" class="sync-restore-help-btn" aria-label="Help" title="Help">
-                        <svg class="help-question-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                            <circle cx="8" cy="8" r="6.5" stroke-width="1.7"></circle>
-                            <path d="M5.9 6.15C5.9 4.85 6.82 4 8.06 4c1.28 0 2.14.79 2.14 1.93 0 .82-.42 1.32-1.14 1.8-.68.45-.94.8-.94 1.55v.42" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"></path>
-                            <circle cx="8.08" cy="12.05" r="0.86" stroke="none" fill="currentColor"></circle>
-                        </svg>
-                    </button>
+                    <span id="restoreIndexInfoBadge" style="display: none; font-size: 10px; line-height: 1.35; white-space: nowrap; color: var(--theme-info-color, #4FC3F7);"></span>
                     <button id="closeRestoreModal" class="popup-modal-close" aria-label="Close">
                         <i class="fas fa-times"></i>
                     </button>
@@ -7405,6 +7456,7 @@
                 </div>
 
                 <div id="restoreOverwriteGithubHint" style="display: none; margin: -2px 0 10px; padding: 8px 10px; font-size: 11px; line-height: 1.55; color: var(--theme-info-color, #4FC3F7); background: rgba(79, 195, 247, 0.08); border: 1px solid rgba(79, 195, 247, 0.18); border-radius: 8px;"></div>
+
 
                 <div class="global-export-table-container"
                     style="border: 1px solid var(--theme-border-primary); border-radius: 8px; overflow: hidden;">
