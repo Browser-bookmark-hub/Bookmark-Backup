@@ -27703,19 +27703,51 @@ async function listRemoteFiles(source, options = {}) {
                         if (!snapshotFolderNameReg.test(folderName || '')) continue;
 
                         const folderPath = `${normalizedParent}/${folderName}`;
-                        const inferredSnapshotLeafNames = [
-                            buildSnapshotFileNameFromKey(folderName, 'html'),
-                            buildSnapshotFileNameFromKey(folderName, 'json')
-                        ].filter(Boolean);
-                        for (const inferredName of inferredSnapshotLeafNames) {
-                            files.push({
-                                name: inferredName,
-                                url: `${serverAddress}${folderPath}/${inferredName}`,
-                                source: 'webdav',
-                                type: getSnapshotBackupCandidateType(inferredName),
-                                snapshotFolder: folderName,
+                        let childNames = [];
+                        try {
+                            childNames = await webdavPropfindCached(`${serverAddress}${folderPath}/`, authHeader);
+                        } catch (_) {
+                            childNames = [];
+                        }
+
+                        for (const childNameRaw of childNames) {
+                            const childName = buildFileNameFromRelativePath(String(childNameRaw || '')) || String(childNameRaw || '').trim();
+                            if (!childName) continue;
+                            const fileUrl = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${childName}`);
+
+                            pushIndexMarkdownCandidateIfMatched({
+                                fileName: childName,
+                                fileUrl,
+                                sourceType: 'webdav',
                                 folderPath
                             });
+                            if (shouldTreatAsSnapshotHtml({
+                                fileName: childName,
+                                folderPath,
+                                snapshotFolder: folderName
+                            })) {
+                                files.push({
+                                    name: childName,
+                                    url: fileUrl,
+                                    source: 'webdav',
+                                    type: getSnapshotBackupCandidateType(childName),
+                                    snapshotFolder: folderName,
+                                    folderPath
+                                });
+                            } else if (shouldTreatAsCurrentChangesArtifact({
+                                fileName: childName,
+                                folderPath,
+                                snapshotFolder: folderName
+                            })) {
+                                files.push({
+                                    name: childName,
+                                    url: fileUrl,
+                                    source: 'webdav',
+                                    type: 'changes_artifact',
+                                    snapshotFolder: folderName,
+                                    folderPath
+                                });
+                            }
                         }
                     }
                 };
@@ -27915,13 +27947,13 @@ async function listRemoteFiles(source, options = {}) {
                         }
                     }
 
-                    const hasTreeOverwriteSnapshot = files.some((item) => (
+                    const hasTreeRestoreCandidate = files.some((item) => (
                         item
                         && item.source === 'github'
                         && String(item.manifestMode || '').trim().toLowerCase() === 'tree'
-                        && isOverwriteRestoreCandidate(item)
+                        && (item.type === 'html_backup' || item.type === 'json_backup' || item.type === 'changes_artifact')
                     ));
-                    if (hasTreeOverwriteSnapshot) {
+                    if (hasTreeRestoreCandidate) {
                         const deduped = Array.from(new Map(files.map(f => [`${f.source}|${f.type}|${f.url}`, f])).values());
                         return await finalizeRemoteRestoreFiles(deduped);
                     }
@@ -28251,21 +28283,54 @@ async function listRemoteFiles(source, options = {}) {
                         if (!snapshotFolderNameReg.test(snapshotKey)) continue;
 
                         const folderPath = String(item.path || `${normalizedParent}/${snapshotKey}`).replace(/^\/+/, '').replace(/\/+$/, '');
-                        const inferredSnapshotLeafNames = [
-                            buildSnapshotFileNameFromKey(snapshotKey, 'html'),
-                            buildSnapshotFileNameFromKey(snapshotKey, 'json')
-                        ].filter(Boolean);
-                        for (const inferredName of inferredSnapshotLeafNames) {
-                            const inferredFilePath = `${folderPath}/${inferredName}`;
-                            files.push({
-                                name: inferredName,
-                                url: buildGitHubContentsApiUrlForRestore({ owner, repo, branch, path: inferredFilePath }),
-                                source: 'github',
-                                type: getSnapshotBackupCandidateType(inferredName),
-                                snapshotFolder: snapshotKey,
-                                folderPath,
-                                manifestMode: 'inferred'
+                        let leafItems = [];
+                        try {
+                            leafItems = await listGitHubDirCached(folderPath);
+                        } catch (_) {
+                            leafItems = [];
+                        }
+
+                        for (const leaf of leafItems) {
+                            if (!leaf || leaf.type !== 'file') continue;
+                            const fileName = String(leaf.name || '').trim();
+                            if (!fileName) continue;
+                            const fileUrl = leaf.download_url || leaf.url;
+
+                            pushIndexMarkdownCandidateIfMatched({
+                                fileName,
+                                fileUrl,
+                                sourceType: 'github',
+                                folderPath
                             });
+                            if (shouldTreatAsSnapshotHtml({
+                                fileName,
+                                folderPath,
+                                snapshotFolder: snapshotKey
+                            })) {
+                                files.push({
+                                    name: fileName,
+                                    url: fileUrl,
+                                    source: 'github',
+                                    type: getSnapshotBackupCandidateType(fileName),
+                                    snapshotFolder: snapshotKey,
+                                    folderPath,
+                                    manifestMode: 'directory'
+                                });
+                            } else if (shouldTreatAsCurrentChangesArtifact({
+                                fileName,
+                                folderPath,
+                                snapshotFolder: snapshotKey
+                            })) {
+                                files.push({
+                                    name: fileName,
+                                    url: fileUrl,
+                                    source: 'github',
+                                    type: 'changes_artifact',
+                                    snapshotFolder: snapshotKey,
+                                    folderPath,
+                                    manifestMode: 'directory'
+                                });
+                            }
                         }
                     }
                 };
@@ -32000,15 +32065,12 @@ async function scanAndParseRestoreSource(source, localFiles = null) {
         });
         for (const f of jsonSnapshotCandidates) {
             try {
-                let jsonText = typeof f.text === 'string' ? String(f.text || '') : '';
-                if (!jsonText && source !== 'local' && f.url) {
-                    const blob = await downloadRemoteFile({ url: f.url, source });
-                    jsonText = await blob.text();
+                if (source === 'local') {
+                    const jsonText = typeof f.text === 'string' ? String(f.text || '') : '';
+                    if (!jsonText) continue;
+                    const extractedTree = parseBookmarkTreeFromJsonTextForRestore(jsonText);
+                    if (!isBookmarkTreeShapeValid(extractedTree)) continue;
                 }
-                if (!jsonText) continue;
-
-                const extractedTree = parseBookmarkTreeFromJsonTextForRestore(jsonText);
-                if (!isBookmarkTreeShapeValid(extractedTree)) continue;
 
                 const version = buildRestoreVersionFromJsonTreeFile({
                     source,
