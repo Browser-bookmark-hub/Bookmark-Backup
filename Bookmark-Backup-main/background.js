@@ -1770,6 +1770,25 @@ let flushingSwitchBackupAfterInitUpload = false;
 const REMOTE_RESTORE_SCAN_CACHE_TTL_MS = 60000;
 const remoteRestoreScanCache = new Map(); // key -> { time, files }
 const remoteRestoreIndexCache = new Map(); // key -> { time, result }
+
+function invalidateRemoteRestoreCaches() {
+    remoteRestoreScanCache.clear();
+    remoteRestoreIndexCache.clear();
+}
+
+function normalizeRestoreTimestampMs(value) {
+    if (value == null) return null;
+    const raw = typeof value === 'string' ? value.trim() : value;
+    if (raw === '') return null;
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) return numeric > 0 ? numeric : null;
+    if (typeof raw === 'string') {
+        const parsed = Date.parse(raw);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    return null;
+}
+
 let bookmarkChangeTimeout = null;
 let bookmarkChangePostConfirmTimeout = null;
 // 添加一个变量标记是否是从syncDownloadState调用的onCreated处理
@@ -14145,6 +14164,7 @@ async function uploadBookmarks(bookmarks, options = {}) {
             throw new Error(`上传失败: ${response.status} - ${response.statusText}`);
         }
 
+        invalidateRemoteRestoreCaches();
         return { success: true };
     } catch (error) {
         const msg = String(error?.message || '');
@@ -14216,6 +14236,7 @@ async function uploadBookmarksToGitHubRepo(bookmarks, options = {}) {
     });
 
     if (result && result.success === true) {
+        invalidateRemoteRestoreCaches();
         return { success: true, path: result.path || filePath, htmlUrl: result.htmlUrl || null };
     }
 
@@ -17767,6 +17788,7 @@ async function uploadExportFileToWebDAV({ lang, folderKey, fileName, content, co
             throw new Error(`上传失败: ${response.status} - ${response.statusText}`);
         }
 
+        invalidateRemoteRestoreCaches();
         return { success: true };
     } catch (error) {
         if (String(error?.message || '').includes('Failed to fetch')) {
@@ -17815,6 +17837,7 @@ async function uploadExportFileToGitHubRepo({ lang, folderKey, fileName, content
         });
 
         if (result && result.success === true) {
+            invalidateRemoteRestoreCaches();
             return { success: true, path: result.path || filePath, htmlUrl: result.htmlUrl || null };
         }
 
@@ -27341,7 +27364,7 @@ async function listRemoteFiles(source, options = {}) {
             const cloned = cloneRestoreFiles(list);
             const targets = cloned.filter((candidate) => {
                 if (!isOverwriteRestoreCandidate(candidate)) return false;
-                return !Number.isFinite(Number(candidate?.lastModified));
+                return normalizeRestoreTimestampMs(candidate?.lastModified) == null;
             });
 
             if (!targets.length) return cloned;
@@ -32533,7 +32556,7 @@ async function scanAndParseRestoreSource(source, localFiles = null, options = {}
                     source,
                     fileUrl: file.url || null,
                     localFileKey: file.localFileKey || null,
-                    lastModifiedMs: Number.isFinite(Number(file.lastModified)) ? Number(file.lastModified) : null,
+                    lastModifiedMs: normalizeRestoreTimestampMs(file.lastModified),
                     snapshotFolder: file.snapshotFolder || '',
                     folderPath: file.folderPath || '',
                     folderType: inferredFolderType,
@@ -32584,7 +32607,7 @@ async function scanAndParseRestoreSource(source, localFiles = null, options = {}
                 source: modeEntry.source,
                 fileUrl: modeEntry.fileUrl || null,
                 localFileKey: modeEntry.localFileKey || null,
-                lastModifiedMs: Number.isFinite(Number(modeEntry.lastModifiedMs)) ? Number(modeEntry.lastModifiedMs) : null,
+                lastModifiedMs: normalizeRestoreTimestampMs(modeEntry.lastModifiedMs),
                 snapshotFolder: modeEntry.snapshotFolder || '',
                 folderPath: modeEntry.folderPath || '',
                 folderType: modeEntry.folderType || ''
@@ -32623,19 +32646,35 @@ async function scanAndParseRestoreSource(source, localFiles = null, options = {}
             const canMergeByFolderType = !!artifactFolderType
                 && !!versionFolderType
                 && artifactFolderType === versionFolderType;
+            const artifactLastModifiedMs = normalizeRestoreTimestampMs(artifact.lastModifiedMs);
+            const isOverwriteSnapshotMerge = artifactFolderType === 'overwrite'
+                && versionFolderType === 'overwrite';
 
             if (version && canMergeByFolderType) {
                 version.stats = artifact.stats || version.stats;
-                if (!Number.isFinite(Number(version.time)) && Number.isFinite(Number(artifact.lastModifiedMs))) {
-                    version.time = Number(artifact.lastModifiedMs);
-                    version.displayTime = formatDateTime(Number(artifact.lastModifiedMs));
+                const existingVersionTimeMs = Number(version.time);
+                const shouldRefreshSnapshotTime = Number.isFinite(artifactLastModifiedMs)
+                    && (isOverwriteSnapshotMerge || !Number.isFinite(existingVersionTimeMs));
+                if (shouldRefreshSnapshotTime) {
+                    // Overwrite snapshots have a fixed name and no timestamp in their path.
+                    // Their paired current-changes file is written in the same backup, so its
+                    // remote mtime is the only fresh operation timestamp available to the scan.
+                    const nextVersionTimeMs = isOverwriteSnapshotMerge && Number.isFinite(existingVersionTimeMs)
+                        ? Math.max(existingVersionTimeMs, artifactLastModifiedMs)
+                        : artifactLastModifiedMs;
+                    version.time = nextVersionTimeMs;
+                    version.displayTime = formatDateTime(nextVersionTimeMs);
                 }
+                const existingLastModifiedMs = Number(version?.restoreRef?.lastModifiedMs);
+                const mergedLastModifiedMs = Number.isFinite(artifactLastModifiedMs)
+                    ? (isOverwriteSnapshotMerge && Number.isFinite(existingLastModifiedMs)
+                        ? Math.max(existingLastModifiedMs, artifactLastModifiedMs)
+                        : artifactLastModifiedMs)
+                    : (Number.isFinite(existingLastModifiedMs) ? existingLastModifiedMs : null);
                 version.restoreRef = {
                     ...(version.restoreRef || {}),
                     snapshotKey,
-                    lastModifiedMs: Number.isFinite(Number(version?.restoreRef?.lastModifiedMs))
-                        ? Number(version.restoreRef.lastModifiedMs)
-                        : (Number.isFinite(Number(artifact.lastModifiedMs)) ? Number(artifact.lastModifiedMs) : null),
+                    lastModifiedMs: mergedLastModifiedMs,
                     changesArtifact: {
                         name: artifact.name,
                         mode: artifact.mode,
@@ -32659,9 +32698,6 @@ async function scanAndParseRestoreSource(source, localFiles = null, options = {}
             }
 
             const snapshotTimeMs = parseSnapshotTimeMsFromKey(snapshotKey);
-            const artifactLastModifiedMs = Number.isFinite(Number(artifact.lastModifiedMs))
-                ? Number(artifact.lastModifiedMs)
-                : null;
             const effectiveArtifactTimeMs = Number.isFinite(snapshotTimeMs)
                 ? snapshotTimeMs
                 : artifactLastModifiedMs;

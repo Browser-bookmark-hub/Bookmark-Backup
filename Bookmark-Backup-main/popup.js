@@ -12675,11 +12675,14 @@ function showRestoreModal(versions, source, options = {}) {
         for (const candidate of candidates) {
             if (candidate == null || candidate === '') continue;
 
-            const dateMs = new Date(candidate).getTime();
-            if (Number.isFinite(dateMs)) return dateMs;
-
             const numericMs = Number(candidate);
-            if (Number.isFinite(numericMs) && numericMs > 0) return numericMs;
+            if (Number.isFinite(numericMs)) {
+                if (numericMs > 0) return numericMs;
+                continue;
+            }
+
+            const dateMs = new Date(candidate).getTime();
+            if (Number.isFinite(dateMs) && dateMs > 0) return dateMs;
         }
         return 0;
     };
@@ -12886,7 +12889,7 @@ function showRestoreModal(versions, source, options = {}) {
         }
 
         const parsedRawDisplayTimeMs = Date.parse(rawDisplayTime);
-        if (Number.isFinite(parsedRawDisplayTimeMs)) {
+        if (Number.isFinite(parsedRawDisplayTimeMs) && parsedRawDisplayTimeMs > 0) {
             return formatTime(new Date(parsedRawDisplayTimeMs));
         }
 
@@ -12902,14 +12905,15 @@ function showRestoreModal(versions, source, options = {}) {
         for (const candidate of candidates) {
             if (candidate == null || candidate === '') continue;
 
-            const dateMs = new Date(candidate).getTime();
-            if (Number.isFinite(dateMs)) {
-                return formatTime(new Date(dateMs));
+            const numericMs = Number(candidate);
+            if (Number.isFinite(numericMs)) {
+                if (numericMs > 0) return formatTime(new Date(numericMs));
+                continue;
             }
 
-            const numericMs = Number(candidate);
-            if (Number.isFinite(numericMs) && numericMs > 0) {
-                return formatTime(new Date(numericMs));
+            const dateMs = new Date(candidate).getTime();
+            if (Number.isFinite(dateMs) && dateMs > 0) {
+                return formatTime(new Date(dateMs));
             }
         }
 
@@ -14952,13 +14956,15 @@ function showRestoreModal(versions, source, options = {}) {
     };
 
     const parseRestoreTimeCandidateMs = (value) => {
-        if (value == null || value === '') return null;
+        if (value == null) return null;
+        const raw = typeof value === 'string' ? value.trim() : value;
+        if (raw === '') return null;
 
-        const dateMs = new Date(value).getTime();
-        if (Number.isFinite(dateMs)) return dateMs;
+        const numericMs = Number(raw);
+        if (Number.isFinite(numericMs)) return numericMs > 0 ? numericMs : null;
 
-        const numericMs = Number(value);
-        if (Number.isFinite(numericMs) && numericMs > 0) return numericMs;
+        const dateMs = new Date(raw).getTime();
+        if (Number.isFinite(dateMs) && dateMs > 0) return dateMs;
 
         return null;
     };
