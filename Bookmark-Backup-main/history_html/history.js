@@ -10556,6 +10556,18 @@ async function handleRestoreRecord(record, displayTitle) {
     showRestoreModal(record, title);
 }
 
+function resetRestoreActionButtons() {
+    const confirmBtn = document.getElementById('restoreConfirmBtn');
+    const cancelBtn = document.getElementById('restoreCancelBtn');
+    const closeBtn = document.getElementById('restoreModalClose');
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = currentLang === 'zh_CN' ? '恢复' : 'Restore';
+    }
+    if (cancelBtn) cancelBtn.disabled = false;
+    if (closeBtn) closeBtn.disabled = false;
+}
+
 function closeRestoreModal() {
     const modal = document.getElementById('restoreModal');
     if (modal) modal.classList.remove('show');
@@ -10584,10 +10596,7 @@ function closeRestoreModal() {
         const progressSection = document.getElementById('restoreProgressSection');
         if (progressSection) progressSection.style.display = 'none';
     } catch (_) { }
-    const confirmBtn = document.getElementById('restoreConfirmBtn');
-    if (confirmBtn) {
-        confirmBtn.textContent = currentLang === 'zh_CN' ? '恢复' : 'Restore';
-    }
+    resetRestoreActionButtons();
 }
 
 function normalizeRestoreStrategyValue(strategy) {
@@ -13957,10 +13966,7 @@ async function showRestoreModal(record, displayTitle) {
 
     restoreGeneralPreflight = null;
     try { setRestoreDiffBarVisible(false); } catch (_) { }
-    const confirmBtn = document.getElementById('restoreConfirmBtn');
-    if (confirmBtn) {
-        confirmBtn.textContent = currentLang === 'zh_CN' ? '恢复' : 'Restore';
-    }
+    resetRestoreActionButtons();
 
     const modal = document.getElementById('restoreModal');
     if (!modal) return;
@@ -14075,10 +14081,7 @@ function initRestoreModalEvents() {
             updateRestoreComparisonByStrategy(strategy).catch(() => { });
             try { setRestoreDiffBarVisible(false); } catch (_) { }
             lockRestoreStrategy(false);
-            const confirmBtn = document.getElementById('restoreConfirmBtn');
-            if (confirmBtn) {
-                confirmBtn.textContent = currentLang === 'zh_CN' ? '恢复' : 'Restore';
-            }
+            resetRestoreActionButtons();
             const previewBtn = document.getElementById('restorePreviewBtn');
             if (previewBtn) {
                 previewBtn.classList.remove('preview-warning');
@@ -14106,6 +14109,7 @@ function initRestoreModalEvents() {
             lockRestoreStrategy(false);
             updateRestoreModalI18n();
             updateRestoreWarning(getSelectedRestoreStrategy());
+            resetRestoreActionButtons();
         };
 
         thresholdInput.addEventListener('input', syncThresholdDraft);
@@ -14130,11 +14134,7 @@ function initRestoreModalEvents() {
             updateRestoreMergeViewModeUi('merge');
             updateRestoreWarning('merge');
             updateRestoreComparisonByStrategy('merge').catch(() => { });
-
-            const confirmBtn = document.getElementById('restoreConfirmBtn');
-            if (confirmBtn) {
-                confirmBtn.textContent = currentLang === 'zh_CN' ? '恢复' : 'Restore';
-            }
+            resetRestoreActionButtons();
 
             const previewBtn = document.getElementById('restorePreviewBtn');
             if (previewBtn) {
