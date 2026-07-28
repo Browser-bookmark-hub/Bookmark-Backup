@@ -868,7 +868,7 @@ option {
     align-items: center;
     gap: 8px;
     min-width: 0;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     position: relative;
     z-index: 3;
     overflow: visible;
@@ -981,6 +981,7 @@ option {
     align-items: center;
     gap: 8px;
     flex-wrap: nowrap;
+    flex: 0 0 auto;
 }
 
 @media (max-width: 760px) {
