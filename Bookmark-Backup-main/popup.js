@@ -11465,6 +11465,25 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         return false;
     };
 
+    const isEnhancedFullSnapshotHtmlText = (text) => {
+        const source = String(text || '');
+        if (!source) return false;
+
+        try {
+            const match = /<script[^>]*id=["']bookmarkBackupMeta["'][^>]*>([\s\S]*?)<\/script>/i.exec(source);
+            if (!match || !match[1]) return false;
+            const meta = JSON.parse(match[1]);
+            return !!meta
+                && typeof meta === 'object'
+                && !Array.isArray(meta)
+                && String(meta.snapshotKind || '').trim().toLowerCase() === 'full_html'
+                && Array.isArray(meta.rootDescriptors)
+                && meta.rootDescriptors.length > 0;
+        } catch (_) {
+            return false;
+        }
+    };
+
     const isCurrentChangesArtifactJsonText = (text) => {
         const raw = String(text || '').trim();
         if (!raw) return false;
@@ -11809,11 +11828,28 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
         const pathLower = pathText.toLowerCase();
         const normalizedPathText = pathText.replace(/\\/g, '/');
         const isLegacyV2HtmlBackup = isLegacyV2HtmlBackupName(name) && (isLegacyV2BookmarksFolderPath(pathText) || allowStandalone);
-        const legacyVersion = isLegacyV2HtmlBackup ? '2.1' : '';
+        let legacyVersion = '';
+        let hasFullSnapshotMeta = false;
+        let htmlHeadText = null;
+        const readHtmlHeadText = async () => {
+            if (htmlHeadText !== null) return htmlHeadText;
+            htmlHeadText = typeof file.slice === 'function'
+                ? await file.slice(0, 64 * 1024).text()
+                : await file.text();
+            return htmlHeadText;
+        };
         const localFileKey = pathText;
         localRestoreFileMap.set(localFileKey, file);
 
         try {
+            if (isHtmlFileName(name)) {
+                const headText = await readHtmlHeadText();
+                hasFullSnapshotMeta = isEnhancedFullSnapshotHtmlText(headText);
+                if (isLegacyV2HtmlBackup && !hasFullSnapshotMeta && !isCurrentChangesArtifactHtmlText(headText)) {
+                    legacyVersion = '2.1';
+                }
+            }
+
             if (isZipFileName(name)) {
                 if (!allowStandalone) {
                     continue;
@@ -11879,9 +11915,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                 let artifactText = '';
 
                 if (!shouldUseChangesNameHint) {
-                    const headText = typeof file.slice === 'function'
-                        ? await file.slice(0, 64 * 1024).text()
-                        : await file.text();
+                    const headText = await readHtmlHeadText();
                     shouldUseChangesContentHint = isCurrentChangesArtifactHtmlText(headText);
                     if (shouldUseChangesContentHint) {
                         artifactText = typeof file.text === 'function'
@@ -11899,8 +11933,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         text: artifactText,
                         lastModified: file.lastModified,
                         snapshotFolder,
-                        folderPath,
-                        ...(legacyVersion ? { legacyVersion } : {})
+                        folderPath
                     });
                     continue;
                 }
@@ -11927,6 +11960,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         lastModified: file.lastModified,
                         snapshotFolder,
                         folderPath,
+                        ...(hasFullSnapshotMeta ? { hasFullSnapshotMeta: true } : {}),
                         ...(legacyVersion ? { legacyVersion } : {})
                     });
                     continue;
@@ -11945,9 +11979,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                 let isSnapshotHtmlByContent = false;
 
                 if (!shouldUseSnapshotHtmlPathHint) {
-                    const headText = typeof file.slice === 'function'
-                        ? await file.slice(0, 64 * 1024).text()
-                        : await file.text();
+                    const headText = await readHtmlHeadText();
                     isSnapshotHtmlByContent = isLikelyNetscapeBookmarkHtmlText(headText);
                 }
 
@@ -11960,6 +11992,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         lastModified: file.lastModified,
                         snapshotFolder,
                         folderPath,
+                        ...(hasFullSnapshotMeta ? { hasFullSnapshotMeta: true } : {}),
                         ...(legacyVersion ? { legacyVersion } : {})
                     });
                     continue;
@@ -12011,9 +12044,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                 const folderPath = pathText.includes('/')
                     ? pathText.slice(0, pathText.lastIndexOf('/'))
                     : '';
-                const headText = typeof file.slice === 'function'
-                    ? await file.slice(0, 64 * 1024).text()
-                    : await file.text();
+                const headText = await readHtmlHeadText();
 
                 if (isCurrentChangesArtifactHtmlText(headText)) {
                     const artifactText = typeof file.text === 'function'
@@ -12027,8 +12058,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         text: artifactText,
                         lastModified: file.lastModified,
                         snapshotFolder,
-                        folderPath,
-                        ...(legacyVersion ? { legacyVersion } : {})
+                        folderPath
                     });
                     continue;
                 }
@@ -12042,6 +12072,7 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                         lastModified: file.lastModified,
                         snapshotFolder,
                         folderPath,
+                        ...(hasFullSnapshotMeta ? { hasFullSnapshotMeta: true } : {}),
                         ...(legacyVersion ? { legacyVersion } : {})
                     });
                     continue;
@@ -12056,7 +12087,8 @@ async function collectLocalRestoreCandidates(files, { allowStandalone = false } 
                     localFileKey,
                     lastModified: file.lastModified,
                     snapshotFolder,
-                    folderPath
+                    folderPath,
+                    ...(hasFullSnapshotMeta ? { hasFullSnapshotMeta: true } : {})
                 });
                 continue;
             }
@@ -16669,7 +16701,7 @@ function showRestoreModal(versions, source, options = {}) {
         updateStrategyAvailabilityUi();
         updateMergeViewModeUi();
     };
-    const showRestoreConfirmModal = async ({ version, strategy, restoreRef, localPayload, forceChangesArtifact = false }) => {
+    const showRestoreConfirmModal = async ({ version, strategy, restoreRef, localPayload, forceChangesArtifact = false, strategyDowngradedToMerge = false }) => {
         const confirmModal = document.getElementById('restoreConfirmModal');
         const confirmTitle = document.getElementById('restoreConfirmTitle');
         const confirmSummary = document.getElementById('restoreConfirmSummary');
@@ -16902,6 +16934,25 @@ function showRestoreModal(versions, source, options = {}) {
             return rawTitle || (isEn ? 'Untitled Folder' : '未命名文件夹');
         };
 
+        const isStandardImportTargetRoot = (node) => {
+            const rawFolderType = String(node?.folderType || node?.folder_type || '')
+                .trim()
+                .toLowerCase()
+                .replace(/[_\s]+/g, '-');
+            const folderType = rawFolderType === 'bookmark-bar'
+                ? 'bookmarks-bar'
+                : rawFolderType === 'other-bookmarks'
+                    ? 'other'
+                    : rawFolderType === 'mobile-bookmarks'
+                        ? 'mobile'
+                        : rawFolderType;
+            if (['bookmarks-bar', 'other', 'mobile'].includes(folderType)) return true;
+
+            // Older Chromium APIs can omit folderType. Keep this narrow legacy
+            // fallback for the three conventional browser root IDs only.
+            return ['1', '2', '3', 'mobile______'].includes(String(node?.id || ''));
+        };
+
         const fetchBookmarkChildren = (parentId) => {
             return new Promise((resolve) => {
                 try {
@@ -16933,6 +16984,36 @@ function showRestoreModal(versions, source, options = {}) {
                     resolve(null);
                 }
             });
+        };
+
+        const resolveAutoImportTargetTitle = async () => {
+            if (autoImportTargetTitle) return autoImportTargetTitle;
+            if (autoImportTargetTitlePromise) return await autoImportTargetTitlePromise;
+
+            autoImportTargetTitlePromise = (async () => {
+                const roots = await fetchBookmarkChildren('0');
+                const normalizeFolderType = (node) => String(node?.folderType || node?.folder_type || '')
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[_\s]+/g, '-')
+                    .replace('bookmark-bar', 'bookmarks-bar')
+                    .replace('other-bookmarks', 'other')
+                    .replace('mobile-bookmarks', 'mobile');
+                const standardRoots = roots.filter(isStandardImportTargetRoot);
+                const target = standardRoots.find((node) => normalizeFolderType(node) === 'other' || String(node?.id || '') === '2')
+                    || standardRoots.find((node) => normalizeFolderType(node) === 'bookmarks-bar' || String(node?.id || '') === '1')
+                    || standardRoots[0]
+                    || roots[0]
+                    || null;
+                autoImportTargetTitle = target ? getFolderDisplayTitle(target) : '';
+                return autoImportTargetTitle;
+            })();
+
+            try {
+                return await autoImportTargetTitlePromise;
+            } finally {
+                autoImportTargetTitlePromise = null;
+            }
         };
 
         const buildImportTargetIdChain = async (targetId) => {
@@ -16974,6 +17055,7 @@ function showRestoreModal(versions, source, options = {}) {
                     .map((node, index) => ({
                         id: String(node.id),
                         title: getFolderDisplayTitle(node),
+                        folderType: String(node.folderType || node.folder_type || ''),
                         index: Number.isFinite(Number(node.index)) ? Number(node.index) : index
                     }));
 
@@ -17117,7 +17199,9 @@ function showRestoreModal(versions, source, options = {}) {
 
             importTargetList.innerHTML = '';
             const rootEntry = await ensureImportTargetChildrenLoaded('0');
-            const roots = Array.isArray(rootEntry?.folders) ? rootEntry.folders : [];
+            const roots = Array.isArray(rootEntry?.folders)
+                ? rootEntry.folders.filter(isStandardImportTargetRoot)
+                : [];
 
             if (!roots.length) {
                 setImportTargetListMessage(
@@ -17434,6 +17518,12 @@ function showRestoreModal(versions, source, options = {}) {
             }
         }
 
+        if (strategyDowngradedToMerge) {
+            confirmWarning.insertAdjacentHTML('afterbegin', isEn
+                ? '<span style="color: var(--warning); font-weight: 700;">This local HTML has no project root identity metadata. Switched to import merge.</span><br>'
+                : '<span style="color: var(--warning); font-weight: 700;">该本地 HTML 不含项目根身份元数据，已切换为导入合并。</span><br>');
+        }
+
         confirmWarning.insertAdjacentHTML('beforeend', `
             <div class="restore-confirm-safety-note">
                 ${isEn
@@ -17519,15 +17609,17 @@ function showRestoreModal(versions, source, options = {}) {
             }
 
             return {
-                modalTitle: isEn ? 'Import Merge Preview (Whole Version)' : '导入合并预览（整个版本）',
+                modalTitle: isEn ? 'Import Merge Preview' : '导入合并预览',
                 loadingText: isEn ? 'Generating import merge preview (whole version)...' : '正在生成导入合并预览（整个版本）...',
-                treeTitle: isEn ? 'Import Merge Preview (Whole Version)' : '导入合并预览（整个版本）'
+                treeTitle: isEn ? 'Import Merge Preview' : '导入合并预览'
             };
         };
 
         let overwritePreviewCache = null; // { diffSummary, currentTree, targetTree, changeEntries }
         let mergePreviewCache = null; // { tree, viewMode, viewFormat, meta, preflightToken }
         let importPathNodeSeed = 0;
+        let autoImportTargetTitle = '';
+        let autoImportTargetTitlePromise = null;
 
         const formatMergeImportTimestamp = (dateValue = new Date()) => {
             const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
@@ -17584,7 +17676,7 @@ function showRestoreModal(versions, source, options = {}) {
                 : [];
 
             if (parts.length > 0) return parts;
-            return [isEn ? 'Auto (Bookmark Root)' : '自动（书签根目录）'];
+            return [autoImportTargetTitle || (isEn ? 'Auto (Bookmark Root)' : '自动（书签根目录）')];
         };
 
         const injectImportTargetPathIntoTree = (treeInput, options = {}) => {
@@ -17608,10 +17700,9 @@ function showRestoreModal(versions, source, options = {}) {
                 : { id: '0', title: 'root', children: [] };
 
             const nodePrefix = `__import_path_${Date.now()}_${importPathNodeSeed++}`;
-            const labelPrefix = isEn ? 'Import To' : '导入位置';
             const firstNode = {
                 id: `${nodePrefix}_0`,
-                title: `${labelPrefix} / ${pathParts[0]}`,
+                title: pathParts[0],
                 children: [],
                 isImportPathContext: true
             };
@@ -17662,6 +17753,8 @@ function showRestoreModal(versions, source, options = {}) {
 
         const showPreviewView = async () => {
             if (!previewView || !mainView || !previewContent) return;
+
+            if (isMergePreview) await resolveAutoImportTargetTitle();
 
             isInPreview = true;
             mainView.style.display = 'none';
@@ -17727,7 +17820,8 @@ function showRestoreModal(versions, source, options = {}) {
                         lazyKey: previewKey,
                         customTitle,
                         importResultView: true,
-                        viewMode: vm
+                        viewMode: vm,
+                        hideSectionTitle: true
                     }, lang);
 
                     previewContent.innerHTML = treeHtml || `<div style="padding: 20px; color: var(--text-tertiary); text-align: center;">No Data</div>`;
@@ -17807,7 +17901,8 @@ function showRestoreModal(versions, source, options = {}) {
                     lazyDepth: 1,
                     lazyKey: previewKey,
                     customTitle: previewMeta.treeTitle,
-                    hideModeLabel: true
+                    hideModeLabel: true,
+                    hideSectionTitle: isMergePreview
                 }, lang);
 
                 const bodyHtml = treeHtml || `<div style="padding: 20px; color: var(--text-tertiary); text-align: center;">No Data</div>`;
@@ -17835,8 +17930,97 @@ function showRestoreModal(versions, source, options = {}) {
             return summary;
         };
 
+        const getMergeImportPackageCounts = (treeInput) => {
+            const counts = { bookmarks: 0, folders: 0 };
+            const countNode = (node) => {
+                if (!node || typeof node !== 'object') return;
+                if (node.url) {
+                    counts.bookmarks += 1;
+                    return;
+                }
+                counts.folders += 1;
+                if (Array.isArray(node.children)) {
+                    node.children.forEach(countNode);
+                }
+            };
+
+            const roots = Array.isArray(treeInput) ? treeInput : [treeInput];
+            roots.forEach((root) => {
+                if (!root || typeof root !== 'object') return;
+                if (Array.isArray(root.children)) {
+                    root.children.forEach(countNode);
+                } else {
+                    countNode(root);
+                }
+            });
+            return counts;
+        };
+
+        const getCurrentBrowserContentCounts = (treeInput) => {
+            const counts = { bookmarks: 0, folders: 0 };
+            const countNode = (node) => {
+                if (!node || typeof node !== 'object') return;
+                if (node.url) {
+                    counts.bookmarks += 1;
+                    return;
+                }
+                counts.folders += 1;
+                if (Array.isArray(node.children)) {
+                    node.children.forEach(countNode);
+                }
+            };
+
+            const roots = Array.isArray(treeInput) ? treeInput : [treeInput];
+            if (roots.length === 1 && Array.isArray(roots[0]?.children)) {
+                roots[0].children.forEach((container) => {
+                    if (container?.url) {
+                        counts.bookmarks += 1;
+                    } else if (Array.isArray(container?.children)) {
+                        container.children.forEach(countNode);
+                    }
+                });
+                return counts;
+            }
+
+            roots.forEach(countNode);
+            return counts;
+        };
+
+        const renderMergeImportSummaryHtml = (treeInput, currentCounts = null) => {
+            const importedCounts = getMergeImportPackageCounts(treeInput);
+            const browserCounts = currentCounts && typeof currentCounts === 'object'
+                ? {
+                    bookmarks: Math.max(0, Number(currentCounts.bookmarks || 0)),
+                    folders: Math.max(0, Number(currentCounts.folders || 0))
+                }
+                : getCurrentBrowserContentCounts(isMergeChangesSource
+                    ? null
+                    : overwritePreviewCache?.currentTree);
+            const afterLabel = isEn ? 'After:' : '添加后：';
+            const bookmarkLabel = isEn ? 'BKM' : '书签';
+            const folderLabel = isEn ? 'FLD' : '文件夹';
+            return `
+                <div style="display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+                    <span style="font-size: 13px; color: var(--text-primary);">${afterLabel}</span>
+                    <span style="color: var(--text-primary);"><span class="stat-label">${bookmarkLabel}</span> <strong>${browserCounts.bookmarks}</strong> <span class="stat-color added">+${importedCounts.bookmarks}</span></span>
+                    <span style="color: var(--text-primary);"><span class="stat-label">${folderLabel}</span> <strong>${browserCounts.folders}</strong> <span class="stat-color added">+${importedCounts.folders}</span></span>
+                </div>
+            `;
+        };
+
         const renderCurrentDiffSummaryHtml = (diffSummaryObj, changeEntries = null) => {
             if (!diffSummary) return;
+
+            if (isMergePreview) {
+                const mergeTree = isMergeChangesSource
+                    ? mergePreviewCache?.tree
+                    : overwritePreviewCache?.targetTree;
+                const currentCounts = isMergeChangesSource
+                    ? mergePreviewCache?.currentCounts
+                    : getCurrentBrowserContentCounts(overwritePreviewCache?.currentTree);
+                diffSummary.innerHTML = renderMergeImportSummaryHtml(mergeTree, currentCounts);
+                return;
+            }
 
             const effectiveStrategy = getEffectivePreviewStrategy();
             const treatAsOverwrite = isOverwritePreview || (isAutoPreview && effectiveStrategy === 'overwrite');
@@ -17891,7 +18075,7 @@ function showRestoreModal(versions, source, options = {}) {
                 return;
             }
 
-            const prefix = (isMergePreview || treatAsOverwrite)
+            const prefix = treatAsOverwrite
                 ? (isEn ? 'Current browser vs target snapshot: ' : '当前浏览器 vs 目标快照: ')
                 : (isEn ? 'Different from current: ' : '相较当前: ');
             const html = renderCommitStatsInline(changes, lang);
@@ -17938,8 +18122,7 @@ function showRestoreModal(versions, source, options = {}) {
                     }
 
                     mergePreviewCache = res;
-                    const modeText = getMergeViewModeText(normalizeMergeViewMode(res.viewMode) || 'simple', isEn);
-                    diffSummary.innerHTML = `<span style="color: var(--text-secondary);">${isEn ? `Import merge preflight ready (${modeText}).` : `导入合并预演已就绪（${modeText}）。`}</span>`;
+                    diffSummary.innerHTML = renderMergeImportSummaryHtml(res.tree, res.currentCounts);
                     if (previewButton) previewButton.style.display = 'inline-flex';
                 } catch (e) {
                     mergePreviewCache = null;
@@ -18309,7 +18492,7 @@ function showRestoreModal(versions, source, options = {}) {
 
     confirmButton.onclick = async () => {
         const forceChangesArtifact = isChangesSubModeActive(currentVersionType) || isChangesOnlyRestoreVersion(selectedVersion);
-        const strategy = forceChangesArtifact
+        let strategy = forceChangesArtifact
             ? 'merge'
             : ((strategyMergeRadio && strategyMergeRadio.checked) ? 'merge' : 'overwrite');
         let restoringTextTimer = null;
@@ -18333,13 +18516,30 @@ function showRestoreModal(versions, source, options = {}) {
                 localPayload = await buildLocalPayloadIfNeeded(restoreRef);
             }
 
+            let strategyDowngradedToMerge = false;
+            if (strategy === 'overwrite'
+                && String(restoreRef?.source || '').toLowerCase() === 'local'
+                && String(restoreRef?.sourceType || '').toLowerCase() === 'html') {
+                const rootPreflight = await callRestoreActionWithLocalPayload({
+                    action: 'buildOverwriteRestorePreview',
+                    restoreRef,
+                    localPayload,
+                    payload: { restoreRef, strategy: 'overwrite' }
+                });
+                if (rootPreflight?.requiresMerge === true) {
+                    strategy = 'merge';
+                    strategyDowngradedToMerge = true;
+                }
+            }
+
             // 二级确认：弹窗确认，再执行恢复
             const confirmResult = await showRestoreConfirmModal({
                 version: selectedVersion,
                 strategy,
                 restoreRef,
                 localPayload,
-                forceChangesArtifact
+                forceChangesArtifact,
+                strategyDowngradedToMerge
             });
 
             if (!confirmResult || confirmResult.confirmed !== true) {
@@ -18500,6 +18700,12 @@ function showRestoreModal(versions, source, options = {}) {
             if (restoreRes?.success) {
                 const lang = await getPreferredLang();
                 const isEn = lang === 'en';
+                const skippedRootCount = Number(restoreRes?.skippedRootCount || 0);
+                const skippedRootSuffix = skippedRootCount > 0
+                    ? (isEn
+                        ? ` Skipped ${skippedRootCount} protected/unknown root(s).`
+                        : ` 已跳过 ${skippedRootCount} 个受保护或未知根。`)
+                    : '';
 
                 const msg = (() => {
                     if (appliedStrategy === 'overwrite') {
@@ -18508,28 +18714,28 @@ function showRestoreModal(versions, source, options = {}) {
                             : '';
                         if (strategy === 'auto') {
                             return isEn
-                                ? `SUCCESS: Auto restore completed (overwrite). Created ${restoreRes.created || 0} nodes.${suffix}`
-                                : `成功：自动恢复完成（覆盖）。创建 ${restoreRes.created || 0} 个节点。${suffix}`;
+                                ? `SUCCESS: Auto restore completed (overwrite). Created ${restoreRes.created || 0} nodes.${suffix}${skippedRootSuffix}`
+                                : `成功：自动恢复完成（覆盖）。创建 ${restoreRes.created || 0} 个节点。${suffix}${skippedRootSuffix}`;
                         }
                         return isEn
-                            ? `SUCCESS: Restored (overwrite). Created ${restoreRes.created || 0} nodes.${suffix}`
-                            : `成功：已恢复（覆盖）。创建 ${restoreRes.created || 0} 个节点。${suffix}`;
+                            ? `SUCCESS: Restored (overwrite). Created ${restoreRes.created || 0} nodes.${suffix}${skippedRootSuffix}`
+                            : `成功：已恢复（覆盖）。创建 ${restoreRes.created || 0} 个节点。${suffix}${skippedRootSuffix}`;
                     }
 
                     if (appliedStrategy === 'patch') {
                         if (strategy === 'auto') {
                             return isEn
-                                ? `SUCCESS: Auto restore completed (patch). Added ${restoreRes.created || 0}, removed ${restoreRes.removed || 0}, moved ${restoreRes.moved || 0}, updated ${restoreRes.updated || 0}.`
-                                : `成功：自动恢复完成（补丁）。新增 ${restoreRes.created || 0}、删除 ${restoreRes.removed || 0}、移动 ${restoreRes.moved || 0}、修改 ${restoreRes.updated || 0}。`;
+                                ? `SUCCESS: Auto restore completed (patch). Added ${restoreRes.created || 0}, removed ${restoreRes.removed || 0}, moved ${restoreRes.moved || 0}, updated ${restoreRes.updated || 0}.${skippedRootSuffix}`
+                                : `成功：自动恢复完成（补丁）。新增 ${restoreRes.created || 0}、删除 ${restoreRes.removed || 0}、移动 ${restoreRes.moved || 0}、修改 ${restoreRes.updated || 0}。${skippedRootSuffix}`;
                         }
                         return isEn
-                            ? `SUCCESS: Patch restore completed. Added ${restoreRes.created || 0}, removed ${restoreRes.removed || 0}, moved ${restoreRes.moved || 0}, updated ${restoreRes.updated || 0}.`
-                            : `成功：补丁恢复完成。新增 ${restoreRes.created || 0}、删除 ${restoreRes.removed || 0}、移动 ${restoreRes.moved || 0}、修改 ${restoreRes.updated || 0}。`;
+                            ? `SUCCESS: Patch restore completed. Added ${restoreRes.created || 0}, removed ${restoreRes.removed || 0}, moved ${restoreRes.moved || 0}, updated ${restoreRes.updated || 0}.${skippedRootSuffix}`
+                            : `成功：补丁恢复完成。新增 ${restoreRes.created || 0}、删除 ${restoreRes.removed || 0}、移动 ${restoreRes.moved || 0}、修改 ${restoreRes.updated || 0}。${skippedRootSuffix}`;
                     }
 
                     return isEn
-                        ? `SUCCESS: Import merge completed. Created ${restoreRes.created || 0} nodes under “${restoreRes.importedFolderTitle || 'Imported'}”.`
-                        : `成功：导入合并完成。在“${restoreRes.importedFolderTitle || '导入'}”下创建 ${restoreRes.created || 0} 个节点。`;
+                        ? `SUCCESS: Import merge completed. Created ${restoreRes.created || 0} nodes under “${restoreRes.importedFolderTitle || 'Imported'}”.${skippedRootSuffix}`
+                        : `成功：导入合并完成。在“${restoreRes.importedFolderTitle || '导入'}”下创建 ${restoreRes.created || 0} 个节点。${skippedRootSuffix}`;
                 })();
                 const restoreTargetStatusLine = buildPopupRestoreTargetStatusLine(
                     restoreRes?.restoreRecordTargetSummary,
@@ -19873,6 +20079,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, options = {}, la
     const customLabel = typeof options.customLabel === 'string' ? options.customLabel : null;
     const hideLegend = options.hideLegend === true;
     const hideModeLabel = options.hideModeLabel === true;
+    const hideSectionTitle = options.hideSectionTitle === true;
 
     const buildLoadMoreButtonHtml = ({ parentId, startIndex, childLevel, nextForceInclude, remainingCount }) => {
         if (!lazyEnabled || remainingCount <= 0) return '';
@@ -20001,6 +20208,13 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, options = {}, la
         if (!shouldInclude) return '';
 
         const change = changeMap ? changeMap.get(node.id) : null;
+        const isImportResultRootNode = node && node.isImportResultRoot === true;
+        const importResultLabelStyle = isImportResultRootNode
+            ? ' style="color:#28a745 !important;-webkit-text-fill-color:#28a745 !important;font-weight:600 !important;"'
+            : '';
+        const importResultIconStyle = isImportResultRootNode
+            ? ' style="color:#28a745 !important;"'
+            : '';
         let changeClass = '';
         let statusIcon = '';
 
@@ -20040,6 +20254,11 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, options = {}, la
                     statusIcon += `<span class="change-badge moved" data-move-from="${escapeHtml(slash)}" title="${escapeHtml(slash)}"><i class="fas fa-arrows-alt"></i><span class="move-tooltip">${slashPathToChipsHTML(slash)}</span></span>`;
                 }
             }
+        }
+
+        if (isImportResultRootNode) {
+            changeClass = 'tree-change-added import-result-root-node';
+            statusIcon = '<span class="change-badge added">+</span>';
         }
 
         const idStr = node && node.id != null ? String(node.id) : '';
@@ -20089,10 +20308,10 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, options = {}, la
 
             return `
                 <div class="tree-node">
-                    <div class="tree-item ${changeClass}" data-node-id="${escapeHtml(String(node.id))}" data-node-type="folder" data-node-level="${level}">
+                    <div class="tree-item ${changeClass}" data-node-id="${escapeHtml(String(node.id))}" data-node-type="folder" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
                         <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
-                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
-                        <span class="tree-label">${title}</span>
+                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"${importResultIconStyle}></i>
+                        <span class="tree-label"${importResultLabelStyle}>${title}</span>
                         <span class="change-badges">${statusIcon}</span>
                     </div>
                     <div class="tree-children ${shouldExpand ? 'expanded' : ''}" data-children-loaded="${shouldLazyRenderChildren ? 'false' : 'true'}" data-parent-id="${escapeHtml(String(node.id))}" data-child-level="${level + 1}" data-next-force-include="${nextForceInclude ? 'true' : 'false'}">
@@ -20202,10 +20421,10 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, options = {}, la
     const lazyAttr = lazyEnabled ? ` data-lazy-key="${escapeHtml(lazyKey)}"` : '';
     return `
         <div class="detail-section">
-            <div class="detail-section-title detail-section-title-with-legend">
+            ${hideSectionTitle ? '' : `<div class="detail-section-title detail-section-title-with-legend">
                 <span class="detail-title-left">${modeLabelHtml}${detailTitle}</span>
                 <span class="detail-title-legend">${legend}</span>
-            </div>
+            </div>`}
             <div class="history-tree-container bookmark-tree"${lazyAttr}>
                 ${treeContent}
             </div>
@@ -20673,6 +20892,12 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
             : getChangeMeta(resolveNodeChangeType(node));
         const extraNodeClass = isImportResultRootNode ? 'import-result-root-node' : '';
         const treeItemClass = `${changeClass}${extraNodeClass ? ` ${extraNodeClass}` : ''}`.trim();
+        const importResultLabelStyle = isImportResultRootNode
+            ? ' style="color:#28a745 !important;-webkit-text-fill-color:#28a745 !important;font-weight:600 !important;"'
+            : '';
+        const importResultIconStyle = isImportResultRootNode
+            ? ' style="color:#28a745 !important;"'
+            : '';
         const canLazyNode = lazyEnabled && !!nodeId;
         let shouldExpand = level < maxDepth;
         if (canLazyNode && lazyDepth != null && level + 1 > lazyDepth) {
@@ -20694,8 +20919,8 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
                 <div class="tree-node">
                     <div class="tree-item ${treeItemClass}" data-node-id="${escapeHtml(nodeId)}" data-node-type="folder" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
                         <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
-                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
-                        <span class="tree-label">${title}</span>
+                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"${importResultIconStyle}></i>
+                        <span class="tree-label"${importResultLabelStyle}>${title}</span>
                         <span class="change-badges">${statusIcon}</span>
                     </div>
                     <div class="tree-children ${shouldExpand ? 'expanded' : ''}" data-children-loaded="${shouldLazyRenderChildren ? 'false' : 'true'}" data-parent-id="${escapeHtml(nodeId)}" data-child-level="${level + 1}">
@@ -20740,14 +20965,15 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
     });
 
     const customTitle = options.customTitle ? String(options.customTitle) : '';
+    const hideSectionTitle = options.hideSectionTitle === true;
     const lazyAttr = lazyEnabled ? ` data-lazy-key="${escapeHtml(lazyKey)}"` : '';
 
     return `
         <div class="detail-section">
-            <div class="detail-section-title detail-section-title-with-legend">
+            ${hideSectionTitle ? '' : `<div class="detail-section-title detail-section-title-with-legend">
                 <span class="detail-title-left">${safeTitle(customTitle || (isZh ? '导入合并预览' : 'Import Merge Preview'))}</span>
                 <span class="detail-title-legend">${legend}</span>
-            </div>
+            </div>`}
             <div class="history-tree-container bookmark-tree"${lazyAttr}>
                 ${treeContent || `<div class="detail-empty">${isZh ? '无变化' : 'No changes'}</div>`}
             </div>
@@ -22007,8 +22233,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div style="display:flex;flex-direction:column;gap:8px;height:min(62vh, 620px);min-height:360px;">
                         <div class="restore-help-scroll" style="flex:0.85 1 0;min-height:0;overflow-y:scroll;font-size: 11px; color: var(--theme-text-secondary); line-height: 1.55; padding: 6px 8px; background: var(--theme-bg-secondary); border-radius: 6px;">
                             ${isEn
-                    ? '<div style="margin-bottom: 8px;"><span style="font-weight: 700;">1. Folder mode</span><br>&nbsp;&nbsp;Recommended root: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>&nbsp;&nbsp;Directory-scan trigger folders: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup / Versioned / Overwrite / Manual Export</span><br>&nbsp;&nbsp;If you pick another folder, such as a specific version folder, the restore list is built by direct file matching instead of full grouped directory scan.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">2. Manual Export</span><br>&nbsp;&nbsp;Manual Export is now <span style="color: var(--theme-warning-color); font-weight: 700;">local only</span>; Cloud 1 / Cloud 2 no longer scan it.<br>&nbsp;&nbsp;Current Changes exports are direct files under <span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export/Current Changes/</span>.<br>&nbsp;&nbsp;Backup History single-entry exports and Backup History ZIP exports are both under <span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export/Backup_History/</span>.<br>&nbsp;&nbsp;Extracted folders with <span style="color: var(--theme-warning-color); font-weight: 700;">backup-history-log*.md</span> are still supported locally.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">3. File compatibility</span><br>&nbsp;&nbsp;File mode accepts snapshots from <span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml bookmark-format HTML</span> and <span style="color: var(--theme-warning-color); font-weight: 700;">Chrome Bookmark API style .json bookmark trees</span>.<br>&nbsp;&nbsp;Versioned restore metadata comes from <span style="color: var(--theme-warning-color); font-weight: 700;">Versioned/backup-history-log.md</span> and local archived files <span style="color: var(--theme-warning-color); font-weight: 700;">backup-history-log_from_*_to_*.md</span>.<br>&nbsp;&nbsp;Overwrite does not generate a backup-history log; the extension only reads the current overwrite snapshot in <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite/</span>. For Cloud 2 (GitHub), older overwrite versions should be checked in repo commit history.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">4. Restore routing</span><br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Snapshot</span> uses <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite Restore</span>.<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Changes</span> and <span style="color: var(--theme-warning-color); font-weight: 700;">Current Changes</span> use <span style="color: var(--theme-warning-color); font-weight: 700;">Import Merge</span> only.<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Backup History ZIP</span> is supported only via <span style="color: var(--theme-warning-color); font-weight: 700;">Local Restore -> Select file</span> (single file).</div><div style="margin-top: 8px; font-size: 10px; color: var(--theme-info-color, #4FC3F7); line-height: 1.55; padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;"><span style="font-weight: 700;">1.</span> Folder restore reads the index first, so the first pass is lighter and less likely to stutter.<br><span style="font-weight: 700;">2.</span> If a manual-export ZIP exceeds <span style="font-weight: 700;">100MB</span>, its filename adds a restore hint; above <span style="font-weight: 700;">500MB</span>, the hint becomes stronger. If you want to restore it later, extract it to a folder first.</div>'
-                    : '<div style="margin-bottom: 8px;"><span style="font-weight: 700;">1. 文件夹模式</span><br>&nbsp;&nbsp;推荐优先选择 <span style="color: var(--theme-warning-color); font-weight: 700;">书签备份</span>，或英文精确名称 <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>&nbsp;&nbsp;会触发目录扫描的文件夹：<span style="color: var(--theme-warning-color); font-weight: 700;">书签备份 / 版本化 / 覆盖 / 手动导出</span><br>&nbsp;&nbsp;若选择其他文件夹，例如某个具体版本目录，则按文件直接匹配并展示恢复列表，不走完整分组目录扫描。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">2. 手动导出</span><br>&nbsp;&nbsp;手动导出现在为<span style="color: var(--theme-warning-color); font-weight: 700;">本地专有</span>；云端1 / 云端2不再扫描这类导出包。<br>&nbsp;&nbsp;当前变化导出是直接文件，位于 <span style="color: var(--theme-warning-color); font-weight: 700;">手动导出/当前变化/</span>。<br>&nbsp;&nbsp;备份历史单条导出与备份历史 ZIP 导出都位于 <span style="color: var(--theme-warning-color); font-weight: 700;">手动导出/备份历史/</span>。<br>&nbsp;&nbsp;若你先解压，只要内部仍带有 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史log*.md</span>，本地恢复也仍能识别。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">3. 文件兼容</span><br>&nbsp;&nbsp;文件模式支持快照兼容：<span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml 书签格式 HTML</span>，以及 <span style="color: var(--theme-warning-color); font-weight: 700;">Chrome Bookmark API 风格的 .json 书签树</span>。<br>&nbsp;&nbsp;多版本恢复元数据来自 <span style="color: var(--theme-warning-color); font-weight: 700;">版本化/备份历史log.md</span>，并兼容本地归档文件 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史log_*开始_*截止.md</span>。<br>&nbsp;&nbsp;覆盖策略不生成备份历史 log；扩展内只读取 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖/</span> 目录里的当前覆盖快照。若使用云端2（GitHub），旧覆盖版本请到仓库提交历史里查看。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">4. 恢复路由</span><br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 快照</span> 使用 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖恢复</span>。<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 变化</span> 与 <span style="color: var(--theme-warning-color); font-weight: 700;">当前变化</span> 仅允许 <span style="color: var(--theme-warning-color); font-weight: 700;">导入合并</span>。<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 备份历史 ZIP</span> 仅支持通过 <span style="color: var(--theme-warning-color); font-weight: 700;">本地恢复 -> 选择文件</span>（单文件）导入。</div><div style="margin-top: 8px; font-size: 10px; color: var(--theme-info-color, #4FC3F7); line-height: 1.55; padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;"><span style="font-weight: 700;">1.</span> 文件夹恢复会先读索引，首轮更轻量，也更不容易卡顿。<br><span style="font-weight: 700;">2.</span> 手动导出的 ZIP 超过 <span style="font-weight: 700;">100MB</span> 时，文件名会追加恢复提示；超过 <span style="font-weight: 700;">500MB</span> 时提示会更强。如果后续要恢复，建议先解压为文件夹再恢复。</div>'}
+                    ? '<div style="margin-bottom: 8px;"><span style="font-weight: 700;">1. Folder mode</span><br>&nbsp;&nbsp;Recommended root: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>&nbsp;&nbsp;Directory-scan trigger folders: <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup / Versioned / Overwrite / Manual Export</span><br>&nbsp;&nbsp;If you pick another folder, such as a specific version folder, the restore list is built by direct file matching instead of full grouped directory scan.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">2. Manual Export</span><br>&nbsp;&nbsp;Manual Export is now <span style="color: var(--theme-warning-color); font-weight: 700;">local only</span>; Cloud 1 / Cloud 2 no longer scan it.<br>&nbsp;&nbsp;Current Changes exports are direct files under <span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export/Current Changes/</span>.<br>&nbsp;&nbsp;Backup History single-entry exports and Backup History ZIP exports are both under <span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export/Backup_History/</span>.<br>&nbsp;&nbsp;Extracted folders with <span style="color: var(--theme-warning-color); font-weight: 700;">backup-history-log*.md</span> are still supported locally.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">3. File import</span><br>&nbsp;&nbsp;File mode accepts <span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml bookmark-format HTML</span> and <span style="color: var(--theme-warning-color); font-weight: 700;">Chrome Bookmark API style .json bookmark trees</span>.<br>&nbsp;&nbsp;Standard third-party bookmark HTML has no <span style="color: var(--theme-warning-color); font-weight: 700;">folderType</span> source-root identity. It is therefore handled as <span style="color: var(--theme-warning-color); font-weight: 700;">Import Merge</span>, which keeps current bookmarks.<br>&nbsp;&nbsp;Project JSON and enhanced HTML snapshots that carry root identity metadata can continue to use <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite Restore</span>.</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">4. Restore routing</span><br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Snapshot</span> uses <span style="color: var(--theme-warning-color); font-weight: 700;">Overwrite Restore</span>.<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Changes</span> and <span style="color: var(--theme-warning-color); font-weight: 700;">Current Changes</span> use <span style="color: var(--theme-warning-color); font-weight: 700;">Import Merge</span> only.<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">Manual Export -> Backup History ZIP</span> is supported only via <span style="color: var(--theme-warning-color); font-weight: 700;">Local Restore -> Select file</span> (single file).</div><div style="margin-top: 8px; font-size: 10px; color: var(--theme-info-color, #4FC3F7); line-height: 1.55; padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;"><span style="font-weight: 700;">1.</span> Folder restore reads the index first, so the first pass is lighter and less likely to stutter.<br><span style="font-weight: 700;">2.</span> If a manual-export ZIP exceeds <span style="font-weight: 700;">100MB</span>, its filename adds a restore hint; above <span style="font-weight: 700;">500MB</span>, the hint becomes stronger. If you want to restore it later, extract it to a folder first.</div>'
+                    : '<div style="margin-bottom: 8px;"><span style="font-weight: 700;">1. 文件夹模式</span><br>&nbsp;&nbsp;推荐优先选择 <span style="color: var(--theme-warning-color); font-weight: 700;">书签备份</span>，或英文精确名称 <span style="color: var(--theme-warning-color); font-weight: 700;">Bookmark Backup</span><br>&nbsp;&nbsp;会触发目录扫描的文件夹：<span style="color: var(--theme-warning-color); font-weight: 700;">书签备份 / 版本化 / 覆盖 / 手动导出</span><br>&nbsp;&nbsp;若选择其他文件夹，例如某个具体版本目录，则按文件直接匹配并展示恢复列表，不走完整分组目录扫描。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">2. 手动导出</span><br>&nbsp;&nbsp;手动导出现在为<span style="color: var(--theme-warning-color); font-weight: 700;">本地专有</span>；云端1 / 云端2不再扫描这类导出包。<br>&nbsp;&nbsp;当前变化导出是直接文件，位于 <span style="color: var(--theme-warning-color); font-weight: 700;">手动导出/当前变化/</span>。<br>&nbsp;&nbsp;备份历史单条导出与备份历史 ZIP 导出都位于 <span style="color: var(--theme-warning-color); font-weight: 700;">手动导出/备份历史/</span>。<br>&nbsp;&nbsp;若你先解压，只要内部仍带有 <span style="color: var(--theme-warning-color); font-weight: 700;">备份历史log*.md</span>，本地恢复也仍能识别。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">3. 文件导入</span><br>&nbsp;&nbsp;文件模式支持 <span style="color: var(--theme-warning-color); font-weight: 700;">.html / .htm / .xhtml 书签格式 HTML</span>，以及 <span style="color: var(--theme-warning-color); font-weight: 700;">Chrome Bookmark API 风格的 .json 书签树</span>。<br>&nbsp;&nbsp;第三方标准书签 HTML 不带 <span style="color: var(--theme-warning-color); font-weight: 700;">folderType</span> 源根身份，无法安全识别其顶层目录对应的浏览器根，因此会按 <span style="color: var(--theme-warning-color); font-weight: 700;">导入合并</span> 处理并保留当前书签。<br>&nbsp;&nbsp;项目 JSON 与带根身份元数据的增强 HTML 快照仍可使用 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖恢复</span>。</div><div style="margin-bottom: 8px;"><span style="font-weight: 700;">4. 恢复路由</span><br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 快照</span> 使用 <span style="color: var(--theme-warning-color); font-weight: 700;">覆盖恢复</span>。<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 变化</span> 与 <span style="color: var(--theme-warning-color); font-weight: 700;">当前变化</span> 仅允许 <span style="color: var(--theme-warning-color); font-weight: 700;">导入合并</span>。<br>&nbsp;&nbsp;<span style="color: var(--theme-warning-color); font-weight: 700;">手动导出 -> 备份历史 ZIP</span> 仅支持通过 <span style="color: var(--theme-warning-color); font-weight: 700;">本地恢复 -> 选择文件</span>（单文件）导入。</div><div style="margin-top: 8px; font-size: 10px; color: var(--theme-info-color, #4FC3F7); line-height: 1.55; padding: 6px 8px; background: rgba(79, 195, 247, 0.08); border-radius: 4px;"><span style="font-weight: 700;">1.</span> 文件夹恢复会先读索引，首轮更轻量，也更不容易卡顿。<br><span style="font-weight: 700;">2.</span> 手动导出的 ZIP 超过 <span style="font-weight: 700;">100MB</span> 时，文件名会追加恢复提示；超过 <span style="font-weight: 700;">500MB</span> 时提示会更强。如果后续要恢复，建议先解压为文件夹再恢复。</div>'}
                         </div>
                         <div style="flex:1.15 1 0;min-height:0;display:flex;flex-direction:column;gap:8px;">
                             <div style="font-size:10px;color:var(--theme-text-secondary);line-height:1.5;padding:6px 8px;background:var(--theme-bg-tertiary, rgba(255,255,255,0.04));border-radius:6px;">

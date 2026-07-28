@@ -353,6 +353,8 @@ let currentExportHistoryTreeContainer = null;
 let currentRestoreRecord = null;
 let restoreGeneralPreflight = null;
 let restoreImportTarget = null; // { id, title, path }
+let restoreAutoImportTargetTitle = '';
+let restoreAutoImportTargetTitlePromise = null;
 const restoreImportTargetTreeCache = new Map(); // folderId -> { folders, stats }
 const restoreImportTargetTreeLoading = new Map(); // folderId -> Promise
 const restoreImportTargetPathCache = new Map(); // folderId -> fullPath
@@ -11083,7 +11085,46 @@ function getRestoreImportTargetPathParts() {
         : [];
 
     if (parts.length > 0) return parts;
-    return currentLang === 'zh_CN' ? ['自动（书签根目录）'] : ['Auto (Bookmark Root)'];
+    return [restoreAutoImportTargetTitle || (currentLang === 'zh_CN' ? '自动（书签根目录）' : 'Auto (Bookmark Root)')];
+}
+
+async function resolveRestoreAutoImportTargetTitle() {
+    if (restoreAutoImportTargetTitle) return restoreAutoImportTargetTitle;
+    if (restoreAutoImportTargetTitlePromise) return await restoreAutoImportTargetTitlePromise;
+
+    restoreAutoImportTargetTitlePromise = (async () => {
+        let roots = [];
+        try {
+            roots = await browserAPI.bookmarks.getChildren('0');
+        } catch (_) {
+            return '';
+        }
+        const normalizeFolderType = (node) => String(node?.folderType || node?.folder_type || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[_\s]+/g, '-')
+            .replace('bookmark-bar', 'bookmarks-bar')
+            .replace('other-bookmarks', 'other')
+            .replace('mobile-bookmarks', 'mobile');
+        const standardRoots = (Array.isArray(roots) ? roots : []).filter((node) => {
+            const folderType = normalizeFolderType(node);
+            return ['bookmarks-bar', 'other', 'mobile'].includes(folderType)
+                || ['1', '2', '3', 'mobile______'].includes(String(node?.id || ''));
+        });
+        const target = standardRoots.find((node) => normalizeFolderType(node) === 'other' || String(node?.id || '') === '2')
+            || standardRoots.find((node) => normalizeFolderType(node) === 'bookmarks-bar' || String(node?.id || '') === '1')
+            || standardRoots[0]
+            || (Array.isArray(roots) ? roots[0] : null)
+            || null;
+        restoreAutoImportTargetTitle = String(target?.title || '').trim();
+        return restoreAutoImportTargetTitle;
+    })();
+
+    try {
+        return await restoreAutoImportTargetTitlePromise;
+    } finally {
+        restoreAutoImportTargetTitlePromise = null;
+    }
 }
 
 function injectRestoreImportTargetPathIntoTree(treeInput, options = {}) {
@@ -11107,10 +11148,9 @@ function injectRestoreImportTargetPathIntoTree(treeInput, options = {}) {
         : { id: '0', title: 'root', children: [] };
 
     const nodePrefix = `__import_path_${Date.now()}_${restoreImportPreviewNodeSeed++}`;
-    const labelPrefix = currentLang === 'zh_CN' ? '导入位置' : 'Import To';
     const firstNode = {
         id: `${nodePrefix}_0`,
-        title: `${labelPrefix} / ${pathParts[0]}`,
+        title: pathParts[0],
         children: [],
         isImportPathContext: true
     };
@@ -11172,6 +11212,25 @@ async function openRestoreImportTargetModal() {
         return rawTitle || (currentLang === 'zh_CN' ? '未命名文件夹' : 'Untitled Folder');
     };
 
+    const isStandardImportTargetRoot = (node) => {
+        const rawFolderType = String(node?.folderType || node?.folder_type || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[_\s]+/g, '-');
+        const folderType = rawFolderType === 'bookmark-bar'
+            ? 'bookmarks-bar'
+            : rawFolderType === 'other-bookmarks'
+                ? 'other'
+                : rawFolderType === 'mobile-bookmarks'
+                    ? 'mobile'
+                    : rawFolderType;
+        if (['bookmarks-bar', 'other', 'mobile'].includes(folderType)) return true;
+
+        // Older Chromium APIs can omit folderType. Keep this narrow legacy
+        // fallback for the three conventional browser root IDs only.
+        return ['1', '2', '3', 'mobile______'].includes(String(node?.id || ''));
+    };
+
     const fetchBookmarkChildren = (parentId) => {
         return new Promise((resolve) => {
             try {
@@ -11205,6 +11264,7 @@ async function openRestoreImportTargetModal() {
                 .map((node, index) => ({
                     id: String(node.id),
                     title: getFolderDisplayTitle(node),
+                    folderType: String(node.folderType || node.folder_type || ''),
                     index: Number.isFinite(Number(node.index)) ? Number(node.index) : index
                 }));
 
@@ -11384,7 +11444,9 @@ async function openRestoreImportTargetModal() {
     const renderRootTree = async () => {
         list.innerHTML = '';
         const rootEntry = await ensureChildrenLoaded('0');
-        const roots = Array.isArray(rootEntry?.folders) ? rootEntry.folders : [];
+        const roots = Array.isArray(rootEntry?.folders)
+            ? rootEntry.folders.filter(isStandardImportTargetRoot)
+            : [];
 
         if (!roots.length) {
             setListMessage(currentLang === 'zh_CN' ? '未找到可用的书签文件夹。' : 'No folders found in bookmarks.', 'error');
@@ -11528,6 +11590,39 @@ function summarizeMergeImportPayload(treeToImport) {
         summary.added += (stats.bookmarks + stats.folders);
     });
     return summary;
+}
+
+function getMergeImportPackageCounts(treeToImport) {
+    const counts = { bookmarks: 0, folders: 0 };
+    const topNodes = collectMergeImportTopNodes(treeToImport);
+    topNodes.forEach((node) => {
+        const stats = calculateNodeStats(node);
+        counts.bookmarks += Number(stats.bookmarks || 0);
+        counts.folders += Number(stats.folders || 0);
+    });
+    return counts;
+}
+
+function getBookmarkTreeContentCountsForMerge(snapshotTree) {
+    const folderCount = countBookmarkTreeContentFolders(snapshotTree);
+    const contentCount = countBookmarkTreeContentNodes(snapshotTree);
+    return {
+        bookmarks: Math.max(0, contentCount - folderCount),
+        folders: folderCount
+    };
+}
+
+function renderMergeImportSummaryHtml(treeToImport, currentTree, isZh = currentLang === 'zh_CN') {
+    const importedCounts = getMergeImportPackageCounts(treeToImport);
+    const browserCounts = getBookmarkTreeContentCountsForMerge(currentTree);
+    const afterLabel = isZh ? '添加后：' : 'After:';
+    const bookmarkLabel = isZh ? '书签' : 'BKM';
+    const folderLabel = isZh ? '文件夹' : 'FLD';
+    return `
+        <span style="font-size: 12px; color: var(--text-primary);">${afterLabel}</span>
+        <span style="color: var(--text-primary);"><span class="stat-label">${bookmarkLabel}</span> <strong>${browserCounts.bookmarks}</strong> <span class="stat-color added">+${importedCounts.bookmarks}</span></span>
+        <span style="margin-left:8px; color: var(--text-primary);"><span class="stat-label">${folderLabel}</span> <strong>${browserCounts.folders}</strong> <span class="stat-color added">+${importedCounts.folders}</span></span>
+    `;
 }
 
 function normalizeChangeMapForOverwriteAddDeleteOnly(changeMap) {
@@ -13072,10 +13167,7 @@ async function buildRestoreDiffSummary(record, strategy = 'overwrite', options =
     if (resolvedStrategy === 'patch' || resolvedStrategy === 'overwrite') {
         html += renderCommitStatsInline(buildPreviewCommitStatsFromDiffSummary(precomputedDiffSummary));
     } else if (resolvedStrategy === 'merge') {
-        html += `
-        <span>${isZh ? '新增' : 'Added'}: <strong>${added}</strong></span>
-        <span style="margin-left:8px;">${isZh ? '删除' : 'Deleted'}: <strong>${deleted}</strong></span>
-    `;
+        html = renderMergeImportSummaryHtml(targetTree, currentTree, isZh);
     }
     return {
         html,
@@ -13157,6 +13249,7 @@ async function switchToRestorePreview(currentTree, targetTree, changeMap, option
             : (requestedStrategy === 'overwrite'
                 ? 'overwrite'
                 : (requestedStrategy === 'merge' ? 'merge' : 'overwrite')));
+    if (normalizedStrategy === 'merge') await resolveRestoreAutoImportTargetTitle();
     let selectedMergeMode = normalizedStrategy === 'merge' ? getSelectedRestoreMergeViewMode() : null;
     let normalizedSelectedMergeMode = normalizeRestoreMergeViewMode(selectedMergeMode) || 'simple';
 
@@ -13199,9 +13292,9 @@ async function switchToRestorePreview(currentTree, targetTree, changeMap, option
             };
         }
         return {
-            modalTitle: isZh ? '导入合并预览（整个版本）' : 'Import Merge Preview (Whole Version)',
+            modalTitle: isZh ? '导入合并预览' : 'Import Merge Preview',
             loadingText: isZh ? '正在生成导入合并预览（整个版本）...' : 'Generating import merge preview (whole version)...',
-            treeTitle: isZh ? '导入合并预览（整个版本）' : 'Import Merge Preview (Whole Version)'
+            treeTitle: isZh ? '导入合并预览' : 'Import Merge Preview'
         };
     };
 
@@ -13316,7 +13409,8 @@ async function switchToRestorePreview(currentTree, targetTree, changeMap, option
                 lazyKey: previewRecordKey,
                 customTitle: previewMeta.treeTitle,
                 importResultView: true,
-                viewMode: normalizedSelectedMergeMode
+                viewMode: normalizedSelectedMergeMode,
+                hideSectionTitle: true
             }, currentLang);
         } else {
             const finalTreeToRender = normalizedStrategy === 'merge'
@@ -13331,7 +13425,8 @@ async function switchToRestorePreview(currentTree, targetTree, changeMap, option
                 lazyDepth: 1,
                 customTitle: previewMeta.treeTitle,
                 hideModeLabel: true,
-                collectionView: isCollectionPreview
+                collectionView: isCollectionPreview,
+                hideSectionTitle: normalizedStrategy === 'merge'
             });
         }
 
@@ -14382,23 +14477,29 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
 
         let successMsg = isZh ? '恢复成功！' : 'Restore successful!';
         const preflightSummary = summarizeChangeMap(preflightInfo && preflightInfo.changeMap ? preflightInfo.changeMap : new Map());
+        const skippedRootCount = Number(result?.skippedRootCount || 0);
+        const skippedRootSuffix = skippedRootCount > 0
+            ? (isZh
+                ? `，已跳过 ${skippedRootCount} 个受保护或未知根`
+                : `, skipped ${skippedRootCount} protected/unknown root(s)`)
+            : '';
 
         if (appliedStrategy === 'overwrite') {
             const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : Number(preflightSummary.added || 0);
             const deleted = Number.isFinite(Number(result?.deleted)) ? Number(result.deleted) : Number(preflightSummary.deleted || 0);
             successMsg = (strategy === 'auto')
                 ? (isZh
-                    ? `自动恢复完成！当前采用覆盖恢复。新增 ${created}、删除 ${deleted}`
-                    : `Auto restore completed! Using overwrite restore. Added ${created}, removed ${deleted}`)
+                    ? `自动恢复完成！当前采用覆盖恢复。新增 ${created}、删除 ${deleted}${skippedRootSuffix}`
+                    : `Auto restore completed! Using overwrite restore. Added ${created}, removed ${deleted}${skippedRootSuffix}`)
                 : (isZh
-                    ? `覆盖恢复成功！创建 ${created} 个节点，删除 ${deleted} 个节点`
-                    : `Overwrite restore successful! Created ${created} nodes, removed ${deleted} nodes`);
+                    ? `覆盖恢复成功！创建 ${created} 个节点，删除 ${deleted} 个节点${skippedRootSuffix}`
+                    : `Overwrite restore successful! Created ${created} nodes, removed ${deleted} nodes${skippedRootSuffix}`);
         } else if (appliedStrategy === 'merge') {
             const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : 0;
             const folderTitle = result?.folderTitle ? String(result.folderTitle) : '';
             successMsg = isZh
-                ? `导入合并完成！已导入 ${created} 个节点${folderTitle ? `（${folderTitle}）` : ''}`
-                : `Import merge completed! Imported ${created} nodes${folderTitle ? ` (${folderTitle})` : ''}`;
+                ? `导入合并完成！已导入 ${created} 个节点${folderTitle ? `（${folderTitle}）` : ''}${skippedRootSuffix}`
+                : `Import merge completed! Imported ${created} nodes${folderTitle ? ` (${folderTitle})` : ''}${skippedRootSuffix}`;
         } else if (appliedStrategy === 'patch') {
             const created = Number.isFinite(Number(result?.created)) ? Number(result.created) : 0;
             const removed = Number.isFinite(Number(result?.removed)) ? Number(result.removed) : 0;
@@ -14406,11 +14507,11 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
             const updated = Number.isFinite(Number(result?.updated)) ? Number(result.updated) : 0;
             successMsg = (strategy === 'auto')
                 ? (isZh
-                    ? `自动恢复完成！当前采用补丁恢复。新增 ${created}、删除 ${removed}、移动 ${moved}、修改 ${updated}`
-                    : `Auto restore completed! Using patch restore. Added ${created}, removed ${removed}, moved ${moved}, updated ${updated}`)
+                    ? `自动恢复完成！当前采用补丁恢复。新增 ${created}、删除 ${removed}、移动 ${moved}、修改 ${updated}${skippedRootSuffix}`
+                    : `Auto restore completed! Using patch restore. Added ${created}, removed ${removed}, moved ${moved}, updated ${updated}${skippedRootSuffix}`)
                 : (isZh
-                    ? `补丁恢复完成！新增 ${created}、删除 ${removed}、移动 ${moved}、修改 ${updated}`
-                    : `Patch restore completed! Added ${created}, removed ${removed}, moved ${moved}, updated ${updated}`);
+                    ? `补丁恢复完成！新增 ${created}、删除 ${removed}、移动 ${moved}、修改 ${updated}${skippedRootSuffix}`
+                    : `Patch restore completed! Added ${created}, removed ${removed}, moved ${moved}, updated ${updated}${skippedRootSuffix}`);
         }
 
         if (patchFallbackUsed) {
@@ -14481,138 +14582,6 @@ async function executeRestore(strategy, confirmBtn, cancelBtn) {
         if (cancelBtn) cancelBtn.disabled = false;
         lockRestoreStrategy(false);
     }
-}
-
-async function executeOverwriteRestore(bookmarkTree) {
-    const isZh = currentLang === 'zh_CN';
-
-    if (!hasBookmarkTreeContent(bookmarkTree)) {
-        const currentTreeForGuard = await browserAPI.bookmarks.getTree();
-        if (hasBookmarkTreeContent(currentTreeForGuard)) {
-            throw new Error(isZh
-                ? '预演显示目标书签树为空，覆盖恢复会清空现有内容，已阻止执行。'
-                : 'Preflight shows the target bookmark tree is empty. Overwrite restore would clear current content, so execution is blocked.');
-        }
-
-        setRestoreProgress(100, isZh ? '预演结果：当前已与目标空书签树一致，无需覆盖恢复。' : 'Preflight result: current data already matches the empty target bookmark tree.');
-        return { success: true, created: 0, deleted: 0, skipped: true };
-    }
-
-    setRestoreProgress(10, isZh ? '正在清空当前书签...' : 'Clearing current bookmarks...');
-
-    const [root] = await browserAPI.bookmarks.getTree();
-
-    let bookmarkBar = root.children?.find(c => c.id === '1');
-    let otherBookmarks = root.children?.find(c => c.id === '2');
-
-    if (!bookmarkBar) {
-        bookmarkBar = root.children?.find(c =>
-            c.title === '书签栏' ||
-            c.title === 'Bookmarks Bar' ||
-            c.title === 'Bookmarks bar' ||
-            c.title === 'Favorites Bar' ||
-            c.title === 'Favorites bar' ||
-            c.title === '收藏夹栏' ||
-            c.title === 'toolbar_____'
-        );
-    }
-    if (!otherBookmarks) {
-        otherBookmarks = root.children?.find(c =>
-            c.title === '其他书签' ||
-            c.title === 'Other Bookmarks' ||
-            c.title === 'Other bookmarks' ||
-            c.title === 'Other Favorites' ||
-            c.title === 'Other favorites' ||
-            c.title === 'Other favourites' ||
-            c.title === '其他收藏夹' ||
-            c.title === 'menu________' ||
-            c.title === 'unfiled_____'
-        );
-    }
-
-    if (!bookmarkBar && root.children?.length > 0) {
-        bookmarkBar = root.children[0];
-    }
-    if (!otherBookmarks && root.children?.length > 1) {
-        otherBookmarks = root.children[1];
-    }
-
-    let deletedCount = 0;
-    for (const container of [bookmarkBar, otherBookmarks]) {
-        if (container && container.children) {
-            for (const child of [...container.children]) {
-                try {
-                    await browserAPI.bookmarks.removeTree(child.id);
-                    deletedCount++;
-                } catch (e) {
-                    
-                }
-            }
-        }
-    }
-
-    setRestoreProgress(40, isZh ? `已清空 ${deletedCount} 个节点，正在重建...` : `Cleared ${deletedCount} nodes, rebuilding...`);
-
-    let createdCount = 0;
-    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
-
-    const createNodeRecursive = async (node, parentId) => {
-        if (!node) return 0;
-        if (node.url) {
-            await browserAPI.bookmarks.create({
-                parentId,
-                title: node.title || '',
-                url: node.url,
-                index: node.index
-            });
-            return 1;
-        }
-        const folder = await browserAPI.bookmarks.create({
-            parentId,
-            title: node.title || '',
-            index: node.index
-        });
-        let count = 1;
-        if (node.children && node.children.length) {
-            for (const child of node.children) {
-                count += await createNodeRecursive(child, folder.id);
-            }
-        }
-        return count;
-    };
-
-    for (const node of nodes) {
-        if (node.children) {
-            for (const topFolder of node.children) {
-                const isBookmarkBarFolder = topFolder.id === '1' ||
-                    topFolder.title === '书签栏' ||
-                    topFolder.title === 'Bookmarks Bar' ||
-                    topFolder.title === 'Bookmarks bar' ||
-                    topFolder.title === 'toolbar_____';
-
-                const targetContainer = isBookmarkBarFolder ? bookmarkBar : otherBookmarks;
-                if (!targetContainer) {
-                    
-                    continue;
-                }
-                const targetId = targetContainer.id;
-
-                for (const child of topFolder.children || []) {
-                    try {
-                        createdCount += await createNodeRecursive(child, targetId);
-                        setRestoreProgress(40 + Math.min(45, (createdCount / 100) * 45),
-                            isZh ? `已创建 ${createdCount} 个节点...` : `Created ${createdCount} nodes...`);
-                    } catch (e) {
-                        
-                    }
-                }
-            }
-        }
-    }
-
-    await updateLastBookmarkDataSnapshot(null, currentRestoreRecord ? currentRestoreRecord.time : null);
-
-    return { success: true, created: createdCount, deleted: deletedCount };
 }
 
 const HISTORY_RESTORE_PAYLOAD_UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
@@ -20997,6 +20966,12 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
             : getChangeMeta(resolveNodeChangeType(node));
         const extraNodeClass = isImportResultRootNode ? 'import-result-root-node' : '';
         const treeItemClass = `${changeClass}${extraNodeClass ? ` ${extraNodeClass}` : ''}`.trim();
+        const importResultLabelStyle = isImportResultRootNode
+            ? ' style="color:#28a745 !important;-webkit-text-fill-color:#28a745 !important;font-weight:600 !important;"'
+            : '';
+        const importResultIconStyle = isImportResultRootNode
+            ? ' style="color:#28a745 !important;"'
+            : '';
         const canLazyNode = lazyEnabled && !!nodeId;
         let shouldExpand = level < maxDepth;
         if (canLazyNode && lazyDepth != null && level + 1 > lazyDepth) {
@@ -21018,8 +20993,8 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
                 <div class="tree-node">
                     <div class="tree-item ${treeItemClass}" data-node-id="${escapeHtml(nodeId)}" data-node-type="folder" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
                         <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
-                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
-                        <span class="tree-label">${title}</span>
+                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"${importResultIconStyle}></i>
+                        <span class="tree-label"${importResultLabelStyle}>${title}</span>
                         <span class="change-badges">${statusIcon}</span>
                     </div>
                     <div class="tree-children ${shouldExpand ? 'expanded' : ''}" data-children-loaded="${shouldLazyRenderChildren ? 'false' : 'true'}" data-parent-id="${escapeHtml(nodeId)}" data-child-level="${level + 1}">
@@ -21064,14 +21039,15 @@ function generateImportMergePreviewTreeHtml(treeRoot, options = {}, lang = 'zh_C
     });
 
     const customTitle = options.customTitle ? String(options.customTitle) : '';
+    const hideSectionTitle = options.hideSectionTitle === true;
     const lazyAttr = lazyEnabled ? ` data-lazy-key="${escapeHtml(lazyKey)}"` : '';
 
     return `
         <div class="detail-section">
-            <div class="detail-section-title detail-section-title-with-legend">
+            ${hideSectionTitle ? '' : `<div class="detail-section-title detail-section-title-with-legend">
                 <span class="detail-title-left">${safeTitle(customTitle || (isZh ? '导入合并预览' : 'Import Merge Preview'))}</span>
                 <span class="detail-title-legend">${legend}</span>
-            </div>
+            </div>`}
             <div class="history-tree-container bookmark-tree"${lazyAttr}>
                 ${treeContent || `<div class="detail-empty">${isZh ? '无变化' : 'No changes'}</div>`}
             </div>
@@ -21283,6 +21259,7 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
         const idStr = node.id != null ? String(node.id) : '';
         const nodeChangeType = typeof node.changeType === 'string' ? String(node.changeType) : '';
         const isCollectionGroupNode = node.collectionGroup === true;
+        const isImportResultRootNode = node.isImportResultRoot === true;
         const selfChanged = !!((changeMap && changeMap.has(node.id)) || nodeChangeType);
         const hasDescendantChanged = !!(isFolder && idStr && hintSet && hintSet.has(idStr));
 
@@ -21365,14 +21342,28 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
             statusIcon = pathBadges;
         }
 
+        if (isImportResultRootNode) {
+            changeClass = 'tree-change-added';
+            statusIcon = '<span class="change-badge added"><span class="badge-symbol">+</span></span>';
+        }
+
         const titleText = node.title || (isZh ? '(无标题)' : '(Untitled)');
         const title = isCollectionGroupNode
             ? renderCollectionGroupTitleHtml(titleText)
             : escapeHtml(titleText);
         const hasChildren = isFolder && node.children && node.children.length > 0;
         const nextUnderDeletedAncestor = underDeletedAncestor || isDeletedFolder;
-        const extraNodeClass = isCollectionGroupNode ? 'collection-group-node' : '';
+        const extraNodeClass = [
+            isCollectionGroupNode ? 'collection-group-node' : '',
+            isImportResultRootNode ? 'import-result-root-node' : ''
+        ].filter(Boolean).join(' ');
         const labelClass = isCollectionGroupNode ? 'tree-label collection-title-label' : 'tree-label';
+        const importResultLabelStyle = isImportResultRootNode
+            ? ' style="color:#28a745 !important;-webkit-text-fill-color:#28a745 !important;font-weight:600 !important;"'
+            : '';
+        const importResultIconStyle = isImportResultRootNode
+            ? ' style="color:#28a745 !important;"'
+            : '';
         const sourceNodeId = node && node.sourceId != null ? String(node.sourceId) : idStr;
         const sourceNodeAttr = sourceNodeId ? ` data-source-node-id="${escapeHtml(sourceNodeId)}"` : '';
 
@@ -21415,10 +21406,10 @@ function generateHistoryTreeHtml(bookmarkTree, changeMap, mode, recordOrOptions)
 
             return `
                 <div class="tree-node">
-                    <div class="tree-item ${changeClass} ${extraNodeClass}" data-node-id="${node.id}"${sourceNodeAttr} data-node-type="folder" data-node-level="${level}">
+                    <div class="tree-item ${changeClass} ${extraNodeClass}" data-node-id="${node.id}"${sourceNodeAttr} data-node-type="folder" data-node-level="${level}" data-import-result-root="${isImportResultRootNode ? 'true' : 'false'}">
                         <span class="tree-toggle ${shouldExpand ? 'expanded' : ''}"><i class="fas fa-chevron-right"></i></span>
-                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"></i>
-                        <span class="${labelClass}">${title}</span>
+                        <i class="tree-icon fas fa-folder${shouldExpand ? '-open' : ''}"${importResultIconStyle}></i>
+                        <span class="${labelClass}"${importResultLabelStyle}>${title}</span>
                         <span class="change-badges">${statusIcon}</span>
                     </div>
                     <div class="tree-children ${shouldExpand ? 'expanded' : ''}" data-children-loaded="${shouldLazyRenderChildren ? 'false' : 'true'}" data-parent-id="${escapeHtml(String(node.id))}" data-child-level="${level + 1}" data-next-force-include="${nextForceInclude ? 'true' : 'false'}">

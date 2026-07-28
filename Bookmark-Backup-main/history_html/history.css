@@ -2568,6 +2568,7 @@ option {
 #restoreModal #restorePreviewContent .tree-item[data-import-result-root="true"] > .tree-label,
 #restoreModal #restorePreviewContent .tree-item[data-import-result-root="true"] > a.tree-label {
     color: #28a745 !important;
+    -webkit-text-fill-color: #28a745 !important;
     font-weight: 600 !important;
 }
 

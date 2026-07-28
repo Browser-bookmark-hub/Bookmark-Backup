@@ -1063,6 +1063,16 @@ function normalizeBookmarkFolderType(value) {
     return text || '';
 }
 
+function getRestoreNodeFolderType(node) {
+    const raw = String(node?.folderType || node?.folder_type || '').trim().toLowerCase();
+    if (!raw) return '';
+    const normalized = raw.replace(/[_\s]+/g, '-');
+    if (normalized === 'bookmark-bar') return 'bookmarks-bar';
+    if (normalized === 'other-bookmarks') return 'other';
+    if (normalized === 'mobile-bookmarks') return 'mobile';
+    return normalized;
+}
+
 function normalizeBookmarkSyncing(value) {
     if (value === true || value === 1) return true;
     if (value === false || value === 0) return false;
@@ -1081,10 +1091,53 @@ function buildRootFolderTypeSyncingKey(folderType = '', syncing = null) {
     return `folderType:${normalizedFolderType}|syncing:${normalizedSyncing ? 'true' : 'false'}`;
 }
 
+// Restore/import only own the three standard user roots. Policy, workspace and
+// unknown roots remain browser-owned or foreign data and must never be written.
+const RESTORE_ALLOWED_ROOT_FOLDER_TYPES = new Set([
+    'bookmarks-bar',
+    'other',
+    'mobile'
+]);
+const RESTORE_LEGACY_ROOT_IDS = new Set([
+    '1',
+    '2',
+    '3',
+    'toolbar_____',
+    'menu________',
+    'unfiled_____',
+    'mobile______'
+]);
+const RESTORE_LEGACY_ROOT_TITLES = new Set([
+    'toolbar',
+    'toolbar_____',
+    'bookmarks bar',
+    'bookmarks toolbar',
+    'favorites bar',
+    '书签栏',
+    '收藏夹栏',
+    'menu',
+    'menu________',
+    'other bookmarks',
+    'other favorites',
+    'other favourites',
+    '其他书签',
+    '其他收藏夹',
+    '菜单',
+    'unfiled',
+    'unfiled_____',
+    'mobile',
+    'mobile______',
+    'mobile bookmarks',
+    'mobile favorites',
+    'mobile favourites',
+    '移动书签',
+    '手机书签'
+]);
+
 function buildFullSnapshotRootDescriptor(node) {
     const descriptor = {
         title: String(node?.title || ''),
-        folderType: normalizeBookmarkFolderType(node?.folderType || '')
+        folderType: getRestoreNodeFolderType(node)
     };
     const syncing = descriptor.folderType ? normalizeBookmarkSyncing(node?.syncing) : null;
     if (syncing !== null) {
@@ -20541,6 +20594,9 @@ function getRootMatchKeys(id, title, folderType = '', syncing = null) {
         if (normalizedTitle.includes('managed bookmark') || normalizedTitle.includes('managed bookmarks')) {
             pushKey('managed');
         }
+        if (normalizedTitle.includes('workspace') || normalizedTitle.includes('工作区')) {
+            pushKey('workspace');
+        }
     }
 
     if (!keys.length) {
@@ -20568,15 +20624,106 @@ function extractFolderTypeFromRootMatchKey(value) {
     if (normalizedValue === 'menu' || normalizedValue === 'unfiled') return 'other';
     if (normalizedValue === 'mobile') return 'mobile';
     if (normalizedValue === 'managed') return 'managed';
+    if (normalizedValue === 'workspace') return 'workspace';
     return '';
 }
 
 function collectCandidateFolderTypesForRoot(node) {
     return buildOverwriteRestorePlanStringList(
-        getRootMatchKeys(node?.id, node?.title, node?.folderType, node?.syncing)
+        getRootMatchKeys(node?.id, node?.title, getRestoreNodeFolderType(node), node?.syncing)
             .map((key) => extractFolderTypeFromRootMatchKey(key))
             .filter(Boolean)
     );
+}
+
+function getRestoreRootPolicy(node) {
+    const explicitFolderType = getRestoreNodeFolderType(node);
+    const candidateFolderTypes = collectCandidateFolderTypesForRoot(node);
+    const allowedCandidates = candidateFolderTypes.filter((folderType) => (
+        RESTORE_ALLOWED_ROOT_FOLDER_TYPES.has(folderType)
+    ));
+
+    // folderType is authoritative. Never allow a title or legacy ID to turn a
+    // managed, workspace, or unknown browser root into a writable restore root.
+    if (explicitFolderType && !RESTORE_ALLOWED_ROOT_FOLDER_TYPES.has(explicitFolderType)) {
+        return {
+            allowed: false,
+            reason: explicitFolderType,
+            candidateFolderTypes
+        };
+    }
+
+    if (explicitFolderType && RESTORE_ALLOWED_ROOT_FOLDER_TYPES.has(explicitFolderType)) {
+        return {
+            allowed: true,
+            reason: explicitFolderType,
+            candidateFolderTypes
+        };
+    }
+
+    // Compatibility only for old HTML/JSON that has neither folderType nor
+    // syncing. This is exact matching, never a title substring heuristic.
+    if (hasKnownLegacyRestoreRootIdentity(node) && allowedCandidates.length > 0) {
+        return {
+            allowed: true,
+            reason: allowedCandidates[0],
+            candidateFolderTypes
+        };
+    }
+
+    return {
+        allowed: false,
+        reason: 'unknown',
+        candidateFolderTypes
+    };
+}
+
+function hasKnownLegacyRestoreRootIdentity(node) {
+    const normalizedId = String(node?.id || '').trim().toLowerCase();
+    if (RESTORE_LEGACY_ROOT_IDS.has(normalizedId)) {
+        return true;
+    }
+
+    const normalizedTitle = String(node?.title || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return RESTORE_LEGACY_ROOT_TITLES.has(normalizedTitle);
+}
+
+function isRestoreRootAllowed(node) {
+    return getRestoreRootPolicy(node).allowed === true;
+}
+
+function collectBookmarkSubtreeIds(node, targetSet) {
+    if (!node || !(targetSet instanceof Set) || node.id == null) return;
+    targetSet.add(String(node.id));
+    if (Array.isArray(node.children)) {
+        for (const child of node.children) {
+            collectBookmarkSubtreeIds(child, targetSet);
+        }
+    }
+}
+
+function filterSnapshotToAllowedRestoreRoots(snapshotTree) {
+    const cloned = cloneRestoreRecoverySerializableData(snapshotTree);
+    const roots = Array.isArray(cloned) ? cloned : [cloned];
+    const primaryRoot = roots[0];
+    if (!primaryRoot || !Array.isArray(primaryRoot.children)) {
+        return { tree: cloned, skippedRoots: [] };
+    }
+
+    const skippedRoots = [];
+    primaryRoot.children = primaryRoot.children.filter((node) => {
+        const allowed = isRestoreRootAllowed(node);
+        if (!allowed) {
+            skippedRoots.push({
+                id: node?.id != null ? String(node.id) : '',
+                title: String(node?.title || ''),
+                reason: getRestoreRootPolicy(node).reason
+            });
+        }
+        return allowed;
+    });
+
+    return { tree: cloned, skippedRoots };
 }
 
 function buildRootIdentityStats(nodes = []) {
@@ -20585,7 +20732,7 @@ function buildRootIdentityStats(nodes = []) {
     const folderTypesMissingSyncing = new Set();
 
     for (const node of Array.isArray(nodes) ? nodes : []) {
-        const folderType = normalizeBookmarkFolderType(node?.folderType || '');
+        const folderType = getRestoreNodeFolderType(node);
         if (!folderType) continue;
 
         folderTypeCounts.set(folderType, (folderTypeCounts.get(folderType) || 0) + 1);
@@ -20629,7 +20776,7 @@ function normalizeRootKey(id, title, folderType = '', syncing = null) {
 
 function setRootMatchMapEntry(targetMap, node, value) {
     if (!(targetMap instanceof Map) || !node || typeof node !== 'object') return;
-    const keys = getRootMatchKeys(node.id, node.title, node.folderType, node?.syncing);
+    const keys = getRootMatchKeys(node.id, node.title, getRestoreNodeFolderType(node), node?.syncing);
     for (const key of keys) {
         if (!targetMap.has(key)) {
             targetMap.set(key, value);
@@ -20639,7 +20786,7 @@ function setRootMatchMapEntry(targetMap, node, value) {
 
 function getRootMatchMapValue(targetMap, node) {
     if (!(targetMap instanceof Map) || !node || typeof node !== 'object') return null;
-    const keys = getRootMatchKeys(node.id, node.title, node.folderType, node?.syncing);
+    const keys = getRootMatchKeys(node.id, node.title, getRestoreNodeFolderType(node), node?.syncing);
     for (const key of keys) {
         if (targetMap.has(key)) {
             return targetMap.get(key);
@@ -24171,8 +24318,17 @@ function buildOverwriteProjectedStructureComparableSnapshot(targetSnapshot, curr
         return null;
     }
 
+    const assignedTargetIds = new Set(
+        (Array.isArray(overwritePlan.assignments) ? overwritePlan.assignments : [])
+            .map((assignment) => String(assignment?.targetContainer?.id || '').trim())
+            .filter(Boolean)
+    );
     const clearTargets = Array.isArray(containerState?.children)
-        ? containerState.children.filter((node) => node?.id != null && isWritableRootContainer(node))
+        ? containerState.children.filter((node) => (
+            node?.id != null
+            && assignedTargetIds.has(String(node.id))
+            && isWritableRootContainer(node)
+        ))
         : [];
     for (const targetContainer of clearTargets) {
         const targetNode = findBookmarkNodeByIdInSnapshot(projectedTarget, String(targetContainer.id || '').trim());
@@ -24412,8 +24568,12 @@ function mapRevertRootIds(currentTree, snapshotTree) {
         map.set(String(targetRoot.id), String(currentRoot.id));
     }
 
-    const currentChildren = Array.isArray(currentRoot.children) ? currentRoot.children : [];
-    const targetChildren = Array.isArray(targetRoot.children) ? targetRoot.children : [];
+    const currentChildren = Array.isArray(currentRoot.children)
+        ? currentRoot.children.filter(isRestoreRootAllowed)
+        : [];
+    const targetChildren = Array.isArray(targetRoot.children)
+        ? targetRoot.children.filter(isRestoreRootAllowed)
+        : [];
 
     const currentByKey = new Map();
     for (const node of currentChildren) {
@@ -24469,16 +24629,25 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
     assertBookmarkTreeContent(snapshotTree, preferredLang, 'revert');
 
     const initialCurrentTree = await browserAPI.bookmarks.getTree();
-    const targetMeta = buildPatchTreeMeta(snapshotTree);
+    const filteredSnapshot = filterSnapshotToAllowedRestoreRoots(snapshotTree);
+    const targetMeta = buildPatchTreeMeta(filteredSnapshot.tree);
     let currentMeta = buildPatchTreeMeta(initialCurrentTree);
 
-    const idRemap = mapRevertRootIds(initialCurrentTree, snapshotTree);
+    const idRemap = mapRevertRootIds(initialCurrentTree, filteredSnapshot.tree);
     const resolveTargetId = (targetId) => resolveRevertTargetId(targetId, idRemap);
 
     const protectedIds = new Set();
     if (currentMeta.rootId) protectedIds.add(String(currentMeta.rootId));
-    for (const rootChildId of currentMeta.rootChildIds) {
-        protectedIds.add(String(rootChildId));
+    const currentRoot = Array.isArray(initialCurrentTree) ? initialCurrentTree[0] : initialCurrentTree;
+    const mappedCurrentRootIds = new Set(
+        Array.from(idRemap.values()).map((id) => String(id || '').trim()).filter(Boolean)
+    );
+    for (const rootChild of (Array.isArray(currentRoot?.children) ? currentRoot.children : [])) {
+        if (rootChild?.id == null) continue;
+        protectedIds.add(String(rootChild.id));
+        if (!isRestoreRootAllowed(rootChild) || !mappedCurrentRootIds.has(String(rootChild.id))) {
+            collectBookmarkSubtreeIds(rootChild, protectedIds);
+        }
     }
 
     let removed = 0;
@@ -24789,7 +24958,16 @@ async function executePatchBookmarkRevert(snapshotTree, options = {}) {
     await updateAndCacheAnalysis();
     await setBadge();
 
-    return { created, removed, moved, updated };
+    return {
+        created,
+        removed,
+        moved,
+        updated,
+        skippedRootCount: filteredSnapshot.skippedRoots.length,
+        skippedRootTypes: buildOverwriteRestorePlanStringList(
+            filteredSnapshot.skippedRoots.map((item) => item.reason)
+        )
+    };
 }
 
 function buildRestoreFailureSafetyHintError(preferredLang, error) {
@@ -24830,7 +25008,7 @@ async function restoreSnapshotTree(snapshotTree, options = {}) {
         baselineTimestamp,
         preferredLang = 'zh_CN',
         allowEmpty = false,
-        strictDelete = false,
+        strictDelete = true,
         deferPostApplyRefresh = false
     } = options;
 
@@ -24909,10 +25087,22 @@ async function mergeSnapshotTree(snapshotTree, options = {}) {
     }
 
     const rootMap = new Map();
-    currentRoots.forEach(root => {
+    currentRoots.filter(isRestoreRootAllowed).forEach(root => {
         setRootMatchMapEntry(rootMap, root, root);
     });
-    const targetRoot = rootMap.get('menu') || rootMap.get('unfiled') || currentRoots[0];
+    const targetRoot = rootMap.get('menu') || rootMap.get('unfiled') || currentRoots.find(isRestoreRootAllowed);
+    if (!targetRoot) {
+        throw new Error(preferredLang === 'en' ? 'No writable bookmark roots found' : '未找到可写书签根目录');
+    }
+
+    const snapshotRootChildren = (snapshotTree[0] && snapshotTree[0].children)
+        ? snapshotTree[0].children
+        : [];
+    if (snapshotRootChildren.length === 0) {
+        throw new Error(preferredLang === 'en'
+            ? 'No importable source content found'
+            : '导入源中没有可导入内容');
+    }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/T/g, '_').slice(0, -4);
     const containerTitle = preferredLang === 'en'
@@ -24922,8 +25112,6 @@ async function mergeSnapshotTree(snapshotTree, options = {}) {
         parentId: targetRoot.id,
         title: containerTitle
     }));
-
-    const snapshotRootChildren = (snapshotTree[0] && snapshotTree[0].children) ? snapshotTree[0].children : [];
 
     const createNodeRecursive = async (parentId, snapshotNode) => {
         if (!snapshotNode) return;
@@ -29243,7 +29431,8 @@ function buildRestoreVersionFromHtmlFile({ source, originalFile, fileUrl, localF
         snapshotKey: snapshotKey || null,
         snapshotFolder: snapshotFolder || null,
         folderPath: folderPath || null,
-        legacyVersion: normalizedLegacyVersion || null
+        legacyVersion: normalizedLegacyVersion || null,
+        hasFullSnapshotMeta: hasFullSnapshotMeta === true
     };
 
     return normalizeRestoreVersionMeta({
@@ -29322,7 +29511,8 @@ function parseBookmarkTreeFromJsonTextForRestore(text) {
 
 function hasRestoreSnapshotRootFolderTypeIdentity(bookmarkTree) {
     const roots = getRestoreSnapshotRootNodes(bookmarkTree);
-    return roots.length > 0 && roots.every((node) => !!normalizeBookmarkFolderType(node?.folderType || ''));
+    const writableRoots = roots.filter(isRestoreRootAllowed);
+    return writableRoots.length > 0 && writableRoots.every((node) => !!getRestoreNodeFolderType(node));
 }
 
 function buildRestoreVersionFromJsonTreeFile({ source, originalFile, fileUrl, localFileKey, fileName, lastModifiedMs, snapshotFolder = '', folderPath = '', legacyVersion = '', rootIdentityComplete = false }) {
@@ -29359,7 +29549,8 @@ function buildRestoreVersionFromJsonTreeFile({ source, originalFile, fileUrl, lo
         snapshotKey: snapshotKey || null,
         snapshotFolder: snapshotFolder || null,
         folderPath: folderPath || null,
-        legacyVersion: normalizedLegacyVersion || null
+        legacyVersion: normalizedLegacyVersion || null,
+        rootIdentityComplete: rootIdentityComplete === true
     };
 
     return normalizeRestoreVersionMeta({
@@ -32202,7 +32393,8 @@ async function scanAndParseRestoreSource(source, localFiles = null, options = {}
                     lastModifiedMs: typeof f.lastModified === 'number' ? f.lastModified : null,
                     snapshotFolder: f.snapshotFolder || '',
                     folderPath: f.folderPath || '',
-                    legacyVersion: f.legacyVersion || ''
+                    legacyVersion: f.legacyVersion || '',
+                    hasFullSnapshotMeta: f.hasFullSnapshotMeta === true
                 });
                 const snapshotKey = String(
                     version?.restoreRef?.snapshotKey
@@ -32250,11 +32442,15 @@ async function scanAndParseRestoreSource(source, localFiles = null, options = {}
         });
         for (const f of jsonSnapshotCandidates) {
             try {
+                let extractedTree = null;
                 if (source === 'local') {
                     const jsonText = typeof f.text === 'string' ? String(f.text || '') : '';
-                    if (!jsonText) continue;
-                    const extractedTree = parseBookmarkTreeFromJsonTextForRestore(jsonText);
-                    if (!isBookmarkTreeShapeValid(extractedTree)) continue;
+                    extractedTree = jsonText
+                        ? parseBookmarkTreeFromJsonTextForRestore(jsonText)
+                        : null;
+                    if (!jsonText || !isBookmarkTreeShapeValid(extractedTree)) {
+                        continue;
+                    }
                 }
 
                 const version = buildRestoreVersionFromJsonTreeFile({
@@ -32266,7 +32462,9 @@ async function scanAndParseRestoreSource(source, localFiles = null, options = {}
                     lastModifiedMs: typeof f.lastModified === 'number' ? f.lastModified : null,
                     snapshotFolder: f.snapshotFolder || '',
                     folderPath: f.folderPath || '',
-                    legacyVersion: f.legacyVersion || ''
+                    legacyVersion: f.legacyVersion || '',
+                    rootIdentityComplete: source === 'local'
+                        && hasRestoreSnapshotRootFolderTypeIdentity(extractedTree)
                 });
                 const snapshotKey = String(
                     version?.restoreRef?.snapshotKey
@@ -32850,7 +33048,7 @@ async function scanAndParseRestoreSource(source, localFiles = null, options = {}
 function collectDuplicateRootFolderTypes(nodes = []) {
     const counts = new Map();
     for (const node of Array.isArray(nodes) ? nodes : []) {
-        const folderType = normalizeBookmarkFolderType(node?.folderType || '');
+        const folderType = getRestoreNodeFolderType(node);
         if (!folderType) continue;
         counts.set(folderType, (counts.get(folderType) || 0) + 1);
     }
@@ -32860,18 +33058,19 @@ function collectDuplicateRootFolderTypes(nodes = []) {
 }
 
 function isWritableRootContainer(node) {
-    return normalizeBookmarkFolderType(node?.folderType || '') !== 'managed';
+    return isRestoreRootAllowed(node);
 }
 
 function buildBookmarkContainerState(root) {
     const children = Array.isArray(root?.children) ? root.children.filter(Boolean) : [];
+    const writableChildren = children.filter(isRestoreRootAllowed);
     const containerByKey = new Map();
     const rootIds = [];
     let bookmarkBar = null;
     let otherBookmarks = null;
-    const rootIdentityStats = buildRootIdentityStats(children);
+    const rootIdentityStats = buildRootIdentityStats(writableChildren);
 
-    for (const child of children) {
+    for (const child of writableChildren) {
         if (child?.id != null) {
             rootIds.push(String(child.id));
         }
@@ -32879,7 +33078,7 @@ function buildBookmarkContainerState(root) {
         setRootMatchMapEntry(containerByKey, child, child);
         const key = normalizeRootKey(String(child?.id || ''), child?.title, child?.folderType, child?.syncing);
 
-        const folderType = normalizeBookmarkFolderType(child?.folderType || '');
+        const folderType = getRestoreNodeFolderType(child);
         if (!bookmarkBar && (folderType === 'bookmarks-bar' || key === 'toolbar')) {
             bookmarkBar = child;
         }
@@ -32911,10 +33110,10 @@ async function findBookmarkContainers() {
 async function getBookmarkRootContainers() {
     const [root] = await browserAPI.bookmarks.getTree();
     const state = buildBookmarkContainerState(root);
-    return state.children.map((c) => ({
+    return state.children.filter(isRestoreRootAllowed).map((c) => ({
         id: String(c.id),
         title: String(c.title || ''),
-        folderType: normalizeBookmarkFolderType(c?.folderType || ''),
+        folderType: getRestoreNodeFolderType(c),
         syncing: normalizeBookmarkSyncing(c?.syncing)
     }));
 }
@@ -33170,14 +33369,55 @@ function isLocalExternalStandardSnapshotRestoreRef(restoreRef = {}) {
     return !isOwnRestorePathForRootFallback(restoreRef);
 }
 
+function getLocalHtmlMergeOnlyDecision(restoreRef = {}, bookmarkTree) {
+    const source = String(restoreRef?.source || '').trim().toLowerCase();
+    const sourceType = String(restoreRef?.sourceType || '').trim().toLowerCase();
+    if (source !== 'local' || sourceType !== 'html') return null;
+
+    const roots = getRestoreSnapshotRootNodes(bookmarkTree);
+    if (!roots.length) return null;
+
+    const writableRoots = roots.filter(isRestoreRootAllowed);
+
+    // Enhanced project HTML restores these fields while parsing. Browser-owned
+    // roots such as Workspaces are excluded by the shared restore whitelist;
+    // only writable project roots can prove an overwrite restore is safe.
+    if (writableRoots.length > 0 && writableRoots.every((node) => !!getRestoreNodeFolderType(node))) return null;
+
+    return {
+        sourceRootTitles: buildOverwriteRestorePlanStringList(
+            roots.map((node) => String(node?.title || '').trim())
+        ).slice(0, 10),
+        sourceRootCount: roots.length
+    };
+}
+
+function buildLocalHtmlMergeOnlyResponse(decision = null) {
+    return {
+        success: false,
+        requiresMerge: true,
+        errorCode: 'restore_local_html_merge_only',
+        error: 'Local HTML lacks project root identity metadata. Use import merge instead.',
+        errorDetails: decision && typeof decision === 'object' ? decision : null
+    };
+}
+
 function buildOverwriteRestorePlan(bookmarkTree, containerState = {}, options = {}) {
     const allowDefaultRootFallback = options?.allowDefaultRootFallback !== false;
-    const snapshotRoots = getRestoreSnapshotRootNodes(bookmarkTree);
+    const allSnapshotRoots = getRestoreSnapshotRootNodes(bookmarkTree);
+    const skippedSnapshotRoots = allSnapshotRoots.filter((node) => !isRestoreRootAllowed(node));
+    const snapshotRoots = allSnapshotRoots.filter(isRestoreRootAllowed);
     if (!snapshotRoots.length) {
         return buildOverwriteRestorePlanFailure(
-            'restore_snapshot_root_missing',
-            'No snapshot root containers found',
-            { snapshotRootCount: 0 }
+            'restore_no_writable_roots',
+            'No writable user roots found in snapshot',
+            {
+                snapshotRootCount: allSnapshotRoots.length,
+                skippedRootCount: skippedSnapshotRoots.length,
+                skippedRootTypes: buildOverwriteRestorePlanStringList(
+                    skippedSnapshotRoots.map((node) => getRestoreRootPolicy(node).reason)
+                )
+            }
         );
     }
 
@@ -33259,10 +33499,12 @@ function buildOverwriteRestorePlan(bookmarkTree, containerState = {}, options = 
 
     const assignments = [];
     const unresolved = [];
-    const defaultContainer = containerState?.otherBookmarks || containerState?.bookmarkBar || (Array.isArray(containerState?.children) ? containerState.children[0] : null);
+    const defaultContainer = containerState?.otherBookmarks
+        || containerState?.bookmarkBar
+        || (Array.isArray(containerState?.children) ? containerState.children.find(isRestoreRootAllowed) : null);
 
     for (const snapshotRoot of snapshotRoots) {
-        const hasFolderType = !!normalizeBookmarkFolderType(snapshotRoot?.folderType || '');
+        const hasFolderType = !!getRestoreNodeFolderType(snapshotRoot);
         let targetContainer = containerState?.containerByKey instanceof Map
             ? getRootMatchMapValue(containerState.containerByKey, snapshotRoot)
             : null;
@@ -33296,7 +33538,14 @@ function buildOverwriteRestorePlan(bookmarkTree, containerState = {}, options = 
         );
     }
 
-    return { success: true, assignments };
+    return {
+        success: true,
+        assignments,
+        skippedRootCount: skippedSnapshotRoots.length,
+        skippedRootTypes: buildOverwriteRestorePlanStringList(
+            skippedSnapshotRoots.map((node) => getRestoreRootPolicy(node).reason)
+        )
+    };
 }
 
 async function buildOverwriteRestorePlanAgainstCurrentBrowser(bookmarkTree, options = {}) {
@@ -33319,13 +33568,22 @@ async function executeOverwriteBookmarkRestore(bookmarkTree, options = {}) {
         throw createOverwriteRestorePlanError(overwritePlan);
     }
 
+    const assignedTargetIds = new Set(
+        (Array.isArray(overwritePlan.assignments) ? overwritePlan.assignments : [])
+            .map((entry) => String(entry?.targetContainer?.id || '').trim())
+            .filter(Boolean)
+    );
     const clearTargets = Array.isArray(containerState?.children)
-        ? containerState.children.filter((node) => node?.id != null && isWritableRootContainer(node))
+        ? containerState.children.filter((node) => (
+            node?.id != null
+            && assignedTargetIds.has(String(node.id))
+            && isWritableRootContainer(node)
+        ))
         : [];
 
     for (const target of clearTargets) {
         await removeAllChildren(target.id, {
-            strictDelete: options?.strictDelete === true,
+            strictDelete: options?.strictDelete !== false,
             preferredLang: lang
         });
     }
@@ -33337,11 +33595,7 @@ async function executeOverwriteBookmarkRestore(bookmarkTree, options = {}) {
         if (!targetContainer || targetContainer.id == null) continue;
 
         if (topFolder?.url) {
-            try {
-                createdCount += await createNodeRecursive(topFolder, targetContainer.id);
-            } catch (e) {
-                
-            }
+            createdCount += await createNodeRecursive(topFolder, targetContainer.id);
             continue;
         }
 
@@ -33351,7 +33605,13 @@ async function executeOverwriteBookmarkRestore(bookmarkTree, options = {}) {
         }
     }
 
-    return { created: createdCount };
+    return {
+        created: createdCount,
+        skippedRootCount: Number(overwritePlan.skippedRootCount || 0),
+        skippedRootTypes: Array.isArray(overwritePlan.skippedRootTypes)
+            ? overwritePlan.skippedRootTypes
+            : []
+    };
 }
 
 function cloneRestoreRecoverySerializableData(value) {
@@ -33379,6 +33639,18 @@ function findBookmarkNodeByIdInSnapshot(snapshotTree, nodeId = '') {
         }
     }
 
+    return null
+}
+
+function findTopLevelRootContainerForId(root, nodeId = '') {
+    const normalizedId = String(nodeId || '').trim()
+    if (!root || !normalizedId || !Array.isArray(root.children)) return null
+
+    for (const child of root.children) {
+        if (!child || child.id == null) continue
+        if (String(child.id) === normalizedId) return child
+        if (findBookmarkNodeByIdInSnapshot(child, normalizedId)) return child
+    }
     return null
 }
 
@@ -33455,12 +33727,17 @@ function buildPredictedMergeTargetSnapshot(currentTree, bookmarkTree, options = 
     let targetContainer = null
     if (options && options.importParentId) {
         const candidate = findBookmarkNodeByIdInSnapshot(roots, String(options.importParentId))
-        if (candidate && !candidate.url && String(candidate.id || '') !== '0') {
+        const candidateRoot = findTopLevelRootContainerForId(rootNode, String(options.importParentId))
+        if (candidate && !candidate.url && String(candidate.id || '') !== '0' && isRestoreRootAllowed(candidateRoot)) {
             targetContainer = candidate
+        } else {
+            throw new Error(isEn
+                ? 'Import target is not inside a writable user root'
+                : '导入目标不在可写用户根下')
         }
     }
     if (!targetContainer) {
-        targetContainer = containerState.otherBookmarks || containerState.bookmarkBar || containerState.children[0]
+        targetContainer = containerState.otherBookmarks || containerState.bookmarkBar || containerState.children.find(isRestoreRootAllowed)
     }
     if (!targetContainer) {
         throw new Error(isEn ? 'Cannot find bookmark root container' : '找不到可用的书签根目录')
@@ -33473,24 +33750,34 @@ function buildPredictedMergeTargetSnapshot(currentTree, bookmarkTree, options = 
     }
 
     const sourceNodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree]
+    const sourceTopFolders = []
     for (const sourceNode of sourceNodes) {
         if (!Array.isArray(sourceNode?.children)) continue
         for (const topFolder of sourceNode.children || []) {
             if (!topFolder || typeof topFolder !== 'object') continue
-            if (topFolder.url) {
-                const directNode = cloneMergeImportNodeForPrediction(topFolder)
-                if (directNode) {
-                    importRootNode.children.push(directNode)
-                }
-                continue
-            }
-
-            const childNodes = Array.isArray(topFolder.children) ? topFolder.children : []
-            importRootNode.children.push({
-                title: String(topFolder?.title || '').trim() || (isEn ? 'Bookmarks' : '书签'),
-                children: childNodes.map((child) => cloneMergeImportNodeForPrediction(child)).filter(Boolean)
-            })
+            sourceTopFolders.push(topFolder)
         }
+    }
+    if (sourceTopFolders.length === 0) {
+        throw new Error(isEn
+            ? 'No importable source content found'
+            : '导入源中没有可导入内容')
+    }
+
+    for (const topFolder of sourceTopFolders) {
+        if (topFolder.url) {
+            const directNode = cloneMergeImportNodeForPrediction(topFolder)
+            if (directNode) {
+                importRootNode.children.push(directNode)
+            }
+            continue
+        }
+
+        const childNodes = Array.isArray(topFolder.children) ? topFolder.children : []
+        importRootNode.children.push({
+            title: String(topFolder?.title || '').trim() || (isEn ? 'Bookmarks' : '书签'),
+            children: childNodes.map((child) => cloneMergeImportNodeForPrediction(child)).filter(Boolean)
+        })
     }
 
     if (!Array.isArray(targetContainer.children)) {
@@ -33517,20 +33804,47 @@ async function executeMergeBookmarkRestore(bookmarkTree, options = {}) {
         try {
             const nodes = await browserAPI.bookmarks.get(String(options.importParentId));
             const node = Array.isArray(nodes) ? nodes[0] : null;
-            if (node && !node.url && String(node.id) !== '0') {
+            const candidateRoot = findTopLevelRootContainerForId(root, String(options.importParentId));
+            if (node && !node.url && String(node.id) !== '0' && isRestoreRootAllowed(candidateRoot)) {
                 targetContainer = node;
+            } else {
+                throw new Error(lang === 'en'
+                    ? 'Import target is not inside a writable user root'
+                    : '导入目标不在可写用户根下');
             }
-        } catch (_) { }
+        } catch (error) {
+            if (error && String(error.message || '').includes('writable user root')) throw error;
+            if (error && String(error.message || '').includes('可写用户根')) throw error;
+            throw new Error(lang === 'en'
+                ? 'Import target could not be validated'
+                : '无法验证导入目标');
+        }
     }
 
     if (!targetContainer) {
-        targetContainer = otherBookmarks || bookmarkBar || rootChildren[0];
+        targetContainer = otherBookmarks || bookmarkBar || rootChildren.find(isRestoreRootAllowed);
     }
     if (!targetContainer) throw new Error('Cannot find bookmark root container');
 
     const isEn = lang === 'en';
 
     const importRootTitle = buildMergeImportRootTitle(lang, options)
+    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
+    const sourceTopFolders = [];
+
+    for (const node of nodes) {
+        if (!Array.isArray(node?.children)) continue;
+        for (const topFolder of node.children || []) {
+            if (!topFolder || typeof topFolder !== 'object') continue;
+            sourceTopFolders.push(topFolder);
+        }
+    }
+
+    if (sourceTopFolders.length === 0) {
+        throw new Error(isEn
+            ? 'No importable source content found'
+            : '导入源中没有可导入内容');
+    }
 
     const importRootFolder = await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({
         parentId: targetContainer.id,
@@ -33538,35 +33852,33 @@ async function executeMergeBookmarkRestore(bookmarkTree, options = {}) {
     }));
 
     let createdCount = 1; // importRootFolder
-    const nodes = Array.isArray(bookmarkTree) ? bookmarkTree : [bookmarkTree];
 
-    for (const node of nodes) {
-        if (!Array.isArray(node?.children)) continue;
-        for (const topFolder of node.children || []) {
-            if (topFolder?.url) {
-                try {
-                    createdCount += await createNodeRecursive(topFolder, importRootFolder.id);
-                } catch (e) {
-                    
-                }
-                continue;
-            }
+    for (const topFolder of sourceTopFolders) {
+        if (topFolder?.url) {
+            createdCount += await createNodeRecursive(topFolder, importRootFolder.id);
+            continue;
+        }
 
-            const topTitle = String(topFolder?.title || '').trim() || (isEn ? 'Bookmarks' : '书签');
-            const topContainer = await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({
-                parentId: importRootFolder.id,
-                title: topTitle
-            }));
-            createdCount += 1; // topContainer
+        const topTitle = String(topFolder?.title || '').trim() || (isEn ? 'Bookmarks' : '书签');
+        const topContainer = await runBookmarkWriteApiOperation(() => browserAPI.bookmarks.create({
+            parentId: importRootFolder.id,
+            title: topTitle
+        }));
+        createdCount += 1; // topContainer
 
-            const childNodes = Array.isArray(topFolder?.children) ? topFolder.children : [];
-            for (const child of childNodes) {
-                createdCount += await createNodeRecursive(child, topContainer.id);
-            }
+        const childNodes = Array.isArray(topFolder?.children) ? topFolder.children : [];
+        for (const child of childNodes) {
+            createdCount += await createNodeRecursive(child, topContainer.id);
         }
     }
 
-    return { created: createdCount, importedFolderId: importRootFolder.id, importedFolderTitle: importRootTitle };
+    return {
+        created: createdCount,
+        importedFolderId: importRootFolder.id,
+        importedFolderTitle: importRootTitle,
+        skippedRootCount: 0,
+        skippedRootTypes: []
+    };
 }
 
 function ensureRestoreTreeIds(targetTree) {
@@ -34422,37 +34734,6 @@ function stripHtmlTags(text) {
     return String(text == null ? '' : text).replace(/<[^>]*>/g, '');
 }
 
-function normalizeParsedBookmarkTreeForRestore(root) {
-    if (!root || !Array.isArray(root.children)) return root;
-    if (root.children.length !== 1) return root;
-
-    const wrapper = root.children[0];
-    if (!wrapper || !Array.isArray(wrapper.children)) return root;
-
-    const wrapperTitle = String(wrapper.title || '').trim().toLowerCase();
-    const wrapperLooksLikeRoot = wrapperTitle === '' ||
-        wrapperTitle === 'bookmarks' ||
-        wrapperTitle === 'favorites' ||
-        wrapperTitle === '收藏夹' ||
-        wrapperTitle === '书签';
-
-    const hasContainerFolder = (wrapper.children || []).some(c => {
-        const t = String(c?.title || '').toLowerCase();
-        return t === '书签栏' ||
-            t === '其他书签' ||
-            t === 'bookmarks bar' ||
-            t === 'bookmarks toolbar' ||
-            t === 'other bookmarks' ||
-            t === 'other bookmarks';
-    });
-
-    if (wrapperLooksLikeRoot && hasContainerFolder) {
-        root.children = wrapper.children;
-    }
-
-    return root;
-}
-
 function parseFullSnapshotMetaFromHtml(htmlText) {
     const text = String(htmlText || '');
     if (!text) return null;
@@ -34468,18 +34749,29 @@ function parseFullSnapshotMetaFromHtml(htmlText) {
     return null;
 }
 
-function applyFullSnapshotMetaToParsedTree(root, meta) {
-    if (!root || !Array.isArray(root.children) || !meta || typeof meta !== 'object') return root;
+function isFullSnapshotHtmlMeta(meta) {
+    return !!meta
+        && typeof meta === 'object'
+        && !Array.isArray(meta)
+        && String(meta.snapshotKind || '').trim().toLowerCase() === 'full_html'
+        && Array.isArray(meta.rootDescriptors)
+        && meta.rootDescriptors.length > 0;
+}
 
-    const descriptors = Array.isArray(meta.rootDescriptors) ? meta.rootDescriptors : [];
-    if (!descriptors.length) return root;
-
-    const normalizedDescriptors = descriptors.map((item) => ({
+function normalizeFullSnapshotRootDescriptors(meta) {
+    const descriptors = Array.isArray(meta?.rootDescriptors) ? meta.rootDescriptors : [];
+    return descriptors.map((item) => ({
         title: String(item?.title || '').trim().toLowerCase(),
         folderType: normalizeBookmarkFolderType(item?.folderType || ''),
         syncing: normalizeBookmarkSyncing(item?.syncing)
     }));
-    const rootChildren = root.children;
+}
+
+function applyFullSnapshotMetaToRootChildren(rootChildren, meta) {
+    if (!Array.isArray(rootChildren) || !meta || typeof meta !== 'object') return;
+
+    const normalizedDescriptors = normalizeFullSnapshotRootDescriptors(meta);
+    if (!normalizedDescriptors.length) return;
 
     if (rootChildren.length === normalizedDescriptors.length) {
         for (let i = 0; i < rootChildren.length; i += 1) {
@@ -34491,7 +34783,7 @@ function applyFullSnapshotMetaToParsedTree(root, meta) {
                 rootChildren[i].syncing = descriptor.syncing;
             }
         }
-        return root;
+        return;
     }
 
     const titleCounts = new Map();
@@ -34519,6 +34811,60 @@ function applyFullSnapshotMetaToParsedTree(root, meta) {
             child.syncing = descriptor.syncing;
         }
     }
+}
+
+function normalizeParsedBookmarkTreeForRestore(root, meta = null) {
+    if (!root || !Array.isArray(root.children) || root.children.length === 0) return root;
+
+    const rootChildren = root.children;
+    const wrapper = rootChildren.find((node) => {
+        if (!node || !Array.isArray(node.children)) return false;
+        const title = String(node.title || '').trim().toLowerCase();
+        return title === '' || title === 'bookmarks' || title === 'favorites' || title === '收藏夹' || title === '书签';
+    });
+    if (!wrapper) return root;
+
+    const wrapperTitle = String(wrapper.title || '').trim().toLowerCase();
+    const wrapperLooksLikeRoot = wrapperTitle === '' ||
+        wrapperTitle === 'bookmarks' ||
+        wrapperTitle === 'favorites' ||
+        wrapperTitle === '收藏夹' ||
+        wrapperTitle === '书签';
+    const hasContainerFolder = (wrapper.children || []).some(c => {
+        const t = String(c?.title || '').toLowerCase();
+        return t === '书签栏' ||
+            t === '其他书签' ||
+            t === 'bookmarks bar' ||
+            t === 'bookmarks toolbar' ||
+            t === 'other bookmarks';
+    });
+    const hasEnhancedRootSequence = wrapperTitle === ''
+        && isFullSnapshotHtmlMeta(meta)
+        && wrapper.children.length === normalizeFullSnapshotRootDescriptors(meta).length;
+
+    // Our enhanced exporter serializes the browser's empty virtual root. Edge
+    // can append browser-owned roots beside it; map the metadata by structure
+    // before promoting the project roots, without treating those siblings as
+    // restorable roots.
+    if (!((rootChildren.length === 1 && wrapperLooksLikeRoot && hasContainerFolder) || hasEnhancedRootSequence)) {
+        return root;
+    }
+
+    if (hasEnhancedRootSequence) {
+        applyFullSnapshotMetaToRootChildren(wrapper.children, meta);
+    }
+
+    root.children = [
+        ...wrapper.children,
+        ...rootChildren.filter((node) => node !== wrapper)
+    ];
+
+    return root;
+}
+
+function applyFullSnapshotMetaToParsedTree(root, meta) {
+    if (!root || !Array.isArray(root.children) || !meta || typeof meta !== 'object') return root;
+    applyFullSnapshotMetaToRootChildren(root.children, meta);
 
     return root;
 }
@@ -34571,8 +34917,9 @@ function parseNetscapeBookmarkHtmlToTree(htmlText) {
         }
     }
 
-    const normalizedRoot = normalizeParsedBookmarkTreeForRestore(root);
-    applyFullSnapshotMetaToParsedTree(normalizedRoot, parseFullSnapshotMetaFromHtml(htmlText));
+    const fullSnapshotMeta = parseFullSnapshotMetaFromHtml(htmlText);
+    const normalizedRoot = normalizeParsedBookmarkTreeForRestore(root, fullSnapshotMeta);
+    applyFullSnapshotMetaToParsedTree(normalizedRoot, fullSnapshotMeta);
     return normalizedRoot;
 }
 
@@ -35580,6 +35927,14 @@ async function restoreSelectedVersion({ restoreRef, strategy, thresholdCount, lo
         }
 
         const lang = await getCurrentLang();
+        const mergeOnlyDecision = normalizedStrategy === 'merge'
+            ? null
+            : getLocalHtmlMergeOnlyDecision(restoreRef, tree);
+        if (mergeOnlyDecision) {
+            await clearRecoveryIntentIfNeeded();
+            return buildLocalHtmlMergeOnlyResponse(mergeOnlyDecision);
+        }
+
         const overwritePlanOptions = {
             allowDefaultRootFallback: !isLocalExternalStandardSnapshotRestoreRef(restoreRef)
         };
@@ -36065,11 +36420,27 @@ async function buildOverwriteRestorePreview({ restoreRef, localPayload, strategy
         }
 
         const previewStrategy = String(strategy || '').trim().toLowerCase();
-        const { containerState, overwritePlan } = await buildOverwriteRestorePlanAgainstCurrentBrowser(tree, {
-            allowDefaultRootFallback: previewStrategy === 'merge' || !isLocalExternalStandardSnapshotRestoreRef(restoreRef)
-        });
-        if (!overwritePlan.success) {
-            return buildOverwriteRestorePlanFailureResponse(overwritePlan);
+        const mergeOnlyDecision = previewStrategy === 'merge'
+            ? null
+            : getLocalHtmlMergeOnlyDecision(restoreRef, tree);
+        if (mergeOnlyDecision) {
+            return buildLocalHtmlMergeOnlyResponse(mergeOnlyDecision);
+        }
+
+        let containerState = null;
+        if (previewStrategy === 'merge') {
+            // Import merge does not map source top-level folders to browser
+            // roots, so an unknown-language standard HTML file remains
+            // previewable as an additive import.
+            containerState = await findBookmarkContainers();
+        } else {
+            const overwriteContext = await buildOverwriteRestorePlanAgainstCurrentBrowser(tree, {
+                allowDefaultRootFallback: !isLocalExternalStandardSnapshotRestoreRef(restoreRef)
+            });
+            containerState = overwriteContext.containerState;
+            if (!overwriteContext.overwritePlan.success) {
+                return buildOverwriteRestorePlanFailureResponse(overwriteContext.overwritePlan);
+            }
         }
         const referenceRootIds = Array.isArray(containerState?.rootIds) && containerState.rootIds.length > 0
             ? containerState.rootIds
@@ -36175,9 +36546,16 @@ async function buildMergeRestorePreview({ restoreRef, localPayload, mergeViewMod
             tree: extracted.tree,
             meta: extracted.meta
         });
+        const currentTree = await browserAPI.bookmarks.getTree();
+        const currentFolderCount = countBookmarkTreeContentFolders(currentTree);
+        const currentContentCount = countBookmarkTreeContentNodes(currentTree);
         return {
             success: true,
             tree: extracted.tree,
+            currentCounts: {
+                bookmarks: Math.max(0, currentContentCount - currentFolderCount),
+                folders: currentFolderCount
+            },
             viewMode: extracted.viewMode,
             viewFormat: normalizeCurrentChangesArtifactFormat(extracted?.meta?.format || viewFormat || ''),
             meta: extracted.meta,
