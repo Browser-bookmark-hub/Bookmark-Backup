@@ -888,8 +888,8 @@ async function refreshBackupHistoryAutoCleanupSettings() {
             applyPopupDeleteHistoryButtonWarningState(Number(window.__popupHistoryTotalRecords) || 0);
             return normalized;
         }
-    } catch (error) {
-        console.warn('获取备份历史自动清理设置失败:', error);
+    } catch (_) {
+        // 后台 Service Worker 短暂重启时使用默认关闭状态，无需向用户暴露告警。
     }
     backupHistoryAutoCleanupState = getBackupHistoryAutoCleanupSettingsSnapshot();
     applyPopupDeleteHistoryButtonWarningState(Number(window.__popupHistoryTotalRecords) || 0);
