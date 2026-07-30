@@ -26,6 +26,21 @@ It is also an ecosystem-related project for [Bookmark-Canvas](https://github.com
 | **Web Snapshot** | **Highlighter** |
 | <img src="Screenshots%20and%20icons/v3.5/网页存档en.png" width="400"> | <img src="Screenshots%20and%20icons/v3.5/高亮工具en.png" width="400"> |
 
+#### Bookmark Ecosystem
+
+<table>
+  <tr>
+    <th width="33.33%"><a href="https://github.com/Browser-bookmark-hub/Bookmark-Canvas">Bookmark-Canvas</a></th>
+    <th width="33.33%"><a href="https://github.com/Browser-bookmark-hub/Bookmark-Backup">Bookmark-Backup</a></th>
+    <th width="33.33%"><a href="https://github.com/Browser-bookmark-hub/Bookmark-Record-Recommend">Bookmark-Record-Recommend</a></th>
+  </tr>
+  <tr>
+    <td><img width="100%" alt="Bookmark Canvas Codex-processed workspace example" src="Screenshots%20and%20icons/Bookmark-Canvas-ecosystem/生态--书签画布--经过codex处理%20zh%20en.png"></td>
+    <td><img width="100%" alt="Bookmark Backup export example" src="Screenshots%20and%20icons/Bookmark-Canvas-ecosystem/生态--书签备份--画布示例--当前变化%20zh%20en.png"></td>
+    <td><img width="100%" alt="Bookmark Record and Recommend related-history example" src="Screenshots%20and%20icons/Bookmark-Canvas-ecosystem/生态--书签记录与推荐--画布示例--关联记录zh%20en.png"></td>
+  </tr>
+</table>
+
 #### Project Structure Preview
 
 ```text
@@ -62,12 +77,6 @@ Bookmark-Backup-main/
 [GitHub Releases](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases)
 
 ### References
-
-**Bookmark ecosystem**
-
-- [Bookmark-Canvas](https://github.com/Browser-bookmark-hub/Bookmark-Canvas)
-- [Bookmark-Record-Recommend](https://github.com/Browser-bookmark-hub/Bookmark-Record-Recommend)
-- [Bookmark-Backup](https://github.com/Browser-bookmark-hub/Bookmark-Backup)
 
 **External projects**
 

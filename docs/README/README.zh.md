@@ -26,6 +26,21 @@
 | **网页存档** | **高亮工具** |
 | <img src="../../Screenshots%20and%20icons/v3.5/网页存档zh.png" width="400"> | <img src="../../Screenshots%20and%20icons/v3.5/高亮工具zh.png" width="400"> |
 
+#### 书签生态项目
+
+<table>
+  <tr>
+    <th width="33.33%"><a href="https://github.com/Browser-bookmark-hub/Bookmark-Canvas">书签画布</a></th>
+    <th width="33.33%"><a href="https://github.com/Browser-bookmark-hub/Bookmark-Backup">书签备份</a></th>
+    <th width="33.33%"><a href="https://github.com/Browser-bookmark-hub/Bookmark-Record-Recommend">书签记录与推荐</a></th>
+  </tr>
+  <tr>
+    <td><img width="100%" alt="书签画布经过 Codex 处理示例" src="../../Screenshots%20and%20icons/Bookmark-Canvas-ecosystem/生态--书签画布--经过codex处理%20zh%20en.png"></td>
+    <td><img width="100%" alt="书签备份导出示例" src="../../Screenshots%20and%20icons/Bookmark-Canvas-ecosystem/生态--书签备份--画布示例--当前变化%20zh%20en.png"></td>
+    <td><img width="100%" alt="书签记录与推荐关联记录示例" src="../../Screenshots%20and%20icons/Bookmark-Canvas-ecosystem/生态--书签记录与推荐--画布示例--关联记录zh%20en.png"></td>
+  </tr>
+</table>
+
 #### 项目结构预览
 
 ```text
@@ -62,12 +77,6 @@ Bookmark-Backup-main/
 [GitHub Releases](https://github.com/Browser-bookmark-hub/Bookmark-Backup/releases)
 
 ### 参考
-
-**生态项目**
-
-- 书签画布（[Bookmark-Canvas](https://github.com/Browser-bookmark-hub/Bookmark-Canvas)）
-- 书签记录与推荐（[Bookmark-Record-Recommend](https://github.com/Browser-bookmark-hub/Bookmark-Record-Recommend)）
-- 书签备份（[Bookmark-Backup](https://github.com/Browser-bookmark-hub/Bookmark-Backup)）
 
 **外部参考**
 
