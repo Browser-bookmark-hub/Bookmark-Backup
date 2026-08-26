@@ -447,6 +447,7 @@
             snapshotHelperHintLine2: '保存位置：按所选本地 / 云端1 / 云端2 保存到当次网页快照时间戳目录；MD 通常较小，适合云端备份。（若队列来自「所有窗口Tab页面」则不会注入辅助工具。）',
             snapshotHelperShortcutHint: '也可以通过快捷键「{shortcut}」直接在任意页面打开/关闭工具箱。',
             snapshotHelperStorageHint: '辅助工具所做的用户修改暂存于本地，当对应标签页(tabid)关闭或浏览器重启时，相关缓存数据将自动释放。',
+            snapshotHelperStorageHintRelease: '相关缓存数据将自动释放',
             archiveOrgLabel: '其他存档链接：',
             snapshotHelperEnabledStatus: '辅助工具已启用',
             snapshotHelperDisabledStatus: '辅助工具已关闭',
@@ -676,6 +677,7 @@
             snapshotHelperHintLine2: 'Save location: selected Local / Cloud 1 / Cloud 2 targets under the current web-snapshot timestamp folder; Markdown is usually small and suitable for cloud backup. (Queues from "All Window Tabs" do not inject helper tools.)',
             snapshotHelperShortcutHint: 'You can also press "{shortcut}" on any page to open/close the toolbox directly.',
             snapshotHelperStorageHint: 'User modifications in helper tools are stored locally and will be automatically released when the corresponding tab (tabid) is closed or the browser is restarted.',
+            snapshotHelperStorageHintRelease: 'will be automatically released',
             archiveOrgLabel: 'Other archive link: ',
             snapshotHelperEnabledStatus: 'Helper tools enabled',
             snapshotHelperDisabledStatus: 'Helper tools disabled',
@@ -817,11 +819,17 @@
 
     function renderSnapshotHelperHintHtml(shortcutText = '') {
         const shortcutHint = buildSnapshotHelperShortcutHintText(shortcutText);
+        const storageHint = escapeHtml(t('snapshotHelperStorageHint'));
+        const storageHintRelease = escapeHtml(t('snapshotHelperStorageHintRelease'));
+        const formattedStorageHint = storageHint.replace(
+            storageHintRelease,
+            `<span style="color: #dc2626;">${storageHintRelease}</span>`
+        );
         return [
             `<span class="dev1-export-note-line">${escapeHtml(t('snapshotHelperHintLine1'))}</span>`,
             `<span class="dev1-export-note-line">${escapeHtml(t('snapshotHelperHintLine2'))}</span>`,
-            `<span class="dev1-export-note-line dev1-snapshot-helper-shortcut-line" data-dev1-snapshot-helper-shortcut-hint>${escapeHtml(shortcutHint)}</span>`,
-            `<span class="dev1-export-note-line" style="color: var(--text-secondary); opacity: 0.85; margin-top: 2px;">${escapeHtml(t('snapshotHelperStorageHint'))}</span>`
+            `<span class="dev1-export-note-line dev1-snapshot-helper-shortcut-line" data-dev1-snapshot-helper-shortcut-hint style="text-decoration: underline;">${escapeHtml(shortcutHint)}</span>`,
+            `<span class="dev1-export-note-line" style="color: var(--text-secondary); opacity: 0.85; margin-top: 2px; text-decoration: underline;">${formattedStorageHint}</span>`
         ].join('');
     }
 

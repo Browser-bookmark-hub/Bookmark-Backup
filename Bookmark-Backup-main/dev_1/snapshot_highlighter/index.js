@@ -326,7 +326,7 @@
           selectTool: '选择工具',
           delete: '删除',
           close: '关闭',
-          backToSnapshotHelper: '返回网页快照辅助工具',
+          backToSnapshotHelper: '收回',
           applyCurrentColor: '应用当前颜色',
           applyCurrentTool: '应用当前工具',
           highlightNote: '批注',
@@ -445,7 +445,7 @@
           selectTool: 'Select Tool',
           delete: 'Delete',
           close: 'Close',
-          backToSnapshotHelper: 'Back to Web Snapshot Helper',
+          backToSnapshotHelper: 'Collapse',
           applyCurrentColor: 'Apply Current Color',
           applyCurrentTool: 'Apply Current Tool',
           highlightNote: 'Annotation',
@@ -1385,17 +1385,7 @@
     }
 
     async returnToSnapshotHelperPanel() {
-      const config = { ...(this.config || {}), lang: this.lang };
-      await this.hide();
-      const helper = window.__dev1SnapshotHelper;
-      if (!helper || typeof helper !== 'object') return { success: false, error: 'Snapshot helper is unavailable' };
-      if (typeof helper.openPanel === 'function') return helper.openPanel(config);
-      if (typeof helper.show === 'function') {
-        const response = helper.show(config);
-        if (typeof helper.openPanel === 'function') return helper.openPanel(config);
-        return response || { success: true };
-      }
-      return { success: false, error: 'Snapshot helper panel API is unavailable' };
+      return await this.hide();
     }
 
     applyToolbarPosition() {

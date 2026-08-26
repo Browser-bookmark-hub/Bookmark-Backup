@@ -112,6 +112,7 @@
         helper_info_shortcut_prefix: '可以通过快捷键',
         helper_info_shortcut_suffix: '直接在任意页面打开/关闭工具箱。',
         helper_info_cache: '辅助工具所做的用户修改暂存于本地，当对应标签页(tabid)关闭或浏览器重启时，相关缓存数据将自动释放。',
+        helper_info_cache_release: '相关缓存数据将自动释放',
         helper_info_export: '建议及时导出备份；MD 数据量一般较小，适合云端1、2备份',
         save_done: '已保存',
         save_partial: '部分目标失败',
@@ -217,6 +218,7 @@
         helper_info_shortcut_prefix: 'Use shortcut',
         helper_info_shortcut_suffix: 'to open/close the toolbox on any page.',
         helper_info_cache: 'User changes made by Helper are cached locally. When the related tabid is closed or the browser restarts, the cached data is released automatically.',
+        helper_info_cache_release: 'the cached data is released automatically',
         helper_info_export: 'Export backups promptly; Markdown is usually small and works well with Cloud 1/2 backups',
         save_done: 'Saved',
         save_partial: 'some targets failed',
@@ -499,6 +501,19 @@
         return `${modifiers}${key}`;
       }
 
+      _formatHelperInfoCache() {
+        const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[char]));
+        const text = escapeHtml(this.translate('helper_info_cache'));
+        const releaseText = escapeHtml(this.translate('helper_info_cache_release'));
+        return text.replace(releaseText, `<span style="color: #dc2626;">${releaseText}</span>`);
+      }
+
       _renderHelperInfoPopoverHtml() {
         const shortcut = this._getOpenWebSnapshotShortcutFallback();
         const localChecked = this._exportTargets.local !== false ? 'checked' : '';
@@ -537,8 +552,8 @@
                   <div class="dev1-helper-info-popover" role="dialog" aria-label="${this.translate('helper_info_tooltip')}">
                     ${targetHtml}
                     <div class="dev1-helper-settings-help-title">${this.translate('helper_info_title')}</div>
-                    <div class="dev1-helper-info-line">1. ${this.translate('helper_info_shortcut_prefix')} <kbd data-helper-shortcut>${shortcut}</kbd> ${this.translate('helper_info_shortcut_suffix')}</div>
-                    <div class="dev1-helper-info-line">2. ${this.translate('helper_info_cache')}</div>
+                    <div class="dev1-helper-info-line" style="text-decoration: underline;">1. ${this.translate('helper_info_shortcut_prefix')} <kbd data-helper-shortcut>${shortcut}</kbd> ${this.translate('helper_info_shortcut_suffix')}</div>
+                    <div class="dev1-helper-info-line" style="text-decoration: underline;">2. ${this._formatHelperInfoCache()}</div>
                     <div class="dev1-helper-info-line dev1-helper-info-warning">3. ${this.translate('helper_info_export')}</div>
                   </div>`;
         }
@@ -546,8 +561,8 @@
                   <div class="dev1-helper-info-popover" role="dialog" aria-label="${this.translate('helper_info_tooltip')}">
                     ${targetHtml}
                     <div class="dev1-helper-settings-help-title">${this.translate('helper_info_title')}</div>
-                    <div class="dev1-helper-info-line">1、${this.translate('helper_info_shortcut_prefix')}「<kbd data-helper-shortcut>${shortcut}</kbd>」${this.translate('helper_info_shortcut_suffix')}</div>
-                    <div class="dev1-helper-info-line">2、${this.translate('helper_info_cache')}</div>
+                    <div class="dev1-helper-info-line" style="text-decoration: underline;">1、${this.translate('helper_info_shortcut_prefix')}「<kbd data-helper-shortcut>${shortcut}</kbd>」${this.translate('helper_info_shortcut_suffix')}</div>
+                    <div class="dev1-helper-info-line" style="text-decoration: underline;">2、${this._formatHelperInfoCache()}</div>
                     <div class="dev1-helper-info-line dev1-helper-info-warning">3、「${this.translate('helper_info_export')}」</div>
                   </div>`;
       }
@@ -723,8 +738,7 @@
           window.removeEventListener('pointerup', finishDrag, true);
           window.removeEventListener('pointercancel', finishDrag, true);
           window.removeEventListener('blur', finishDrag, true);
-          try { handle.releasePointerCapture(event.pointerId); } catch (_) { }
-          setTimeout(() => { handle.__dev1LastDragMoved = false; }, 0);
+          try { handle.releasePointerCapture(event && event.pointerId); } catch (_) { }
         };
 
         const onMove = (event) => {
@@ -736,7 +750,7 @@
           }
           const deltaX = event.clientX - startX;
           const deltaY = event.clientY - startY;
-          if (!moved && Math.abs(deltaX) <= 3 && Math.abs(deltaY) <= 3) return;
+          if (!moved && Math.abs(deltaX) <= 5 && Math.abs(deltaY) <= 5) return;
           moved = true;
           if (useLeftTop) {
             const nextLeft = Math.max(0, Math.min(window.innerWidth - startWidth, startLeft + deltaX));
@@ -763,6 +777,7 @@
         handle.addEventListener('pointerdown', (event) => {
           if (event.button !== 0) return;
           if (options.skipInteractive !== false && event.target?.closest?.('button,input,select,textarea,a,[data-no-drag="true"]')) return;
+          handle.__dev1LastDragMoved = false;
           dragging = true;
           activePointerId = event.pointerId;
           moved = false;
@@ -783,7 +798,7 @@
           window.addEventListener('pointerup', finishDrag, true);
           window.addEventListener('pointercancel', finishDrag, true);
           window.addEventListener('blur', finishDrag, true);
-          event.preventDefault();
+          if (options.preventDefaultOnPointerDown !== false) event.preventDefault();
         });
       }
 
@@ -1037,6 +1052,11 @@
               color: var(--text-muted) !important;
               opacity: 0.7 !important;
             }
+            #md-settings-panel textarea.md-article-source-textarea::selection {
+              background: #facc15 !important;
+              color: #111827 !important;
+              text-shadow: none !important;
+            }
             #md-settings-panel textarea::-webkit-scrollbar {
               width: 8px !important;
               height: 8px !important;
@@ -1113,7 +1133,7 @@
             }
             #md-settings-panel .md-help-popover {
               position: absolute;
-              top: 44px !important;
+              top: 38px !important;
               left: 12px !important;
               right: 12px !important;
               z-index: 2147483649 !important;
@@ -1801,7 +1821,9 @@
           this._setPanelOpen(open);
         };
         launcher.addEventListener('click', () => {
-          if (launcher.__dev1LastDragMoved) return;
+          const wasDragged = launcher.__dev1LastDragMoved === true;
+          launcher.__dev1LastDragMoved = false;
+          if (wasDragged) return;
           setOpen(root.dataset.open !== 'true');
         });
         launcher.addEventListener('keydown', (event) => {
@@ -1841,7 +1863,7 @@
           e.preventDefault();
           this._showRecordingSettings(gearBtn);
         });
-        this._bindDrag(host, launcher, { skipInteractive: false });
+        this._bindDrag(host, launcher, { skipInteractive: false, preventDefaultOnPointerDown: false });
         this._bindDrag(host, panel.querySelector('.dev1-helper-header'), { skipInteractive: true });
         requestAnimationFrame(() => this._updateQuadrant(true));
       }
@@ -2576,9 +2598,6 @@
           if (!isLoaded) this._hideHighlighterLaunchPanel();
           if (response.visible !== false) this._collapsePanel();
           else if (shouldCollapseOptimistically) this._setPanelOpen(true);
-          this._setHeaderFeedback(response.visible === false
-            ? this.translate('highlight_tool_hidden')
-            : this.translate('highlight_tool_ready'));
         } catch (error) {
           if (!isLoaded) this._hideHighlighterLaunchPanel();
           if (shouldCollapseOptimistically) this._setPanelOpen(true);
@@ -3140,6 +3159,13 @@
             tocPanel._cleanupListeners();
           }
           tocPanel.remove();
+        }
+        const searchPanel = (this.shadow && this.shadow.querySelector('#md-article-search-panel')) || document.getElementById('md-article-search-panel');
+        if (searchPanel) {
+          if (searchPanel._cleanupListeners) {
+            searchPanel._cleanupListeners();
+          }
+          searchPanel.remove();
         }
         settings.remove();
       }
@@ -7824,6 +7850,16 @@
       } catch (_) { }
     }
 
+    _scheduleMarkdownSourceHighlightRemoval(delay = 3000) {
+      if (this._mdSourceHighlightTimer) {
+        clearTimeout(this._mdSourceHighlightTimer);
+      }
+      this._mdSourceHighlightTimer = setTimeout(() => {
+        this._mdSourceHighlightTimer = null;
+        this._removeMarkdownSourceHighlight();
+      }, Math.max(0, Number(delay) || 3000));
+    }
+
     _showMarkdownSourceNotice(message) {
       const notice = document.createElement('div');
       notice.textContent = String(message || '');
@@ -7851,8 +7887,9 @@
       style.id = 'dev1-md-source-highlight-style';
       style.textContent = `
         ::highlight(dev1-md-source-candidate) {
-          background-color: rgba(245, 158, 11, 0.34);
-          color: inherit;
+          background-color: rgba(255, 193, 7, 0.72);
+          color: #111827;
+          text-shadow: 0 0 1px rgba(255,255,255,0.9);
         }
       `;
       (document.head || document.documentElement).appendChild(style);
@@ -7891,6 +7928,7 @@
           this._ensureMarkdownSourceHighlightStyles();
           highlights.set('dev1-md-source-candidate', new HighlightCtor(...ranges));
           this._showMarkdownSourceNotice(`已固定高亮 ${targets.length} 个正文候选`);
+          this._scheduleMarkdownSourceHighlightRemoval();
           return true;
         }
       } catch (_) { }
@@ -7939,8 +7977,8 @@
               height: ${rect.height}px;
               box-sizing: border-box;
               border-radius: 2px;
-              background: rgba(245, 158, 11, 0.34);
-              box-shadow: inset 0 -1px 0 rgba(217, 119, 6, 0.42);
+              background: rgba(255, 193, 7, 0.72);
+              box-shadow: inset 0 -2px 0 #b45309, 0 0 0 1px rgba(255,255,255,0.9);
             `;
             record.overlay.appendChild(mark);
           });
@@ -7949,6 +7987,7 @@
       };
       updateOverlay();
       this._showMarkdownSourceNotice(`已固定高亮 ${targets.length} 个正文候选`);
+      this._scheduleMarkdownSourceHighlightRemoval();
       return true;
     }
 
@@ -8065,6 +8104,7 @@
         this._mdSourceHighlightFrame = requestAnimationFrame(updateOverlay);
       };
       updateOverlay();
+      this._scheduleMarkdownSourceHighlightRemoval();
     }
 
 
@@ -8527,10 +8567,14 @@
       if (!panel || !anchor) return;
 
       const rect = anchor.getBoundingClientRect();
-      const PANEL_WIDTH = 340;
+      const MIN_PANEL_WIDTH = 280;
+      const maxPanelWidth = Math.max(MIN_PANEL_WIDTH, window.innerWidth - 20);
+      const PANEL_WIDTH = Math.max(MIN_PANEL_WIDTH, Math.min(maxPanelWidth, parseFloat(panel.style.width) || 340));
       const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
       const PANEL_HEIGHT = Math.max(600, Math.floor(viewportHeight * 0.92));
       
+      panel.style.width = `${PANEL_WIDTH}px`;
+      panel.style.maxWidth = `${maxPanelWidth}px`;
       panel.style.height = `${PANEL_HEIGHT}px`;
 
       if (!panel.__dev1ManuallyDragged) {
@@ -8566,8 +8610,19 @@
       if (existing) { this._removeMdSettingsPanel(); return; }
 
       this._mdSettingsAnchor = anchor;
+      const panelWidthStorageKey = 'dev1_md_settings_panel_width';
+      let storedPanelWidth = null;
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        try {
+          const stored = await new Promise((resolve) => chrome.storage.local.get([panelWidthStorageKey], resolve));
+          storedPanelWidth = stored && stored[panelWidthStorageKey];
+        } catch (_) {}
+      }
       const rect = anchor.getBoundingClientRect();
-      const PANEL_WIDTH = 340;
+      const MIN_PANEL_WIDTH = 280;
+      const maxPanelWidth = Math.max(MIN_PANEL_WIDTH, window.innerWidth - 20);
+      const savedWidth = Number(storedPanelWidth);
+      const PANEL_WIDTH = Math.max(MIN_PANEL_WIDTH, Math.min(maxPanelWidth, Number.isFinite(savedWidth) ? savedWidth : 340));
       const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
       const PANEL_HEIGHT = Math.max(600, Math.floor(viewportHeight * 0.92));
       
@@ -8590,6 +8645,8 @@
         top: ${top}px;
         left: ${left}px;
         width: ${PANEL_WIDTH}px;
+        min-width: ${MIN_PANEL_WIDTH}px;
+        max-width: ${maxPanelWidth}px;
         height: ${PANEL_HEIGHT}px;
         background: var(--panel-bg);
         border: 1px solid var(--panel-border);
@@ -8649,7 +8706,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 12px 14px;
+        padding: 9px 14px;
         background: var(--header-bg);
         border-bottom: 1px solid var(--panel-border);
         font-size: 13px;
@@ -8692,7 +8749,7 @@
       tab1.type = 'button';
       tab1.textContent = '模板与笔记';
       tab1.style.cssText = `
-        flex: 1; padding: 10px 0; border: 0; background: transparent;
+        flex: 1; padding: 7px 0; border: 0; background: transparent;
         color: var(--text-main); font-size: 13px; font-weight: 550;
         cursor: pointer; border-bottom: 2px solid var(--accent-color); transition: all 0.2s;
         outline: none;
@@ -8702,7 +8759,7 @@
       tab2.type = 'button';
       tab2.textContent = '正文';
       tab2.style.cssText = `
-        flex: 1; padding: 10px 0; border: 0; background: transparent;
+        flex: 1; padding: 7px 0; border: 0; background: transparent;
         color: var(--text-muted); font-size: 13px; font-weight: 550;
         cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
         outline: none;
@@ -8713,7 +8770,7 @@
 
       const body = document.createElement('div');
       body.style.cssText = `
-        padding: 16px;
+        padding: 6px 16px 16px;
         display: flex;
         flex-direction: column;
         gap: 12px;
@@ -8726,7 +8783,7 @@
       tab1Content.style.cssText = `
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 6px;
         flex: 1;
         overflow: hidden;
       `;
@@ -8735,7 +8792,7 @@
       tab2Content.style.cssText = `
         display: none;
         flex-direction: column;
-        gap: 10px;
+        gap: 6px;
         flex: 1;
         overflow: hidden;
       `;
@@ -8868,6 +8925,39 @@
         return btn;
       };
 
+      const createFieldExportButton = () => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.noDrag = 'true';
+        btn.textContent = '导出';
+        btn.title = '导出 Markdown';
+        btn.setAttribute('aria-label', '导出 Markdown');
+        btn.style.cssText = `
+          height: 22px;
+          box-sizing: border-box;
+          border: 1px solid var(--accent-color);
+          border-radius: 6px;
+          background: var(--accent-color);
+          color: #fff;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 9px;
+          flex: 0 0 auto;
+          font: 600 11px/1 system-ui, -apple-system, sans-serif;
+          outline: none;
+          transition: opacity 0.16s ease, filter 0.16s ease;
+        `;
+        btn.addEventListener('mouseenter', () => {
+          if (!btn.disabled) btn.style.filter = 'brightness(1.08)';
+        });
+        btn.addEventListener('mouseleave', () => {
+          btn.style.filter = 'none';
+        });
+        return btn;
+      };
+
       const setFieldRefreshState = (btn, state, fallbackTitle) => {
         if (!btn) return;
         if (btn._dev1RefreshStateTimer) {
@@ -8900,7 +8990,7 @@
           font-size: 11px;
           font-weight: 600;
           color: var(--text-muted);
-          margin-bottom: -6px;
+          margin-bottom: 0;
           flex-shrink: 0;
         `;
         const left = document.createElement('span');
@@ -8940,6 +9030,8 @@
       const refreshTemplateTitle = '重新获取导出模板';
       const refreshTemplateBtn = createFieldRefreshButton(refreshTemplateTitle);
       templateLabel._rightActions.appendChild(refreshTemplateBtn);
+      const templateExportBtn = createFieldExportButton();
+      templateLabel._rightActions.appendChild(templateExportBtn);
 
       textarea = document.createElement('textarea');
       textarea.style.cssText = `
@@ -8954,7 +9046,7 @@
       this._mdTextarea = textarea;
 
       const notesLabel = document.createElement('div');
-      notesLabel.style.cssText = `font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: -6px; margin-top: 4px; flex-shrink: 0;`;
+      notesLabel.style.cssText = `font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 2px; margin-top: 2px; flex-shrink: 0;`;
       notesLabel.textContent = '2. 你的笔记（自由输入，插入到正文前）';
 
       const notesArea = document.createElement('textarea');
@@ -8984,8 +9076,11 @@
       const refreshArticleTitle = '重新获取正文';
       const refreshArticleBtn = createFieldRefreshButton(refreshArticleTitle);
       articleLabel._rightActions.appendChild(refreshArticleBtn);
+      const articleExportBtn = createFieldExportButton();
+      articleLabel._rightActions.appendChild(articleExportBtn);
 
       articleArea = document.createElement('textarea');
+      articleArea.className = 'md-article-source-textarea';
       articleArea.style.cssText = `
         width: 100%;
         box-sizing: border-box;
@@ -9039,10 +9134,9 @@
         const panelHeight = parseFloat(panel.style.height) || panel.offsetHeight;
         
         const TOC_WIDTH = 260;
-        let left = panelLeft - TOC_WIDTH - 8;
-        if (left < 0) {
-          left = panelLeft + panel.offsetWidth + 8;
-        }
+        // Keep the TOC on the left. When space is tight, leave at least half visible
+        // instead of moving it to the right side of the Markdown settings panel.
+        const left = Math.max(-TOC_WIDTH / 2, panelLeft - TOC_WIDTH - 8);
         tocPanel.style.left = `${left}px`;
         tocPanel.style.top = `${panelTop}px`;
         tocPanel.style.height = `${panelHeight}px`;
@@ -9419,6 +9513,9 @@
       const toggleTocPanel = (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (articleSearchPanel) {
+          removeArticleSearchPanel();
+        }
         if (tocPanel) {
           removeTocPanel();
         } else {
@@ -9427,8 +9524,261 @@
       };
 
       tocBtn.addEventListener('click', toggleTocPanel);
+
+      // Create article search button and floating result panel.
+      const searchBtn = document.createElement('button');
+      searchBtn.type = 'button';
+      searchBtn.dataset.noDrag = 'true';
+      searchBtn.title = '搜索正文';
+      searchBtn.setAttribute('aria-label', '搜索正文');
+      searchBtn.style.cssText = `
+        width: 22px;
+        height: 22px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        flex: 0 0 22px;
+        transition: all 0.2s ease;
+      `;
+      searchBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m20 20-4-4"></path>
+        </svg>
+      `;
+      articleLabel._leftActions.appendChild(searchBtn);
+
+      let articleSearchPanel = null;
+
+      const syncArticleSearchPanelPosition = () => {
+        if (!articleSearchPanel) return;
+        const panelLeft = parseFloat(panel.style.left) || 0;
+        const panelTop = parseFloat(panel.style.top) || 0;
+        const panelHeight = parseFloat(panel.style.height) || panel.offsetHeight;
+        const panelWidth = 260;
+        // Keep search results on the left; allow up to half the panel to be clipped.
+        const left = Math.max(-panelWidth / 2, panelLeft - panelWidth - 8);
+        articleSearchPanel.style.width = `${panelWidth}px`;
+        articleSearchPanel.style.left = `${left}px`;
+        articleSearchPanel.style.top = `${panelTop}px`;
+        articleSearchPanel.style.height = `${panelHeight}px`;
+      };
+
+      const renderArticleSearchResults = () => {
+        if (!articleSearchPanel) return;
+        const input = articleSearchPanel._searchInput;
+        const results = articleSearchPanel.querySelector('.md-article-search-results');
+        if (!input || !results) return;
+        results.innerHTML = '';
+
+        const query = String(input.value || '').trim();
+        const textValue = articleArea.value || '';
+        if (!query) {
+          const hint = document.createElement('div');
+          hint.textContent = '输入关键词搜索正文';
+          hint.style.cssText = 'padding: 18px 12px; color: var(--text-muted); font-size: 12px; text-align: center;';
+          results.appendChild(hint);
+          return;
+        }
+
+        const sourceLower = textValue.toLocaleLowerCase();
+        const queryLower = query.toLocaleLowerCase();
+        const matches = [];
+        let searchFrom = 0;
+        while (searchFrom <= sourceLower.length && matches.length < 100) {
+          const matchIndex = sourceLower.indexOf(queryLower, searchFrom);
+          if (matchIndex < 0) break;
+          matches.push(matchIndex);
+          searchFrom = matchIndex + Math.max(queryLower.length, 1);
+        }
+
+        if (matches.length === 0) {
+          const empty = document.createElement('div');
+          empty.textContent = '未找到匹配内容';
+          empty.style.cssText = 'padding: 18px 12px; color: var(--text-muted); font-size: 12px; text-align: center;';
+          results.appendChild(empty);
+          return;
+        }
+
+        matches.forEach((matchIndex, occurrenceIndex) => {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.title = `第 ${occurrenceIndex + 1} 个匹配`;
+          item.style.cssText = `
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            width: 100%;
+            box-sizing: border-box;
+            border: 0;
+            border-radius: 6px;
+            padding: 8px 6px;
+            background: transparent;
+            color: var(--text-main);
+            cursor: pointer;
+            text-align: left;
+            font: 12px/1.45 system-ui, -apple-system, sans-serif;
+          `;
+
+          const contextStart = Math.max(0, matchIndex - 42);
+          const contextEnd = Math.min(textValue.length, matchIndex + query.length + 90);
+          const number = document.createElement('span');
+          number.textContent = `${occurrenceIndex + 1}.`;
+          number.style.cssText = 'flex:0 0 18px; color:var(--text-muted); font-size:11px; text-align:right; padding-top:1px;';
+          item.appendChild(number);
+          const preview = document.createElement('span');
+          preview.style.cssText = 'min-width:0; overflow:hidden; text-overflow:ellipsis;';
+          if (contextStart > 0) preview.appendChild(document.createTextNode('…'));
+          preview.appendChild(document.createTextNode(textValue.slice(contextStart, matchIndex)));
+          const matchText = textValue.slice(matchIndex, matchIndex + query.length);
+          const mark = document.createElement('mark');
+          mark.textContent = matchText;
+          mark.style.cssText = 'background: #facc15; color: #111827; border-radius: 2px; padding: 0 2px; text-shadow: none;';
+          preview.appendChild(mark);
+          preview.appendChild(document.createTextNode(textValue.slice(matchIndex + query.length, contextEnd)));
+          if (contextEnd < textValue.length) preview.appendChild(document.createTextNode('…'));
+          item.appendChild(preview);
+
+          item.addEventListener('mouseenter', () => {
+            item.style.background = 'rgba(128,128,128,0.15)';
+          });
+          item.addEventListener('mouseleave', () => {
+            item.style.background = 'transparent';
+          });
+          item.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            findAndSelectText(matchText, occurrenceIndex, matchIndex);
+          });
+          results.appendChild(item);
+        });
+
+        if (matches.length === 100 && sourceLower.indexOf(queryLower, searchFrom) >= 0) {
+          const limit = document.createElement('div');
+          limit.textContent = '仅显示前 100 个结果';
+          limit.style.cssText = 'padding: 8px 10px 10px; color: var(--text-muted); font-size: 11px; text-align: center;';
+          results.appendChild(limit);
+        }
+      };
+
+      const removeArticleSearchPanel = () => {
+        if (articleSearchPanel) {
+          if (articleSearchPanel._cleanupListeners) articleSearchPanel._cleanupListeners();
+          articleSearchPanel.remove();
+          articleSearchPanel = null;
+        }
+        searchBtn.style.color = 'var(--text-muted)';
+      };
+
+      const showArticleSearchPanel = () => {
+        if (articleSearchPanel) return;
+        removeTocPanel();
+        articleSearchPanel = document.createElement('div');
+        articleSearchPanel.id = 'md-article-search-panel';
+        articleSearchPanel.style.cssText = `
+          position: fixed;
+          height: 360px;
+          background: var(--panel-bg);
+          border: 1px solid var(--panel-border);
+          border-radius: 10px;
+          box-shadow: var(--panel-shadow);
+          z-index: 2147483649;
+          font-family: system-ui, -apple-system, sans-serif;
+          color: var(--text-main);
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          box-sizing: border-box;
+        `;
+
+        const searchHeader = document.createElement('div');
+        searchHeader.style.cssText = 'display:flex; align-items:center; gap:6px; padding:8px; border-bottom:1px solid var(--panel-border); flex-shrink:0;';
+        const searchInput = document.createElement('input');
+        searchInput.type = 'search';
+        searchInput.placeholder = '搜索正文内容...';
+        searchInput.setAttribute('aria-label', '搜索正文内容');
+        searchInput.autocomplete = 'off';
+        searchInput.spellcheck = false;
+        searchInput.style.cssText = `
+          min-width: 0;
+          flex: 1;
+          box-sizing: border-box;
+          border: 1px solid var(--card-border);
+          border-radius: 6px;
+          background: var(--card-bg);
+          color: var(--text-main);
+          padding: 6px 8px;
+          font: 12px/1.35 system-ui, -apple-system, sans-serif;
+          outline: none;
+        `;
+        const closeSearchBtn = document.createElement('button');
+        closeSearchBtn.type = 'button';
+        closeSearchBtn.title = '关闭搜索';
+        closeSearchBtn.setAttribute('aria-label', '关闭搜索');
+        closeSearchBtn.textContent = '×';
+        closeSearchBtn.style.cssText = 'width:24px; height:24px; border:0; border-radius:5px; background:transparent; color:var(--text-muted); cursor:pointer; font-size:16px; line-height:1; padding:0;';
+        closeSearchBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          removeArticleSearchPanel();
+        });
+        searchHeader.appendChild(searchInput);
+        searchHeader.appendChild(closeSearchBtn);
+
+        const results = document.createElement('div');
+        results.className = 'md-article-search-results';
+        results.style.cssText = 'padding:4px; overflow-y:auto; flex:1; min-height:0; scrollbar-width:thin; scrollbar-color:var(--panel-border) transparent;';
+        articleSearchPanel._searchInput = searchInput;
+        articleSearchPanel.appendChild(searchHeader);
+        articleSearchPanel.appendChild(results);
+        const rootLayer = (this.shadow && this.shadow.querySelector('.dev1-helper-root')) || document.body;
+        rootLayer.appendChild(articleSearchPanel);
+        syncArticleSearchPanelPosition();
+
+        const syncHandler = () => syncArticleSearchPanelPosition();
+        window.addEventListener('resize', syncHandler);
+        window.addEventListener('scroll', syncHandler, { passive: true });
+        const panelObserver = new MutationObserver(syncHandler);
+        panelObserver.observe(panel, { attributes: true, attributeFilter: ['style'] });
+        articleSearchPanel._observer = panelObserver;
+        articleSearchPanel._cleanupListeners = () => {
+          window.removeEventListener('resize', syncHandler);
+          window.removeEventListener('scroll', syncHandler);
+          panelObserver.disconnect();
+        };
+        searchInput.addEventListener('keydown', (event) => {
+          // Keep page-level shortcuts/search handlers from stealing IME input.
+          event.stopPropagation();
+          if (event.key === 'Escape') removeArticleSearchPanel();
+        });
+        ['keypress', 'keyup', 'compositionstart', 'compositionupdate', 'compositionend', 'beforeinput', 'input', 'mousedown', 'mouseup', 'click'].forEach((eventName) => {
+          searchInput.addEventListener(eventName, (event) => {
+            event.stopPropagation();
+          });
+        });
+        searchInput.addEventListener('input', renderArticleSearchResults);
+        renderArticleSearchResults();
+        searchInput.focus();
+        searchBtn.style.color = 'var(--accent-color)';
+      };
+
+      const toggleArticleSearchPanel = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (articleSearchPanel) removeArticleSearchPanel();
+        else showArticleSearchPanel();
+      };
+
+      searchBtn.addEventListener('click', toggleArticleSearchPanel);
       articleArea.addEventListener('input', () => {
         if (tocPanel) renderTocList();
+        if (articleSearchPanel) renderArticleSearchResults();
       });
 
       tab2Content.appendChild(articleLabel);
@@ -9455,27 +9805,85 @@
       tab1.addEventListener('click', () => {
         switchTab(1);
         removeTocPanel();
+        removeArticleSearchPanel();
       });
       tab2.addEventListener('click', () => switchTab(2));
 
-      const btnGroup = document.createElement('div');
-      btnGroup.style.cssText = `display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; flex-shrink: 0;`;
-
-      const downloadBtn = document.createElement('button');
-      downloadBtn.type = 'button';
-      downloadBtn.className = 'md-btn md-btn-primary';
-      downloadBtn.textContent = '导出';
-      downloadBtn.style.cssText = `outline: none; flex: 0 0 calc((100% - 8px) / 2) !important; max-width: calc((100% - 8px) / 2) !important;`;
-
-      btnGroup.appendChild(downloadBtn);
-
       body.appendChild(tab1Content);
       body.appendChild(tab2Content);
-      body.appendChild(btnGroup);
 
       panel.appendChild(header);
       panel.appendChild(tabContainer);
       panel.appendChild(body);
+
+      const MIN_RESIZE_WIDTH = 280;
+      const persistPanelWidth = () => {
+        const width = Math.round(parseFloat(panel.style.width) || 0);
+        if (width < MIN_RESIZE_WIDTH || typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+        chrome.storage.local.set({ [panelWidthStorageKey]: width });
+      };
+
+      const createPanelResizeHandle = () => {
+        const handle = document.createElement('div');
+        handle.dataset.noDrag = 'true';
+        handle.title = '拖动调整面板宽度';
+        handle.style.cssText = `
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          left: 0;
+          width: 8px;
+          cursor: ew-resize;
+          z-index: 3;
+          background: transparent;
+        `;
+        handle.addEventListener('mouseenter', () => {
+          handle.style.background = 'var(--accent-glow)';
+        });
+        handle.addEventListener('mouseleave', () => {
+          handle.style.background = 'transparent';
+        });
+        handle.addEventListener('pointerdown', (event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const startX = event.clientX;
+          const rect = panel.getBoundingClientRect();
+          const startWidth = rect.width;
+          const startRight = rect.right;
+          let resizing = true;
+
+          const finishResize = (finishEvent) => {
+            if (!resizing) return;
+            if (finishEvent && finishEvent.pointerId !== event.pointerId) return;
+            resizing = false;
+            window.removeEventListener('pointermove', onResize, true);
+            window.removeEventListener('pointerup', finishResize, true);
+            window.removeEventListener('pointercancel', finishResize, true);
+            try { handle.releasePointerCapture(event.pointerId); } catch (_) {}
+            persistPanelWidth();
+          };
+          const onResize = (moveEvent) => {
+            if (!resizing || moveEvent.pointerId !== event.pointerId) return;
+            const deltaX = moveEvent.clientX - startX;
+            const availableWidth = startRight - 10;
+            const maxWidth = Math.max(MIN_RESIZE_WIDTH, Math.min(window.innerWidth - 20, availableWidth));
+            const nextWidth = Math.max(MIN_RESIZE_WIDTH, Math.min(maxWidth, startWidth - deltaX));
+            panel.style.width = `${nextWidth}px`;
+            panel.style.left = `${startRight - nextWidth}px`;
+            panel.__dev1ManuallyDragged = true;
+            moveEvent.preventDefault();
+          };
+
+          resizing = true;
+          try { handle.setPointerCapture(event.pointerId); } catch (_) {}
+          window.addEventListener('pointermove', onResize, true);
+          window.addEventListener('pointerup', finishResize, true);
+          window.addEventListener('pointercancel', finishResize, true);
+        });
+        panel.appendChild(handle);
+      };
+      createPanelResizeHandle();
 
       this._bindDrag(panel, header, { skipInteractive: true, useLeftTop: true });
 
@@ -9615,11 +10023,23 @@
         }
       });
 
-      downloadBtn.addEventListener('click', async () => {
-        await saveContent();
-        this._removeMdSettingsPanel();
-        this._saveCurrentMd(anchor);
-      });
+      const exportMarkdown = async (button) => {
+        if (button.disabled) return;
+        button.disabled = true;
+        button.style.opacity = '0.65';
+        button.textContent = '导出中...';
+        try {
+          await saveContent();
+          this._removeMdSettingsPanel();
+          this._saveCurrentMd(anchor);
+        } finally {
+          button.disabled = false;
+          button.style.opacity = '1';
+          button.textContent = '导出';
+        }
+      };
+      templateExportBtn.addEventListener('click', () => exportMarkdown(templateExportBtn));
+      articleExportBtn.addEventListener('click', () => exportMarkdown(articleExportBtn));
 
       const onResizeOrScroll = () => {
         this._repositionMdSettingsPanel();
