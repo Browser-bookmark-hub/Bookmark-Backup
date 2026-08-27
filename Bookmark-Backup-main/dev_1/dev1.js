@@ -756,12 +756,12 @@
         if (lang === 'en') {
             return [
                 `MHTML uses Chrome's official ${pageCaptureLink} API and saves only content loaded at capture time; unloaded or lazy-loaded regions may be missing.`,
-                `MD uses the open-source algorithm (v1.7.0) from ${obsidianClipperLink} to convert the current page to Markdown.`
+                `MD uses the open-source algorithm (v1.7.1) from ${obsidianClipperLink} to convert the current page to Markdown.`
             ].map(line => `<span class="dev1-export-note-line">${line}</span>`).join('');
         }
         return [
             `MHTML 使用 Chrome 官方 ${pageCaptureLink} API，仅保存抓取时已加载内容；未渲染或懒加载区域可能缺失。`,
-            `MD 基于 ${obsidianClipperLink} 的开源算法（v1.7.0），转换当前页面为 Markdown。`
+            `MD 基于 ${obsidianClipperLink} 的开源算法（v1.7.1），转换当前页面为 Markdown。`
         ].map(line => `<span class="dev1-export-note-line">${line}</span>`).join('');
     }
 
