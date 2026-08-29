@@ -7148,6 +7148,17 @@ function dev1SanitizeFilePart(value, fallback = 'item', maxLen = 64) {
     return text || String(fallback || 'item');
 }
 
+function dev1NormalizeSnapshotHelperExportName(value = '') {
+    let name = String(value == null ? '' : value)
+        .replace(/[\x00-\x1F\x7F]/g, '')
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim();
+    name = name.replace(/\.(?:mhtml|md|png|jpe?g|webm|mp4)$/i, '').trim();
+    if (name === '.' || name === '..') return '';
+    return name.length > 96 ? name.slice(0, 96).trim() : name;
+}
+
 function dev1NormalizeQueueMetadataIndex(value) {
     if (value == null || String(value).trim() === '') return null;
     const number = Number(value);
@@ -8446,6 +8457,91 @@ function dev1BuildWebSnapshotCloudFileName(filePath = '', lang = 'zh_CN') {
     return parts.length > 0 ? parts[parts.length - 1] : 'web-snapshot-export';
 }
 
+async function dev1CheckSnapshotHelperRemoteFile({ lang, filePath, targets } = {}) {
+    const selected = dev1NormalizeExportTargets(targets);
+    const cloudFileName = dev1BuildWebSnapshotCloudFileName(filePath, lang);
+    const checks = [];
+
+    if (selected.webdav) {
+        checks.push((async () => {
+            try {
+                const config = await browserAPI.storage.local.get(['serverAddress', 'webdavBasePath', 'username', 'password', 'webDAVEnabled']);
+                if (!config.serverAddress || !config.username || !config.password || config.webDAVEnabled === false) return { checked: false };
+                const serverAddress = normalizeWebDAVServerBaseUrl(config.serverAddress, config.webdavBasePath);
+                const folderPath = `${getExportRootFolderByLang(lang)}/${getWebSnapshotExportFolderByLang(lang)}`;
+                const url = buildWebDAVResourceUrl(serverAddress, `${folderPath}/${cloudFileName}`);
+                const response = await fetchWithTimeout(url, {
+                    method: 'HEAD',
+                    headers: { 'Authorization': 'Basic ' + safeBase64(`${config.username}:${config.password}`) }
+                }, WEBDAV_META_TIMEOUT_MS);
+                if (response.status === 404) return { checked: true, exists: false };
+                if (response.status === 401 || response.status === 403 || response.status === 405) return { checked: false };
+                return { checked: true, exists: response.ok };
+            } catch (_) {
+                return { checked: false };
+            }
+        })());
+    }
+
+    if (selected.github) {
+        checks.push((async () => {
+            try {
+                const config = await browserAPI.storage.local.get(['githubRepoToken', 'githubRepoOwner', 'githubRepoName', 'githubRepoBranch', 'githubRepoBasePath', 'githubRepoEnabled']);
+                if (!config.githubRepoToken || !config.githubRepoOwner || !config.githubRepoName || config.githubRepoEnabled === false) return { checked: false };
+                const path = buildGitHubRepoFilePath({
+                    basePath: config.githubRepoBasePath,
+                    lang,
+                    folderKey: 'web_snapshot',
+                    fileName: cloudFileName
+                });
+                const encodedPath = path.split('/').filter(Boolean).map((part) => encodeURIComponent(part)).join('/');
+                const branch = String(config.githubRepoBranch || '').trim();
+                const refQuery = branch ? `?ref=${encodeURIComponent(branch)}` : '';
+                const url = `https://api.github.com/repos/${encodeURIComponent(config.githubRepoOwner)}/${encodeURIComponent(config.githubRepoName)}/contents/${encodedPath}${refQuery}`;
+                const response = await fetchWithTimeout(url, {
+                    headers: {
+                        Authorization: `Bearer ${config.githubRepoToken}`,
+                        Accept: 'application/vnd.github+json'
+                    }
+                }, WEBDAV_META_TIMEOUT_MS);
+                if (response.status === 404) return { checked: true, exists: false };
+                if (response.status === 401 || response.status === 403) return { checked: false };
+                return { checked: true, exists: response.ok };
+            } catch (_) {
+                return { checked: false };
+            }
+        })());
+    }
+
+    if (!checks.length) return { exists: false, checked: true };
+    const results = await Promise.all(checks);
+    return {
+        exists: results.some((result) => result.exists === true),
+        checked: results.every((result) => result.checked === true)
+    };
+}
+
+async function dev1EnsureUniqueSnapshotHelperFilePath({ lang, filePath, targets } = {}) {
+    const original = String(filePath || '').trim();
+    if (!original) return original;
+    const selected = dev1NormalizeExportTargets(targets);
+    if (!selected.webdav && !selected.github) return original;
+
+    const dot = original.lastIndexOf('.');
+    const extension = dot > original.lastIndexOf('/') ? original.slice(dot) : '';
+    const stem = extension ? original.slice(0, dot) : original;
+    for (let index = 1; index <= 100; index += 1) {
+        const candidate = index === 1 ? original : `${stem}_${index}${extension}`;
+        const result = await dev1CheckSnapshotHelperRemoteFile({ lang, filePath: candidate, targets: selected });
+        if (result.exists !== true && result.checked === true) return candidate;
+        if (result.checked !== true) {
+            const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+            return `${stem}_${stamp}${extension}`;
+        }
+    }
+    return `${stem}_${Date.now()}${extension}`;
+}
+
 function dev1Base64BinaryToBlob(base64 = '', contentType = 'application/octet-stream') {
     const raw = String(base64 || '').trim();
     if (!raw) return null;
@@ -8659,6 +8755,14 @@ function dev1BuildSnapshotHelperTargetFolder(lang = 'zh_CN') {
     return `${exportRootFolder}/${snapshotFolder}/${runToken}`;
 }
 
+async function dev1ResolveSnapshotHelperLeafName(kind = 'helper', item = {}, tab = {}) {
+    const itemName = dev1NormalizeSnapshotHelperExportName(item?.exportName);
+    if (itemName) return itemName;
+    if (kind === 'mhtml') return dev1BuildSnapshotHelperMhtmlLeafName(item, tab);
+    if (kind === 'md') return dev1BuildSnapshotHelperMdLeafName(item, tab);
+    return dev1BuildSnapshotHelperLeafName(kind, item);
+}
+
 function dev1NormalizeDownloadFolderPath(value = '') {
     return String(value || '')
         .split('/')
@@ -8680,8 +8784,12 @@ async function dev1DownloadSnapshotHelperBlob(message = {}) {
     const contentSize = Number(message?.contentSize);
     const targetFolder = String(message?.item?.snapshotHelperTargetFolder || message?.item?.targetFolder || '').trim()
         || dev1BuildSnapshotHelperTargetFolder(lang);
-    const leafName = dev1BuildSnapshotHelperLeafName(kind, message?.item || {});
-    const filename = `${targetFolder}/${leafName}.${extension}`;
+    const leafName = await dev1ResolveSnapshotHelperLeafName(kind, message?.item || {});
+    const filename = await dev1EnsureUniqueSnapshotHelperFilePath({
+        lang,
+        filePath: `${targetFolder}/${leafName}.${extension}`,
+        targets: exportTargets
+    });
     const errors = [];
     const targetResults = {
         local: false,
@@ -8772,8 +8880,7 @@ async function dev1SaveSnapshotHelperCurrentMhtml(message = {}, sender = {}) {
     const item = message?.item && typeof message.item === 'object' ? message.item : {};
     const targetFolder = String(item?.snapshotHelperTargetFolder || item?.targetFolder || '').trim()
         || dev1BuildSnapshotHelperTargetFolder(lang);
-    const leafName = dev1BuildSnapshotHelperMhtmlLeafName(item, tab);
-    const filename = `${targetFolder}/${leafName}.mhtml`;
+    const leafName = await dev1ResolveSnapshotHelperLeafName('mhtml', item, tab);
     let mhtmlBlob = null;
     try {
         await dev1SetSnapshotHelperPreparingUi(tabId, true);
@@ -8782,6 +8889,11 @@ async function dev1SaveSnapshotHelperCurrentMhtml(message = {}, sender = {}) {
         await dev1SetSnapshotHelperPreparingUi(tabId, false);
     }
     const exportTargets = await dev1LoadSnapshotExportTargets();
+    const filename = await dev1EnsureUniqueSnapshotHelperFilePath({
+        lang,
+        filePath: `${targetFolder}/${leafName}.mhtml`,
+        targets: exportTargets
+    });
     const errors = [];
     const targetResults = {
         local: false,
@@ -8833,8 +8945,7 @@ async function dev1SaveSnapshotHelperCurrentMd(message = {}, sender = {}) {
     const item = message?.item && typeof message.item === 'object' ? message.item : {};
     const targetFolder = String(item?.snapshotHelperTargetFolder || item?.targetFolder || '').trim()
         || dev1BuildSnapshotHelperTargetFolder(lang);
-    const leafName = dev1BuildSnapshotHelperMdLeafName(item, tab);
-    const filename = `${targetFolder}/${leafName}.md`;
+    const leafName = await dev1ResolveSnapshotHelperLeafName('md', item, tab);
     let captured = null;
     let markdownBlob = null;
     try {
@@ -8845,6 +8956,11 @@ async function dev1SaveSnapshotHelperCurrentMd(message = {}, sender = {}) {
         await dev1SetSnapshotHelperPreparingUi(tabId, false);
     }
     const exportTargets = await dev1LoadSnapshotExportTargets();
+    const filename = await dev1EnsureUniqueSnapshotHelperFilePath({
+        lang,
+        filePath: `${targetFolder}/${leafName}.md`,
+        targets: exportTargets
+    });
     const errors = [];
     const targetResults = {
         local: false,

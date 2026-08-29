@@ -18,6 +18,7 @@
     const API_KEY = '__dev1SnapshotHelper';
     const HOST_ID = 'dev1-snapshot-helper-host';
     const DEV1_EXPORT_TARGETS_STORAGE_KEY = 'dev1_experiment_export_targets_v1';
+    const DEV1_EXPORT_NAME_NAMESPACE_PREFIX = 'snapshot_helper_export_name_';
     const DEV1_GITHUB_REPO_RECOMMENDED_FILE_LIMIT_BYTES = 50 * 1024 * 1024;
     const DEV1_LARGE_HELPER_UPLOAD_THRESHOLD_BYTES = 32 * 1024 * 1024;
     const DEV1_CLOUD_CONFIG_KEYS = [
@@ -99,6 +100,10 @@
         open_web_snapshot_tooltip: '打开网页快照页面',
         helper_info_tooltip: '设置',
         helper_info_title: '说明',
+        export_name_label: '手动导出名字',
+        export_name_placeholder: '留空使用默认名称',
+        export_name_hint: '仅用于辅助工具的手动导出',
+        export_name_saved: '手动导出名字已更新',
         export_targets_label: '导出位置',
         target_local: '本地',
         target_webdav: '云端1: WebDAV',
@@ -114,6 +119,7 @@
         helper_info_cache: '辅助工具所做的用户修改暂存于本地，当对应标签页(tabid)关闭或浏览器重启时，相关缓存数据将自动释放。',
         helper_info_cache_release: '相关缓存数据将自动释放',
         helper_info_export: '建议及时导出备份；MD 数据量一般较小，适合云端1、2备份',
+        helper_info_export_cloud_tip: '适合云端1、2备份',
         save_done: '已保存',
         save_partial: '部分目标失败',
         local_save_success: '本地下载成功',
@@ -205,6 +211,10 @@
         open_web_snapshot_tooltip: 'Open the Web Snapshot page',
         helper_info_tooltip: 'Settings',
         helper_info_title: 'Help',
+        export_name_label: 'Manual Export Name',
+        export_name_placeholder: 'Leave blank to use the default name',
+        export_name_hint: 'Used only for manual Helper exports',
+        export_name_saved: 'Manual export name updated',
         export_targets_label: 'Export To',
         target_local: 'Local',
         target_webdav: 'Cloud 1: WebDAV',
@@ -220,6 +230,7 @@
         helper_info_cache: 'User changes made by Helper are cached locally. When the related tabid is closed or the browser restarts, the cached data is released automatically.',
         helper_info_cache_release: 'the cached data is released automatically',
         helper_info_export: 'Export backups promptly; Markdown is usually small and works well with Cloud 1/2 backups',
+        helper_info_export_cloud_tip: 'works well with Cloud 1/2 backups',
         save_done: 'Saved',
         save_partial: 'some targets failed',
         local_save_success: 'Local download complete',
@@ -368,6 +379,7 @@
         this._mdSaveTimer = null;
         this._urlChangeListener = null;
         this._exportTargets = { local: true, webdav: false, github: false };
+        this._exportName = '';
         this._cloudTargetAvailability = { webdav: false, github: false };
         this._storageChangeHandler = null;
         this._saveStatusLineTimer = null;
@@ -514,8 +526,29 @@
         return text.replace(releaseText, `<span style="color: #dc2626;">${releaseText}</span>`);
       }
 
+      _formatHelperInfoExport() {
+        const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[char]));
+        const text = escapeHtml(this.translate('helper_info_export'));
+        const emphasis = escapeHtml(this.translate('helper_info_export_cloud_tip'));
+        return text.replace(emphasis, `<span class="dev1-helper-info-emphasis">${emphasis}</span>`);
+      }
+
       _renderHelperInfoPopoverHtml() {
+        const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[char]));
         const shortcut = this._getOpenWebSnapshotShortcutFallback();
+        const exportName = escapeHtml(this._exportName);
         const localChecked = this._exportTargets.local !== false ? 'checked' : '';
         const webdavAvailable = this._cloudTargetAvailability.webdav === true;
         const githubAvailable = this._cloudTargetAvailability.github === true;
@@ -527,6 +560,11 @@
         const githubClass = githubAvailable ? '' : ' is-disabled';
         const disabledTip = this.translate('export_target_disabled_tip');
         const targetHtml = `
+                    <div class="dev1-helper-settings-block dev1-helper-export-name-block">
+                      <div class="dev1-helper-settings-title">${this.translate('export_name_label')}</div>
+                      <input type="text" class="dev1-helper-export-name" data-helper-export-name maxlength="96" value="${exportName}" placeholder="${this.translate('export_name_placeholder')}" aria-label="${this.translate('export_name_label')}">
+                      <div class="dev1-helper-export-name-hint">${this.translate('export_name_hint')}</div>
+                    </div>
                     <div class="dev1-helper-settings-block">
                       <div class="dev1-helper-settings-title">${this.translate('export_targets_label')}</div>
                       <div class="dev1-helper-target-options">
@@ -552,18 +590,18 @@
                   <div class="dev1-helper-info-popover" role="dialog" aria-label="${this.translate('helper_info_tooltip')}">
                     ${targetHtml}
                     <div class="dev1-helper-settings-help-title">${this.translate('helper_info_title')}</div>
-                    <div class="dev1-helper-info-line" style="text-decoration: underline;">1. ${this.translate('helper_info_shortcut_prefix')} <kbd data-helper-shortcut>${shortcut}</kbd> ${this.translate('helper_info_shortcut_suffix')}</div>
-                    <div class="dev1-helper-info-line" style="text-decoration: underline;">2. ${this._formatHelperInfoCache()}</div>
-                    <div class="dev1-helper-info-line dev1-helper-info-warning">3. ${this.translate('helper_info_export')}</div>
+                    <div class="dev1-helper-info-line">1. ${this.translate('helper_info_shortcut_prefix')} <kbd data-helper-shortcut>${shortcut}</kbd> ${this.translate('helper_info_shortcut_suffix')}</div>
+                    <div class="dev1-helper-info-line">2. ${this._formatHelperInfoCache()}</div>
+                    <div class="dev1-helper-info-line">3. ${this._formatHelperInfoExport()}</div>
                   </div>`;
         }
         return `
                   <div class="dev1-helper-info-popover" role="dialog" aria-label="${this.translate('helper_info_tooltip')}">
                     ${targetHtml}
                     <div class="dev1-helper-settings-help-title">${this.translate('helper_info_title')}</div>
-                    <div class="dev1-helper-info-line" style="text-decoration: underline;">1、${this.translate('helper_info_shortcut_prefix')}「<kbd data-helper-shortcut>${shortcut}</kbd>」${this.translate('helper_info_shortcut_suffix')}</div>
-                    <div class="dev1-helper-info-line" style="text-decoration: underline;">2、${this._formatHelperInfoCache()}</div>
-                    <div class="dev1-helper-info-line dev1-helper-info-warning">3、「${this.translate('helper_info_export')}」</div>
+                    <div class="dev1-helper-info-line">1、${this.translate('helper_info_shortcut_prefix')}「<kbd data-helper-shortcut>${shortcut}</kbd>」${this.translate('helper_info_shortcut_suffix')}</div>
+                    <div class="dev1-helper-info-line">2、${this._formatHelperInfoCache()}</div>
+                    <div class="dev1-helper-info-line">3、${this._formatHelperInfoExport()}</div>
                   </div>`;
       }
 
@@ -1255,6 +1293,35 @@
               color: var(--text-main);
               margin-bottom: 7px;
             }
+            .dev1-helper-export-name {
+              display: block;
+              width: 100%;
+              min-height: 30px;
+              box-sizing: border-box;
+              padding: 6px 8px;
+              border: 1px solid var(--card-border);
+              border-radius: 7px;
+              background: var(--card-bg);
+              color: var(--text-main);
+              font: inherit;
+              font-size: 12px;
+              line-height: 1.3;
+              outline: none;
+            }
+            .dev1-helper-export-name:focus {
+              border-color: var(--accent-color);
+              box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 18%, transparent);
+            }
+            .dev1-helper-export-name::placeholder {
+              color: var(--text-muted);
+              opacity: .8;
+            }
+            .dev1-helper-export-name-hint {
+              margin-top: 5px;
+              color: var(--text-muted);
+              font-size: 10px;
+              line-height: 1.35;
+            }
             .dev1-helper-target-options {
               display: flex;
               flex-direction: column;
@@ -1364,8 +1431,8 @@
               font-weight: 700;
               white-space: nowrap;
             }
-            .dev1-helper-info-warning {
-              color: #f97316;
+            .dev1-helper-info-emphasis {
+              color: #eab308;
               font-weight: 700;
             }
             .dev1-helper-feedback {
@@ -1835,9 +1902,13 @@
         bindTip(openSnapshotBtn);
         this._hydrateOpenWebSnapshotShortcut();
         this._bindHelperExportTargetControls();
+        this._bindHelperExportNameControl();
         this._readHelperExportTargetState()
           .then(() => this._updateHelperExportTargetControls())
           .catch(() => this._updateHelperExportTargetControls());
+        this._readHelperExportNameState()
+          .then(() => this._updateHelperExportNameControl())
+          .catch(() => this._updateHelperExportNameControl());
         this._setupExportTargetStorageListener();
         mhtmlBtn.addEventListener('click', () => this._saveCurrentMhtml(mhtmlBtn));
         mdBtn.addEventListener('click', () => { this._collapsePanel(); this._showMdSettingsPanel(launcher); });
@@ -1892,6 +1963,73 @@
           webdav: source.webdav === true,
           github: source.github === true
         };
+      }
+
+      _normalizeExportName(value = '') {
+        let name = String(value == null ? '' : value)
+          .replace(/[\x00-\x1F\x7F]/g, '')
+          .replace(/[\\/:*?"<>|]/g, '_')
+          .replace(/\s+/g, ' ')
+          .trim();
+        name = name.replace(/\.(?:mhtml|md|png|jpe?g|webm|mp4)$/i, '').trim();
+        if (name === '.' || name === '..') return '';
+        return name.length > 96 ? name.slice(0, 96).trim() : name;
+      }
+
+      _getExportNameTabId() {
+        const tabId = Number(this.config && this.config.existingTabId);
+        return Number.isFinite(tabId) ? Math.floor(tabId) : null;
+      }
+
+      _getExportNameStorageNamespace(url = this._getCurrentUrl()) {
+        return `${DEV1_EXPORT_NAME_NAMESPACE_PREFIX}${hashUrl(url)}`;
+      }
+
+      async _readHelperExportNameState(url = this._getCurrentUrl()) {
+        const scoped = this._getScopedStorage();
+        const tabId = this._getExportNameTabId();
+        if (!scoped || tabId == null) {
+          this._exportName = '';
+          return;
+        }
+        try {
+          const stored = await scoped.getScoped(tabId, this._getExportNameStorageNamespace(url), url);
+          this._exportName = this._normalizeExportName(stored);
+        } catch (_) {
+          this._exportName = '';
+        }
+      }
+
+      async _writeHelperExportName(value = '', url = this._getCurrentUrl()) {
+        this._exportName = this._normalizeExportName(value);
+        this._updateHelperExportNameControl();
+        const scoped = this._getScopedStorage();
+        const tabId = this._getExportNameTabId();
+        if (!scoped || tabId == null) return;
+        await scoped.setScoped(tabId, this._getExportNameStorageNamespace(url), url, this._exportName);
+      }
+
+      _updateHelperExportNameControl() {
+        const input = this.shadow && this.shadow.querySelector('input[data-helper-export-name]');
+        if (!(input instanceof HTMLInputElement)) return;
+        if (this.shadow.activeElement !== input) input.value = this._exportName;
+      }
+
+      _bindHelperExportNameControl() {
+        const input = this.shadow && this.shadow.querySelector('input[data-helper-export-name]');
+        if (!(input instanceof HTMLInputElement)) return;
+        const save = async () => {
+          const normalized = this._normalizeExportName(input.value);
+          input.value = normalized;
+          await this._writeHelperExportName(normalized, this._getCurrentUrl());
+          this._setHeaderFeedback(this.translate('export_name_saved'));
+        };
+        input.addEventListener('change', save);
+        input.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          input.blur();
+        });
       }
 
       _resolveCloudTargetAvailability(values = {}) {
@@ -2468,7 +2606,7 @@
           const response = await sendRuntimeMessage({
             action: 'dev1SnapshotHelperSaveCurrentMhtml',
             lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
-            item: this.config
+            item: { ...this.config, exportName: this._exportName }
           }, 90000);
           if (!response || response.success !== true) throw new Error(response?.error || 'MHTML save failed');
           const message = this._getSaveResultMessage(response, 'mhtml_saved');
@@ -2502,7 +2640,7 @@
           const response = await sendRuntimeMessage({
             action: 'dev1SnapshotHelperSaveCurrentMd',
             lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
-            item: this.config
+            item: { ...this.config, exportName: this._exportName }
           }, 60000);
           if (!response || response.success !== true) throw new Error(response?.error || 'Markdown save failed');
           const message = this._getSaveResultMessage(response, 'md_saved');
@@ -2662,7 +2800,7 @@
             extension,
             lang: this.config.lang === 'en' ? 'en' : 'zh_CN',
             mimeType: mimeType || blob.type || 'application/octet-stream',
-            item: this.config
+            item: { ...this.config, exportName: this._exportName }
           }, this._getBlobSaveMessageTimeoutMs(blob));
           if (!response || response.success !== true) throw new Error(response?.error || 'Download failed');
           const message = this._getSaveResultMessage(response, 'save_done');
@@ -3181,15 +3319,15 @@
       this._urlChangeListener = async () => {
         const newUrl = String(location.href || '').trim();
         if (this.config && this.config.url && this.config.url !== newUrl) {
+          const oldUrl = this.config.url;
+          const tabId = this.config.existingTabId;
+          const scoped = this._getScopedStorage();
           // 1. 如果面板处于打开状态，清除 pending saveTimer 并立即保存旧页面数据
           if (this._getMdSettingsPanel() && this._mdTextarea && this._mdNotesArea && this._mdArticleArea) {
             if (this._mdSaveTimer) {
               clearTimeout(this._mdSaveTimer);
               this._mdSaveTimer = null;
             }
-            const oldUrl = this.config.url;
-            const tabId = this.config.existingTabId;
-            const scoped = this._getScopedStorage();
             if (scoped && tabId != null) {
               try {
                 await scoped.setScoped(tabId, 'md_content', oldUrl, this._mdTextarea.value);
@@ -3199,8 +3337,18 @@
             }
           }
 
+          // 保存旧 URL 下尚未触发 change 事件的导出名字。
+          const exportNameInput = this.shadow && this.shadow.querySelector('input[data-helper-export-name]');
+          if (scoped && tabId != null && exportNameInput instanceof HTMLInputElement) {
+            try {
+              await scoped.setScoped(tabId, this._getExportNameStorageNamespace(oldUrl), oldUrl, this._normalizeExportName(exportNameInput.value));
+            } catch (_) { }
+          }
+
           // 2. 更新 config 的 URL 为新 URL
           this.config.url = newUrl;
+          await this._readHelperExportNameState(newUrl);
+          this._updateHelperExportNameControl();
 
           // 3. 如果面板处于打开状态，从 scoped 存储加载新页面数据，并触发提取新文章正文（如果新页面没有缓存数据）
           if (this._getMdSettingsPanel() && this._mdTextarea && this._mdNotesArea && this._mdArticleArea) {
