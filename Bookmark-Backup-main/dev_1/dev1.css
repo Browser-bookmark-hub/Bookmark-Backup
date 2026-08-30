@@ -724,6 +724,96 @@
     padding: 6px;
 }
 
+.dev1-scope-option-list.history-scope-mode {
+    display: block;
+    overflow-y: auto;
+}
+.dev1-history-scope-list {
+    display: grid;
+    gap: 3px;
+    margin-bottom: 10px;
+}
+.dev1-history-scope-record {
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 3px 6px;
+    background: var(--bg-primary);
+}
+.dev1-history-primary-candidate { display: flex; align-items: center; gap: 8px; }
+.dev1-history-primary-candidate .dev1-history-scope-record { flex: 1 1 auto; min-width: 0; }
+.dev1-history-primary-candidate .dev1-history-scope-record-head { display: grid; grid-template-columns: 32px minmax(140px, 1fr) 158px 122px 150px; column-gap: 16px; }
+.dev1-history-primary-candidate .dev1-history-scope-date { margin: 0; max-width: none; }
+.dev1-history-primary-candidate .dev1-history-scope-artifacts { margin: 0; }
+.dev1-history-more-btn,
+.dev1-history-picker-back-btn { flex: 0 0 auto; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); height: 28px; border-radius: 4px; padding: 0 10px; font-size: 12px; line-height: 26px; cursor: pointer; }
+.dev1-history-more-btn.manual-selector-btn-confirm { border: 0; background: var(--accent-primary); color: #fff; height: 28px; padding: 0 12px; border-radius: 5px; font-size: 12px; line-height: 28px; font-weight: 500; }
+.dev1-history-more-btn.manual-selector-btn-confirm:hover { background: var(--accent-hover); color: #fff; }
+.dev1-history-more-btn:hover,
+.dev1-history-picker-back-btn:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
+.dev1-history-scope-record:hover,
+.dev1-history-scope-record.selected { border-color: color-mix(in srgb, var(--accent-primary, #2563eb) 45%, var(--border-color) 55%); background: var(--bg-secondary); }
+.dev1-history-scope-record.is-picker-row { cursor: pointer; }
+.dev1-history-scope-record-head { display: flex; align-items: center; gap: 7px; min-height: 26px; min-width: 0; }
+.dev1-history-record-seq { width: 32px; flex: 0 0 32px; color: var(--text-secondary); font-size: 12px; text-align: center; }
+.dev1-history-record-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 180px; min-width: 0; font-size: 12px; }
+.dev1-history-record-hash { color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; width: 110px; flex: 0 0 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev1-history-scope-date { color: var(--text-secondary); font-size: 11px; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; margin-left: 0; }
+.dev1-history-scope-artifacts { display: inline-flex; justify-content: flex-start; width: 150px; flex: 0 0 150px; gap: 3px; margin: 0; }
+.dev1-history-artifact-option { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--border-color, #d1d5db); border-radius: 4px; padding: 2px 6px; cursor: pointer; font-size: 11px; line-height: 16px; white-space: nowrap; }
+.dev1-history-artifact-option.selected { color: var(--accent-primary, #2563eb); border-color: currentColor; background: color-mix(in srgb, currentColor 10%, transparent); }
+.dev1-history-artifact-option input { margin: 0; width: 12px; height: 12px; }
+.dev1-history-record-only { color: var(--text-secondary); font-size: 11px; }
+.dev1-history-picker-panel { display: flex; flex-direction: column; gap: 6px; }
+.dev1-history-picker-toolbar { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+.dev1-history-picker-toolbar-actions { display: inline-flex; align-items: center; gap: 8px; }
+.dev1-history-picker-columns { display: grid; grid-template-columns: 32px minmax(120px, 1fr) 150px 110px 150px; gap: 5px; color: var(--text-secondary); font-size: 11px; padding: 0 6px; }
+.dev1-history-picker-seq-head { text-align: center; }
+.dev1-history-picker-time-head { text-align: left; }
+.dev1-history-picker-pager { display: flex; justify-content: center; align-items: center; gap: 10px; padding: 0; font-size: 11px; color: var(--text-secondary); }
+.dev1-history-picker-pager button { border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+.dev1-history-picker-back-btn { height: auto; padding: 3px 8px; font-size: 11px; line-height: normal; }
+.dev1-history-picker-pager button:disabled { opacity: .45; cursor: default; }
+.dev1-history-picker-panel .dev1-history-scope-record-head { min-height: 24px; }
+.dev1-history-picker-panel .dev1-history-scope-date { display: block; max-width: none; margin-left: 0; transform: none; text-align: left; }
+.dev1-history-picker-panel .dev1-history-scope-record-head { display: grid; grid-template-columns: 32px minmax(120px, 1fr) 150px 110px 150px; gap: 5px; }
+.dev1-history-picker-panel .dev1-history-scope-date { justify-self: start; margin-left: -6px; }
+.dev1-history-picker-panel .dev1-history-scope-artifacts { margin-left: 0; }
+.dev1-history-scope-item {
+    cursor: pointer;
+}
+.history-capability-badge {
+    margin-left: auto;
+    font-size: 11px;
+    white-space: nowrap;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color, #d1d5db);
+}
+.history-capability-badge.full { color: #2563eb; }
+.history-capability-badge.snapshot { color: #16a34a; }
+.history-capability-badge.changes { color: #d97706; }
+.history-capability-badge.record-only { color: #6b7280; }
+.dev1-history-scope-preview {
+    border-top: 1px solid var(--border-color, #d1d5db);
+    padding-top: 8px;
+}
+.dev1-history-scope-hint,
+.dev1-history-scope-tree-title {
+    color: var(--text-secondary, #6b7280);
+    font-size: 12px;
+    padding: 6px 2px;
+}
+.dev1-history-scope-hint { text-align: center; }
+@media (max-width: 560px) {
+    .dev1-history-scope-date { display: none; }
+    .dev1-history-record-hash { width: 72px; flex-basis: 72px; }
+    .dev1-history-primary-candidate .dev1-history-scope-record-head { grid-template-columns: 28px minmax(90px, 1fr) 110px 72px 110px; column-gap: 9px; }
+    .dev1-history-picker-columns { grid-template-columns: 28px minmax(90px, 1fr) 110px 72px 110px; }
+    .dev1-history-picker-panel .dev1-history-scope-record-head { grid-template-columns: 28px minmax(90px, 1fr) 110px 72px 110px; }
+    .dev1-history-scope-artifacts { width: 110px; flex-basis: 110px; }
+    .dev1-history-artifact-option { padding-left: 5px; padding-right: 5px; }
+}
+
 .dev1-scope-option-list.folder-tree-mode {
     padding: 10px 10px 8px;
 }

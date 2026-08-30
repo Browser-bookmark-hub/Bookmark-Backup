@@ -34,9 +34,10 @@
     const SOURCE_BOOKMARKS = 'bookmarks';
     const SOURCE_CHANGES = 'changes';
     const SOURCE_ALL_TABS = 'all_tabs';
-    const SOURCE_KEYS = [SOURCE_BOOKMARKS, SOURCE_CHANGES, SOURCE_ALL_TABS];
+    const SOURCE_HISTORY = 'history';
+    const SOURCE_KEYS = [SOURCE_BOOKMARKS, SOURCE_CHANGES, SOURCE_ALL_TABS, SOURCE_HISTORY];
     const FILTER_KEYS = ['bookmark', 'folder', 'domain', 'subdomain'];
-    const SCOPE_UI_KIND_KEYS = ['folder', 'domain', 'subdomain', 'bookmark', 'whitelist'];
+    const SCOPE_UI_KIND_KEYS = ['folder', 'domain', 'subdomain', 'bookmark', 'whitelist', 'history'];
     const CHANGES_VIEW_MODE_KEYS = ['simple', 'detailed', 'collection'];
     const SCOPE_TREE_CHILD_BATCH = 120;
     const REVIEW_AUTO_REVIEW_DEFAULT_MS = 500;
@@ -82,7 +83,8 @@
         return {
             [SOURCE_BOOKMARKS]: { expanded: new Set(), loaded: new Map() },
             [SOURCE_CHANGES]: { expanded: new Set(), loaded: new Map() },
-            [SOURCE_ALL_TABS]: { expanded: new Set(), loaded: new Map() }
+            [SOURCE_ALL_TABS]: { expanded: new Set(), loaded: new Map() },
+            [SOURCE_HISTORY]: { expanded: new Set(), loaded: new Map() }
         };
     }
 
@@ -99,6 +101,10 @@
             [SOURCE_ALL_TABS]: {
                 domain: { expanded: new Set(), loaded: new Map() },
                 subdomain: { expanded: new Set(), loaded: new Map() }
+            },
+            [SOURCE_HISTORY]: {
+                domain: { expanded: new Set(), loaded: new Map() },
+                subdomain: { expanded: new Set(), loaded: new Map() }
             }
         };
     }
@@ -108,6 +114,11 @@
             sourceKey: SOURCE_CHANGES,
             kind: 'folder',
             currentChangesResolvedMode: 'collection',
+            historyRecords: [],
+            historySelectedTime: '',
+            historySelectedArtifact: '',
+            historyPickerOpen: false,
+            historyPickerPage: 1,
             keyword: '',
             lazy: {
                 sourceKey: SOURCE_CHANGES,
@@ -186,7 +197,8 @@
         sources: {
             [SOURCE_BOOKMARKS]: createSourceState(),
             [SOURCE_CHANGES]: createSourceState(),
-            [SOURCE_ALL_TABS]: createSourceState()
+            [SOURCE_ALL_TABS]: createSourceState(),
+            [SOURCE_HISTORY]: createSourceState()
         },
         scopePanelOpen: false,
         scopeUi: createScopeUiState(),
@@ -424,6 +436,14 @@
             sourceLabelBookmarkApi: '全量书签',
             sourceLabelCurrentChanges: '当前变化',
             sourceLabelAllTabs: '所有窗口Tab',
+            sourceLabelHistory: '备份历史',
+            historyLoading: '正在加载备份历史...',
+            historyEmpty: '暂无备份历史记录。',
+            historyRecordOnly: '仅记录',
+            historySnapshotOnly: '仅快照',
+            historyChangesOnly: '仅变化',
+            historySnapshotChanges: '快照+变化',
+            historySelectHint: '选择记录后显示对应书签树',
             rootFolderLabel: '（根目录）',
             rootSubdomainLabel: '（无子域名）',
             scopeNoTabData: '当前没有可抓取的已打开页面。',
@@ -654,6 +674,14 @@
             sourceLabelBookmarkApi: 'Full Bookmarks',
             sourceLabelCurrentChanges: 'Current Changes',
             sourceLabelAllTabs: 'All Window Tabs',
+            sourceLabelHistory: 'Backup History',
+            historyLoading: 'Loading backup history...',
+            historyEmpty: 'No backup history records.',
+            historyRecordOnly: 'Record only',
+            historySnapshotOnly: 'Snapshot only',
+            historyChangesOnly: 'Changes only',
+            historySnapshotChanges: 'Snapshot + Changes',
+            historySelectHint: 'Select a record to show its bookmark tree',
             rootFolderLabel: '(Root)',
             rootSubdomainLabel: '(No subdomain)',
             scopeNoTabData: 'No open tab page is available for capture.',
@@ -931,6 +959,10 @@
     }
 
     function clearAllScopeSelections() {
+        state.scopeUi.historySelectedTime = '';
+        state.scopeUi.historySelectedArtifact = '';
+        state.scopeUi.historyPickerOpen = false;
+        state.scopeUi.historyPickerPage = 1;
         SOURCE_KEYS.forEach((sourceKey) => {
             const sourceState = getSourceState(sourceKey);
             FILTER_KEYS.forEach((kind) => {
@@ -2604,6 +2636,7 @@
         const value = String(sourceKey || '').trim();
         if (value === SOURCE_CHANGES) return SOURCE_CHANGES;
         if (value === SOURCE_ALL_TABS) return SOURCE_ALL_TABS;
+        if (value === SOURCE_HISTORY) return SOURCE_HISTORY;
         return SOURCE_BOOKMARKS;
     }
 
@@ -3227,7 +3260,7 @@
     }
 
     function getScopeTitleChangeClass(sourceKey, actionTypeRaw = '') {
-        if (sourceKey !== SOURCE_CHANGES) return '';
+        if (sourceKey !== SOURCE_CHANGES && sourceKey !== SOURCE_HISTORY) return '';
         return getScopeChangeClassByActionType(actionTypeRaw);
     }
 
@@ -3398,7 +3431,9 @@
     }
 
     function buildSourceItemsFromChangesPayload(payload) {
-        const rootNodes = Array.isArray(payload?.children) ? payload.children : [];
+        const rootNodes = Array.isArray(payload?.children)
+            ? payload.children
+            : (Array.isArray(payload?.detailedChildren) ? payload.detailedChildren : []);
         const results = [];
         const seen = new Set();
         const folderBadgeByPath = new Map();
@@ -3640,6 +3675,7 @@
     function getNoDataMessageBySource(sourceKey) {
         if (sourceKey === SOURCE_CHANGES) return t('scopeNoChangeData');
         if (sourceKey === SOURCE_ALL_TABS) return t('scopeNoTabData');
+        if (sourceKey === SOURCE_HISTORY) return t('historyEmpty');
         return t('scopeNoBookmarkData');
     }
 
@@ -3773,6 +3809,7 @@
 
     function getActiveScopeSourceKey() {
         const kind = getActiveScopeKind();
+        if (kind === 'history') return SOURCE_HISTORY;
         if (kind === 'domain' || kind === 'subdomain') return SOURCE_BOOKMARKS;
         return normalizeSourceKey(state.scopeUi?.sourceKey);
     }
@@ -3794,6 +3831,7 @@
     }
 
     function getCurrentScopeSelectedInKind(sourceState, kind) {
+        if (kind === 'history') return state.scopeUi?.historySelectedTime ? 1 : 0;
         if (kind === 'whitelist') {
             return state.whitelistKeys instanceof Set ? state.whitelistKeys.size : 0;
         }
@@ -3895,7 +3933,7 @@
         const count = Number(opt?.count) || 0;
         const sourceText = sourceKey === SOURCE_CHANGES
             ? t('sourceLabelCurrentChanges')
-            : (sourceKey === SOURCE_ALL_TABS ? t('sourceLabelAllTabs') : t('sourceLabelBookmarkApi'));
+            : (sourceKey === SOURCE_ALL_TABS ? t('sourceLabelAllTabs') : (sourceKey === SOURCE_HISTORY ? t('sourceLabelHistory') : t('sourceLabelBookmarkApi')));
         return `
             <label class="manual-selector-item dev1-scope-option-item ${checked ? 'selected' : ''}">
                 <input type="checkbox" class="add-result-checkbox dev1-scope-option-checkbox"
@@ -4396,10 +4434,10 @@
             const checked = sourceState.filters.bookmark.has(key);
             const host = String(node.host || '').trim();
             const titleChangeClass = getScopeTitleChangeClass(sourceKey, node.actionType || '');
-            const changeBadgesHtml = sourceKey === SOURCE_CHANGES
+            const changeBadgesHtml = (sourceKey === SOURCE_CHANGES || sourceKey === SOURCE_HISTORY)
                 ? renderScopeChangeBadgesHtml(node.badgeMask || getChangeMaskByActionType(node.actionType || ''))
                 : '';
-            const hostHtml = host
+            const hostHtml = host && sourceKey !== SOURCE_CHANGES && sourceKey !== SOURCE_HISTORY
                 ? `<span class="dev1-folder-tree-host" title="${escapeHtml(host)}">${escapeHtml(host)}</span>`
                 : '';
             return `
@@ -4448,7 +4486,7 @@
         const toggleExpanded = expanded ? 'true' : 'false';
         const folderIcon = expanded ? 'fa-folder-open' : 'fa-folder';
         const folderTitleChangeClass = getScopeTitleChangeClass(sourceKey, node.actionType || '');
-        const pathBadgesHtml = sourceKey === SOURCE_CHANGES
+        const pathBadgesHtml = (sourceKey === SOURCE_CHANGES || sourceKey === SOURCE_HISTORY)
             ? renderScopePathBadgesHtml(node.badgeMask || 0)
             : '';
 
@@ -5008,13 +5046,12 @@
         kindTabs.forEach((tab) => {
             if (!(tab instanceof HTMLButtonElement)) return;
             const tabKind = String(tab.dataset.kind || '').trim();
-            const isActive = tabKind === 'changes-folder'
-                ? (sourceKey === SOURCE_CHANGES && kind === 'folder')
-                : (tabKind === 'folder'
-                    ? (sourceKey === SOURCE_BOOKMARKS && kind === 'folder')
-                    : tabKind === 'all-tabs'
-                        ? (sourceKey === SOURCE_ALL_TABS && kind === 'folder')
-                    : tabKind === kind);
+            let isActive = false;
+            if (tabKind === 'changes-folder') isActive = sourceKey === SOURCE_CHANGES && kind === 'folder';
+            else if (tabKind === 'history') isActive = sourceKey === SOURCE_HISTORY && kind === 'history';
+            else if (tabKind === 'folder') isActive = sourceKey === SOURCE_BOOKMARKS && kind === 'folder';
+            else if (tabKind === 'all-tabs') isActive = sourceKey === SOURCE_ALL_TABS && kind === 'folder';
+            else isActive = tabKind === kind;
             tab.classList.toggle('active', isActive);
         });
 
@@ -5059,13 +5096,14 @@
         if (clearKindBtn) {
             clearKindBtn.disabled = kind === 'whitelist'
                 ? whitelistCount <= 0
-                : !hasAnyScopeSelection();
+                : (kind === 'history' ? !state.scopeUi?.historySelectedArtifact && !hasAnyScopeSelection() : !hasAnyScopeSelection());
         }
 
         const listEl = document.getElementById('dev1ScopeOptionList');
         if (!listEl) return;
         listEl.classList.remove('folder-tree-mode');
         listEl.classList.remove('scope-group-mode');
+        listEl.classList.remove('history-scope-mode');
 
         if (kind === 'whitelist') {
             const entries = buildWhitelistScopeEntries(String(keyword || ''));
@@ -5099,6 +5137,36 @@
                 if (state.scopeUi.lazy.offset === before) break;
                 guard += 1;
             }
+            return;
+        }
+
+        if (kind === 'history') {
+            listEl.classList.add('history-scope-mode');
+            listEl.classList.add('folder-tree-mode');
+            const records = Array.isArray(state.scopeUi?.historyRecords) ? state.scopeUi.historyRecords : [];
+            listEl.innerHTML = renderHistoryScopeRows(records, keyword);
+            const selectedTime = String(state.scopeUi?.historySelectedTime || '').trim();
+            const selectedRecord = records.find(record => String(record?.time || '').trim() === selectedTime);
+            let preview = document.getElementById('dev1HistoryScopeTreePreview');
+            if (!preview) {
+                preview = document.createElement('div');
+                preview.id = 'dev1HistoryScopeTreePreview';
+                preview.className = 'dev1-history-scope-preview';
+                listEl.appendChild(preview);
+            }
+            if (!selectedRecord) {
+                preview.innerHTML = `<div class="dev1-history-scope-hint">${escapeHtml(t('historySelectHint'))}</div>`;
+                return;
+            }
+            const historyState = getSourceState(SOURCE_HISTORY);
+            if (historyState.loadError) {
+                preview.innerHTML = `<div class="add-results-empty">${escapeHtml(historyState.loadError)}</div>`;
+                return;
+            }
+            const treeData = buildUnifiedScopeTreeModel(historyState.items, '', {});
+            preview.innerHTML = treeData.nodes?.length
+                ? `<div class="dev1-history-scope-tree-title">${escapeHtml(String(selectedRecord.note || selectedRecord.time || ''))} · ${escapeHtml(state.scopeUi.historySelectedArtifact === 'changes' ? (getLangKey() === 'en' ? 'Changes' : '变化') : (getLangKey() === 'en' ? 'Snapshot' : '快照'))}</div><div class="folder-tree-container">${renderUnifiedScopeTreeHtml(treeData.nodes, SOURCE_HISTORY, historyState, { forceExpandAll: false })}</div>`
+                : `<div class="add-results-empty">${escapeHtml(t('historyRecordOnly'))}</div>`;
             return;
         }
 
@@ -6043,6 +6111,17 @@
                     }
                     return;
                 }
+                if (kind === 'history') {
+                    state.scopeUi.sourceKey = SOURCE_HISTORY;
+                    state.scopeUi.kind = 'history';
+                    state.scopeUi.keyword = '';
+                    state.scopeUi.historyPickerPage = 1;
+                    state.scopeUi.historyRecords = [];
+                    const historyList = root.querySelector('#dev1ScopeOptionList');
+                    if (historyList) historyList.innerHTML = `<div class="add-results-empty">${escapeHtml(t('historyLoading'))}</div>`;
+                    refreshHistorySource({ silentStatus: true }).catch(() => {});
+                    return;
+                }
                 if (kind === 'folder') {
                     state.scopeUi.sourceKey = SOURCE_BOOKMARKS;
                     state.scopeUi.kind = 'folder';
@@ -6100,6 +6179,62 @@
             scopeOptionList.addEventListener('click', (event) => {
                 const target = event.target;
                 if (!(target instanceof HTMLElement)) return;
+
+                const moreBtn = target.closest('.dev1-history-more-btn');
+                if (moreBtn instanceof HTMLButtonElement) {
+                    state.scopeUi.historyPickerOpen = true;
+                    renderScopeSelector();
+                    return;
+                }
+                const backBtn = target.closest('.dev1-history-picker-back-btn');
+                if (backBtn instanceof HTMLButtonElement) {
+                    state.scopeUi.historyPickerOpen = false;
+                    renderScopeSelector();
+                    return;
+                }
+                const pageBtn = target.closest('[data-history-page]');
+                if (pageBtn instanceof HTMLButtonElement && !pageBtn.disabled) {
+                    const records = Array.isArray(state.scopeUi?.historyRecords) ? state.scopeUi.historyRecords : [];
+                    const query = String(state.scopeUi?.keyword || '').trim().toLowerCase();
+                    const total = Math.max(1, Math.ceil(records.filter(record => !query || [record?.time, record?.note, record?.type, record?.seqNumber].some(value => String(value || '').toLowerCase().includes(query))).length / 10));
+                    const current = Number(state.scopeUi.historyPickerPage) || 1;
+                    state.scopeUi.historyPickerPage = pageBtn.dataset.historyPage === 'next' ? Math.min(total, current + 1) : Math.max(1, current - 1);
+                    renderScopeSelector();
+                    return;
+                }
+
+                const historyRow = target.closest('.dev1-history-scope-record.is-picker-row[data-history-time]');
+                if (historyRow instanceof HTMLElement
+                    && !target.closest('button, input, label, a, .dev1-history-artifact-option')) {
+                    const rowTime = String(historyRow.dataset.historyTime || '').trim();
+                    const defaultArtifact = String(historyRow.dataset.defaultArtifact || '').trim();
+                    const record = (state.scopeUi.historyRecords || []).find(item => String(item?.time || '').trim() === rowTime);
+                    if (!record) return;
+                    state.scopeUi.historySelectedTime = rowTime;
+                    state.scopeUi.historySelectedArtifact = defaultArtifact;
+                    state.scopeUi.historyPickerOpen = false;
+                    if (!defaultArtifact) {
+                        const historyState = getSourceState(SOURCE_HISTORY);
+                        historyState.items = [];
+                        historyState.filteredItems = [];
+                        historyState.filters = createEmptyFilters();
+                        historyState.loadError = t('historyRecordOnly');
+                        applyAllFilters();
+                        renderScopeSelector();
+                        return;
+                    }
+                    getSourceState(SOURCE_HISTORY).loadError = t('historyLoading');
+                    renderScopeSelector();
+                    loadHistoryScopeRecord(record, defaultArtifact).then(() => {
+                        if (state.scopeUi.historySelectedTime !== rowTime || state.scopeUi.historySelectedArtifact !== defaultArtifact) return;
+                        renderScopeSelector();
+                    }).catch(error => {
+                        if (state.scopeUi.historySelectedTime !== rowTime || state.scopeUi.historySelectedArtifact !== defaultArtifact) return;
+                        getSourceState(SOURCE_HISTORY).loadError = normalizeRuntimeErrorMessage(error, t('sourceError'));
+                        renderScopeSelector();
+                    });
+                    return;
+                }
 
                 const whitelistRuleBtn = target.closest('.dev1-whitelist-rule-btn[data-op]');
                 if (whitelistRuleBtn instanceof HTMLButtonElement) {
@@ -6303,6 +6438,19 @@
         const clearKindBtn = root.querySelector('#dev1ScopeClearKindBtn');
         if (clearKindBtn) {
             clearKindBtn.addEventListener('click', async () => {
+                if (getActiveScopeKind() === 'history') {
+                    state.scopeUi.historySelectedTime = '';
+                    state.scopeUi.historySelectedArtifact = '';
+                    state.scopeUi.historyPickerOpen = false;
+                    const historyState = getSourceState(SOURCE_HISTORY);
+                    historyState.items = [];
+                    historyState.filteredItems = [];
+                    historyState.filters = createEmptyFilters();
+                    applyAllFilters();
+                    renderScopeSelector();
+                    setStatus(t('queueCleared'), 'success');
+                    return;
+                }
                 if (getActiveScopeKind() === 'whitelist') {
                     state.whitelistKeys = new Set();
                     state.whitelistDomainKeys = new Set();
@@ -6351,6 +6499,54 @@
                     const sourceKey = String(target.dataset.source || '').trim();
                     const kind = String(target.dataset.kind || '').trim();
                     const key = String(target.dataset.key || '').trim();
+                    if (sourceKey === SOURCE_HISTORY && kind === 'history-artifact') {
+                        const artifact = String(target.dataset.artifact || '').trim();
+                        const record = (state.scopeUi.historyRecords || []).find(item => String(item?.time || '').trim() === key);
+                        if (!record || !artifact || artifact === 'record') return;
+                        state.scopeUi.historySelectedTime = key;
+                        state.scopeUi.historySelectedArtifact = artifact;
+                        state.scopeUi.historyPickerOpen = false;
+                        getSourceState(SOURCE_HISTORY).loadError = t('historyLoading');
+                        renderScopeSelector();
+                        loadHistoryScopeRecord(record, artifact).then(() => {
+                            if (String(state.scopeUi.historySelectedTime || '') !== key || state.scopeUi.historySelectedArtifact !== artifact) return;
+                            renderScopeSelector();
+                        }).catch(error => {
+                            if (String(state.scopeUi.historySelectedTime || '') !== key || state.scopeUi.historySelectedArtifact !== artifact) return;
+                            const historyState = getSourceState(SOURCE_HISTORY);
+                            historyState.loadError = normalizeRuntimeErrorMessage(error, t('sourceError'));
+                            renderScopeSelector();
+                        });
+                        return;
+                    }
+                    if (sourceKey === SOURCE_HISTORY && kind === 'history') {
+                        if (!target.checked) {
+                            state.scopeUi.historySelectedTime = '';
+                            state.scopeUi.historySelectedArtifact = '';
+                            const historyState = getSourceState(SOURCE_HISTORY);
+                            historyState.items = [];
+                            historyState.filteredItems = [];
+                            historyState.filters = createEmptyFilters();
+                            applyAllFilters();
+                            renderScopeSelector();
+                            return;
+                        }
+                        const record = (state.scopeUi.historyRecords || []).find(item => String(item?.time || '').trim() === key);
+                        if (!record) return;
+                        state.scopeUi.historySelectedTime = key;
+                        getSourceState(SOURCE_HISTORY).loadError = t('historyLoading');
+                        renderScopeSelector();
+                        loadHistoryScopeRecord(record).then(() => {
+                            if (String(state.scopeUi.historySelectedTime || '') !== key) return;
+                            renderScopeSelector();
+                        }).catch(error => {
+                            if (String(state.scopeUi.historySelectedTime || '') !== key) return;
+                            const historyState = getSourceState(SOURCE_HISTORY);
+                            historyState.loadError = normalizeRuntimeErrorMessage(error, t('sourceError'));
+                            renderScopeSelector();
+                        });
+                        return;
+                    }
                     const sourceState = getSourceState(sourceKey);
                     if (!sourceState.filters[kind]) return;
 
@@ -7395,6 +7591,158 @@
         }
     }
 
+    function getHistoryRecordCapability(record = {}) {
+        const explicit = record?.capabilities && typeof record.capabilities === 'object' ? record.capabilities : {};
+        const hasSnapshot = explicit.hasSnapshotData === true || !!(record?.bookmarkTree || record?.hasData === true);
+        const hasChanges = explicit.hasChangeData === true || !!(record?.hasChangeData === true || record?.changeDataKey || record?.__persistedChangeData);
+        return { hasSnapshot, hasChanges };
+    }
+
+    function getHistoryRecordCapabilityLabel(record) {
+        const cap = getHistoryRecordCapability(record);
+        if (cap.hasSnapshot && cap.hasChanges) return t('historySnapshotChanges');
+        if (cap.hasSnapshot) return t('historySnapshotOnly');
+        if (cap.hasChanges) return t('historyChangesOnly');
+        return t('historyRecordOnly');
+    }
+
+    function renderHistoryArtifactChoices(record) {
+        const time = String(record?.time || '').trim();
+        const cap = getHistoryRecordCapability(record);
+        const options = [];
+        if (cap.hasSnapshot) options.push(['snapshot', getLangKey() === 'en' ? 'Snapshot' : '快照']);
+        if (cap.hasChanges) options.push(['changes', getLangKey() === 'en' ? 'Changes' : '变化']);
+        if (!options.length) {
+            return `<span class="dev1-history-record-only">${escapeHtml(getHistoryRecordCapabilityLabel(record))}</span>`;
+        }
+        return options.map(([artifact, label]) => {
+            const checked = state.scopeUi.historySelectedTime === time && state.scopeUi.historySelectedArtifact === artifact;
+            return `<label class="dev1-history-artifact-option ${checked ? 'selected' : ''}"><input type="radio" name="dev1HistoryArtifact" class="dev1-scope-option-checkbox" data-source="${SOURCE_HISTORY}" data-kind="history-artifact" data-key="${escapeHtml(time)}" data-artifact="${artifact}" ${checked ? 'checked' : ''}><span>${escapeHtml(label)}</span></label>`;
+        }).join('');
+    }
+
+    function renderHistoryRecordCandidate(record, options = {}) {
+        const time = String(record?.time || '').trim();
+        const cap = getHistoryRecordCapability(record);
+        const defaultArtifact = cap.hasSnapshot ? 'snapshot' : (cap.hasChanges ? 'changes' : '');
+        const seq = String(record?.seqNumber ?? '-').trim() || '-';
+        const title = String(record?.note || record?.type || time).trim() || time;
+        const fingerprint = String(record?.fingerprint || '').trim();
+        const hash = fingerprint ? (fingerprint.length > 14 ? `${fingerprint.slice(0, 14)}…` : fingerprint) : '-';
+        const dateText = time ? new Date(time).toLocaleString(getLangKey() === 'en' ? 'en-US' : 'zh-CN') : '';
+        return `<div class="dev1-history-scope-record ${options.secondary === true ? 'is-picker-row' : ''} ${state.scopeUi.historySelectedTime === time ? 'selected' : ''}" data-history-time="${escapeHtml(time)}" data-default-artifact="${escapeHtml(defaultArtifact)}">
+            <div class="dev1-history-scope-record-head">
+                <span class="dev1-history-record-seq" title="${escapeHtml(getLangKey() === 'en' ? 'Sequence' : '序号')}">${escapeHtml(seq)}</span>
+                <span class="dev1-history-record-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+                <span class="dev1-history-scope-date" title="${escapeHtml(dateText)}">${escapeHtml(dateText)}</span>
+                <span class="dev1-history-record-hash" title="${escapeHtml(fingerprint || (getLangKey() === 'en' ? 'Hash unavailable' : '暂无哈希值'))}">${escapeHtml(hash)}</span>
+                <div class="dev1-history-scope-artifacts">${renderHistoryArtifactChoices(record)}</div>
+            </div>
+        </div>`;
+    }
+
+    function renderHistoryScopeRows(records, keyword = '') {
+        const query = String(keyword || '').trim().toLowerCase();
+        const filtered = (Array.isArray(records) ? records : []).filter((record) => {
+            if (!query) return true;
+            return [record?.time, record?.note, record?.type, record?.seqNumber]
+                .some(value => String(value || '').toLowerCase().includes(query));
+        });
+        if (!filtered.length) return `<div class="add-results-empty">${escapeHtml(t('historyEmpty'))}</div>`;
+        const selectedTime = String(state.scopeUi.historySelectedTime || '').trim();
+        const currentRecord = filtered.find(record => String(record?.time || '').trim() === selectedTime) || filtered[0];
+        if (state.scopeUi.historyPickerOpen === true) {
+            const pageSize = 10;
+            const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+            const page = Math.max(1, Math.min(totalPages, Number(state.scopeUi.historyPickerPage) || 1));
+            state.scopeUi.historyPickerPage = page;
+            const pageRecords = filtered.slice((page - 1) * pageSize, page * pageSize);
+            return `<div class="dev1-history-picker-panel">
+                <div class="dev1-history-picker-toolbar"><strong>${escapeHtml(t('sourceLabelHistory'))}</strong><div class="dev1-history-picker-toolbar-actions"><div class="dev1-history-picker-pager"><button type="button" data-history-page="prev" ${page <= 1 ? 'disabled' : ''}>${escapeHtml(getLangKey() === 'en' ? 'Previous' : '上一页')}</button><span>${page} / ${totalPages}</span><button type="button" data-history-page="next" ${page >= totalPages ? 'disabled' : ''}>${escapeHtml(getLangKey() === 'en' ? 'Next' : '下一页')}</button></div><button type="button" class="dev1-history-picker-back-btn">${escapeHtml(getLangKey() === 'en' ? 'Back' : '返回')}</button></div></div>
+                <div class="dev1-history-picker-columns"><span class="dev1-history-picker-seq-head">#</span><span>${escapeHtml(getLangKey() === 'en' ? 'Name' : '名称')}</span><span class="dev1-history-picker-time-head">${escapeHtml(getLangKey() === 'en' ? 'Time' : '时间')}</span><span>${escapeHtml(getLangKey() === 'en' ? 'Hash' : '哈希值')}</span><span>${escapeHtml(getLangKey() === 'en' ? 'Data' : '数据')}</span></div>
+                <div class="dev1-history-scope-list">${pageRecords.map(record => renderHistoryRecordCandidate(record, { secondary: true })).join('')}</div>
+            </div>`;
+        }
+        return `<div class="dev1-history-primary-candidate">${renderHistoryRecordCandidate(currentRecord)}<button type="button" class="dev1-history-more-btn manual-selector-btn manual-selector-btn-confirm">${escapeHtml(getLangKey() === 'en' ? 'Choose more' : '选择更多')}</button></div>`;
+    }
+
+    async function fetchHistoryScopeRecords() {
+        const response = await sendRuntimeMessage({ action: 'getSyncHistory', recentLimit: 1000, lang: getLangKey() }, 30000);
+        if (!response || response.success !== true || !Array.isArray(response.syncHistory)) throw new Error(t('sourceError'));
+        return response.syncHistory.slice().sort((a, b) => {
+            const ta = new Date(a?.time || 0).getTime();
+            const tb = new Date(b?.time || 0).getTime();
+            return tb - ta;
+        });
+    }
+
+    async function loadHistoryScopeRecord(record, artifact = '') {
+        const sourceState = getSourceState(SOURCE_HISTORY);
+        const cap = getHistoryRecordCapability(record);
+        let snapshotTree = record?.bookmarkTree || null;
+        let changePayload = record?.__persistedChangeData || null;
+        if (!snapshotTree && cap.hasSnapshot) {
+            const response = await sendRuntimeMessage({ action: 'getBackupData', time: record.time }, 30000);
+            snapshotTree = response?.success ? response.bookmarkTree : null;
+        }
+        if (!changePayload && cap.hasChanges && runtimeApi?.storage?.local) {
+            const key = String(record?.changeDataKey || `changes_data_${record.time}`).trim();
+            changePayload = await new Promise(resolve => runtimeApi.storage.local.get([key], data => resolve(data?.[key] || null)));
+        }
+
+        let snapshotItems = snapshotTree ? buildSourceItemsFromBookmarkPayload({ items: buildBookmarkRawItemsFromTree(Array.isArray(snapshotTree) ? snapshotTree : [snapshotTree]) }) : [];
+        let changeItems = [];
+        if (changePayload && Array.isArray(changePayload.detailedChildren)) {
+            changeItems = buildSourceItemsFromChangesPayload({ children: changePayload.detailedChildren }).items || [];
+        } else if (changePayload && Array.isArray(changePayload.changeEntries)) {
+            const entries = changePayload.changeEntries.map(entry => ({ id: entry?.[0], url: entry?.[1]?.url, title: entry?.[1]?.title, changeType: entry?.[1]?.type }));
+            changeItems = buildSourceItemsFromChangesPayload({ children: entries }).items || [];
+        }
+        const byUrl = new Map(changeItems.map(item => [String(item.url || ''), item]));
+        if (artifact === 'changes') snapshotItems = changeItems;
+        else if (artifact !== 'snapshot') {
+            snapshotItems.forEach(item => {
+                const change = byUrl.get(String(item.url || ''));
+                if (change) {
+                    item.actionType = change.actionType || '';
+                    item.actionText = change.actionText || '';
+                }
+            });
+            changeItems.forEach(item => {
+                const key = String(item.url || '');
+                if (!key || snapshotItems.some(existing => String(existing.url || '') === key && String(existing.folderPath || '') === String(item.folderPath || ''))) return;
+                snapshotItems.push(item);
+            });
+        }
+        else if (!snapshotItems.length && artifact !== 'snapshot') snapshotItems = changeItems;
+        snapshotItems.forEach(item => {
+            item.sourceKey = SOURCE_HISTORY;
+            item.sourceLabel = t('sourceLabelHistory');
+        });
+        sourceState.items = snapshotItems;
+        sourceState.scopeTreeNodes = [];
+        sourceState.folderBadgeByPath = new Map();
+        sourceState.filterOptions = buildFilterOptions(snapshotItems);
+        sourceState.filters = createEmptyFilters();
+        sourceState.loadError = !snapshotItems.length ? t('historyRecordOnly') : '';
+        applyAllFilters();
+    }
+
+    async function refreshHistorySource({ silentStatus = false } = {}) {
+        const sourceState = getSourceState(SOURCE_HISTORY);
+        try {
+            const records = await fetchHistoryScopeRecords();
+            state.scopeUi.historyRecords = records;
+            sourceState.loadError = '';
+            if (!silentStatus && !records.length) setStatus(t('historyEmpty'));
+        } catch (error) {
+            state.scopeUi.historyRecords = [];
+            sourceState.loadError = normalizeRuntimeErrorMessage(error, t('sourceError'));
+            if (!silentStatus) setStatus(sourceState.loadError, 'error');
+        }
+        renderScopeSelector();
+    }
+
     async function refreshCurrentChangesSource({ silentStatus = false, forceRefresh = true } = {}) {
         if (state.running) return;
 
@@ -7717,6 +8065,10 @@
                                 <button type="button" class="dev1-scope-kind-tab active" data-kind="changes-folder">
                                     <i class="fas fa-history"></i>
                                     <span>${escapeHtml(t('dimCurrentChanges'))}</span>
+                                </button>
+                                <button type="button" class="dev1-scope-kind-tab" data-kind="history">
+                                    <i class="fas fa-clock"></i>
+                                    <span>${escapeHtml(t('sourceLabelHistory'))}</span>
                                 </button>
                                 <button type="button" class="dev1-scope-kind-tab" data-kind="folder">
                                     <i class="fas fa-folder"></i>
