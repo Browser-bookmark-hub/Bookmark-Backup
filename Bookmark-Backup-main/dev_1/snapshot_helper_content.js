@@ -89,6 +89,42 @@
         md_failed: 'MD 保存失败',
         mhtml_tooltip: '保存 MHTML 网页快照',
         md_tooltip: '保存 Markdown 网页快照',
+        md_settings_title: 'Markdown 模板设置',
+        md_settings_help: '说明',
+        md_settings_unpin: '取消置顶',
+        md_settings_pin: '置顶',
+        md_settings_template_tab: '模板与笔记',
+        md_settings_article_tab: '正文',
+        md_settings_locate_tip: '根据输入闪烁竖条/选中候选，进行定位',
+        md_settings_export: '导出',
+        md_settings_export_markdown: '导出 Markdown',
+        md_settings_loading: '获取中...',
+        md_settings_template_label: '1. 导出模板（可自定义）',
+        md_settings_content_source: '{{content}} 对应正文来源',
+        md_settings_refresh_template: '重新获取导出模板',
+        md_settings_notes_label: '2. 你的笔记（自由输入，插入到正文前）',
+        md_settings_notes_placeholder: '在这里写你的笔记、想法、摘要…',
+        md_settings_article_label: '正文（提取结果）',
+        md_settings_article_source: '正文来源',
+        md_settings_refresh_article: '重新获取正文',
+        md_settings_article_placeholder: '提取的正文内容...',
+        md_settings_keep_selected: '删除除了选中以外的文字',
+        md_settings_toc: '文章目录',
+        md_settings_no_toc: '无目录项',
+        md_settings_search_article: '搜索正文',
+        md_settings_search_hint: '输入关键词搜索正文',
+        md_settings_search_empty: '未找到匹配内容',
+        md_settings_search_match: '第 {n} 个匹配',
+        md_settings_search_limit: '仅显示前 100 个结果',
+        md_settings_search_placeholder: '搜索正文内容...',
+        md_settings_close_search: '关闭搜索',
+        md_settings_resize: '拖动调整面板宽度',
+        md_settings_help_1: '1. 可以拖动图片进入模板、笔记或正文输入框；有 http/https 链接的图片会保留链接，本地或临时图片会临时存储并在导出时转为 Base64。',
+        md_settings_help_2: '2. 如果处于「队列批量处理」，这里的改变会临时存储，跟随 URL；Tab 页关闭后对应临时存储会清除。',
+        md_settings_help_3: '3. 每次打开本面板都会重新获取一次「正文（提取结果）」并更新正文框。',
+        md_settings_exporting: '导出中...',
+        md_settings_article_failed: '[正文提取失败]',
+        md_settings_article_timeout: '[正文提取超时或出错]',
         highlight_tool: '高亮工具',
         highlight_tooltip: '高亮工具',
         highlight_tool_ready: '高亮工具已打开',
@@ -200,6 +236,42 @@
         md_failed: 'MD save failed',
         mhtml_tooltip: 'Save an MHTML web snapshot',
         md_tooltip: 'Save a Markdown web snapshot',
+        md_settings_title: 'Markdown Template Settings',
+        md_settings_help: 'Help',
+        md_settings_unpin: 'Unpin',
+        md_settings_pin: 'Pin',
+        md_settings_template_tab: 'Template & Notes',
+        md_settings_article_tab: 'Content',
+        md_settings_locate_tip: 'Locate by flashing or selecting matching candidates',
+        md_settings_export: 'Export',
+        md_settings_export_markdown: 'Export Markdown',
+        md_settings_loading: 'Loading...',
+        md_settings_template_label: '1. Export Template (Customizable)',
+        md_settings_content_source: '{{content}} source content',
+        md_settings_refresh_template: 'Refresh export template',
+        md_settings_notes_label: '2. Your Notes (free input, inserted before content)',
+        md_settings_notes_placeholder: 'Write notes, ideas, or a summary here...',
+        md_settings_article_label: 'Content (Extracted Result)',
+        md_settings_article_source: 'Content source',
+        md_settings_refresh_article: 'Refresh content',
+        md_settings_article_placeholder: 'Extracted content...',
+        md_settings_keep_selected: 'Delete all text except the selection',
+        md_settings_toc: 'Table of Contents',
+        md_settings_no_toc: 'No headings',
+        md_settings_search_article: 'Search content',
+        md_settings_search_hint: 'Enter keywords to search the content',
+        md_settings_search_empty: 'No matches found',
+        md_settings_search_match: 'Match {n}',
+        md_settings_search_limit: 'Showing the first 100 results',
+        md_settings_search_placeholder: 'Search content...',
+        md_settings_close_search: 'Close search',
+        md_settings_resize: 'Drag to resize panel width',
+        md_settings_help_1: '1. Drag images into the template, notes, or content field. HTTP/HTTPS image links are preserved; local or temporary images are stored temporarily and converted to Base64 during export.',
+        md_settings_help_2: '2. In queue batch processing, changes are stored temporarily per URL and cleared when the tab closes.',
+        md_settings_help_3: '3. Opening this panel fetches the extracted content again and updates the content field.',
+        md_settings_exporting: 'Exporting...',
+        md_settings_article_failed: '[Content extraction failed]',
+        md_settings_article_timeout: '[Content extraction timed out or failed]',
         highlight_tool: 'Highlight',
         highlight_tooltip: 'Highlight tool',
         highlight_tool_ready: 'Highlight tool opened',
@@ -3284,6 +3356,9 @@
         if (typeof settings._closeHelpPopover === 'function') {
           settings._closeHelpPopover();
         }
+        if (typeof settings._closeArticleContextMenu === 'function') {
+          settings._closeArticleContextMenu();
+        }
         if (settings._resizeHandler) {
           window.removeEventListener('resize', settings._resizeHandler);
           window.removeEventListener('scroll', settings._resizeHandler);
@@ -3376,10 +3451,10 @@
                   newArticle = response.article;
                   metadata = response.metadata;
                 } else {
-                  newArticle = '[正文提取失败]';
+                  newArticle = this.t('md_settings_article_failed');
                 }
               } catch (e) {
-                newArticle = '[正文提取超时或出错]';
+                newArticle = this.t('md_settings_article_timeout');
               }
             }
 
@@ -8839,10 +8914,10 @@
             await scoped.setScoped(tabId, 'md_article', currentUrl, initialArticle);
           }
         } else {
-          initialArticle = cachedArticle || '[正文提取失败]';
+          initialArticle = cachedArticle || this.t('md_settings_article_failed');
         }
       } catch (e) {
-        initialArticle = cachedArticle || '[正文提取超时或出错]';
+        initialArticle = cachedArticle || this.t('md_settings_article_timeout');
       }
 
       if (initialContent == null) {
@@ -8865,15 +8940,15 @@
       `;
       header.innerHTML = `
         <span style="display:flex; align-items:center; gap:4px; min-width:0;">
-          <span>Markdown 模板设置</span>
+          <span>${this.t('md_settings_title')}</span>
           <button type="button" class="md-settings-help md-settings-btn" data-no-drag="true" style="
             font-size: 12px; line-height: 1; font-weight: 700; flex: 0 0 26px;
-          " title="说明" aria-label="说明">?</button>
+          " title="${this.t('md_settings_help')}" aria-label="${this.t('md_settings_help')}">?</button>
         </span>
         <div style="display: flex; gap: 6px; align-items: center;">
           <button type="button" class="md-settings-pin md-settings-btn" style="
             display: flex; align-items: center; justify-content: center;
-          " title="取消置顶">
+          " title="${this.t('md_settings_unpin')}">
             <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="currentColor" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16 11V7a4 4 0 0 0-8 0v4L5 14h14l-3-3z"></path><path d="M12 14v7"></path>
             </svg>
@@ -8895,7 +8970,7 @@
 
       const tab1 = document.createElement('button');
       tab1.type = 'button';
-      tab1.textContent = '模板与笔记';
+      tab1.textContent = this.t('md_settings_template_tab');
       tab1.style.cssText = `
         flex: 1; padding: 7px 0; border: 0; background: transparent;
         color: var(--text-main); font-size: 13px; font-weight: 550;
@@ -8905,7 +8980,7 @@
 
       const tab2 = document.createElement('button');
       tab2.type = 'button';
-      tab2.textContent = '正文';
+      tab2.textContent = this.t('md_settings_article_tab');
       tab2.style.cssText = `
         flex: 1; padding: 7px 0; border: 0; background: transparent;
         color: var(--text-muted); font-size: 13px; font-weight: 550;
@@ -8949,7 +9024,7 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.dataset.noDrag = 'true';
-        const tipText = '根据输入闪烁竖条/选中候选，进行定位';
+        const tipText = this.t('md_settings_locate_tip');
         btn.setAttribute('aria-label', tipText);
         btn.title = title || tipText;
         btn.style.cssText = `
@@ -9077,9 +9152,9 @@
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.dataset.noDrag = 'true';
-        btn.textContent = '导出';
-        btn.title = '导出 Markdown';
-        btn.setAttribute('aria-label', '导出 Markdown');
+        btn.textContent = this.t('md_settings_export');
+        btn.title = this.t('md_settings_export_markdown');
+        btn.setAttribute('aria-label', this.t('md_settings_export_markdown'));
         btn.style.cssText = `
           height: 22px;
           box-sizing: border-box;
@@ -9115,7 +9190,7 @@
         const svg = btn.querySelector('svg');
         btn.disabled = state === 'loading';
         btn.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
-        btn.title = state === 'loading' ? '获取中...' : fallbackTitle;
+        btn.title = state === 'loading' ? this.t('md_settings_loading') : fallbackTitle;
         btn.style.opacity = state === 'loading' ? '0.58' : '1';
         btn.style.cursor = state === 'loading' ? 'default' : 'pointer';
         btn.style.background = 'transparent';
@@ -9170,12 +9245,12 @@
 
       let textarea = null;
       const templateLabel = createSourceLabel(
-        '1. 导出模板（可自定义）',
-        '定位 {{content}} 对应正文来源',
-        '{{content}} 对应正文来源',
-        () => this._getMarkdownTextareaSourceLookup(textarea, 'template', '{{content}} 对应正文来源')
+        this.t('md_settings_template_label'),
+        this.t('md_settings_content_source'),
+        this.t('md_settings_content_source'),
+        () => this._getMarkdownTextareaSourceLookup(textarea, 'template', this.t('md_settings_content_source'))
       );
-      const refreshTemplateTitle = '重新获取导出模板';
+      const refreshTemplateTitle = this.t('md_settings_refresh_template');
       const refreshTemplateBtn = createFieldRefreshButton(refreshTemplateTitle);
       templateLabel._rightActions.appendChild(refreshTemplateBtn);
       const templateExportBtn = createFieldExportButton();
@@ -9195,7 +9270,7 @@
 
       const notesLabel = document.createElement('div');
       notesLabel.style.cssText = `font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 2px; margin-top: 2px; flex-shrink: 0;`;
-      notesLabel.textContent = '2. 你的笔记（自由输入，插入到正文前）';
+      notesLabel.textContent = this.t('md_settings_notes_label');
 
       const notesArea = document.createElement('textarea');
       notesArea.style.cssText = `
@@ -9206,7 +9281,7 @@
         font-family: system-ui, -apple-system, sans-serif;
       `;
       notesArea.value = initialNotes;
-      notesArea.placeholder = '在这里 write 你的笔记、想法、摘要…';
+      notesArea.placeholder = this.t('md_settings_notes_placeholder');
       this._mdNotesArea = notesArea;
 
       tab1Content.appendChild(templateLabel);
@@ -9216,12 +9291,12 @@
 
       let articleArea = null;
       const articleLabel = createSourceLabel(
-        '正文（提取结果）',
-        '定位正文来源',
-        '正文来源',
-        () => this._getMarkdownTextareaSourceLookup(articleArea, 'article', '正文来源')
+        this.t('md_settings_article_label'),
+        this.t('md_settings_article_source'),
+        this.t('md_settings_article_source'),
+        () => this._getMarkdownTextareaSourceLookup(articleArea, 'article', this.t('md_settings_article_source'))
       );
-      const refreshArticleTitle = '重新获取正文';
+      const refreshArticleTitle = this.t('md_settings_refresh_article');
       const refreshArticleBtn = createFieldRefreshButton(refreshArticleTitle);
       articleLabel._rightActions.appendChild(refreshArticleBtn);
       const articleExportBtn = createFieldExportButton();
@@ -9236,16 +9311,166 @@
         font-family: system-ui, -apple-system, sans-serif;
       `;
       articleArea.value = initialArticle;
-      articleArea.placeholder = '提取的正文内容...';
+      articleArea.placeholder = this.t('md_settings_article_placeholder');
       this._bindMarkdownTextareaSelectionMemory(articleArea);
       this._mdArticleArea = articleArea;
+
+      // The extracted body is a textarea, so keep the browser selection intact
+      // while exposing a focused action for trimming everything outside it.
+      let articleContextMenu = null;
+      let articleContextMenuSelection = null;
+      let articleContextMenuOutsideHandler = null;
+      let articleContextMenuKeydownHandler = null;
+      const closeArticleContextMenu = () => {
+        if (articleContextMenuOutsideHandler) {
+          document.removeEventListener('pointerdown', articleContextMenuOutsideHandler, true);
+          articleContextMenuOutsideHandler = null;
+        }
+        if (articleContextMenuKeydownHandler) {
+          document.removeEventListener('keydown', articleContextMenuKeydownHandler, true);
+          articleContextMenuKeydownHandler = null;
+        }
+        if (articleContextMenu) {
+          articleContextMenu.remove();
+          articleContextMenu = null;
+        }
+        articleContextMenuSelection = null;
+      };
+      panel._closeArticleContextMenu = closeArticleContextMenu;
+
+      const showArticleContextMenu = (event, start, end) => {
+        closeArticleContextMenu();
+        articleContextMenuSelection = { start, end };
+
+        const menu = document.createElement('div');
+        menu.className = 'md-article-context-menu';
+        menu.setAttribute('role', 'menu');
+        menu.style.cssText = `
+          position: fixed;
+          z-index: 2147483649;
+          min-width: 190px;
+          max-width: min(280px, calc(100vw - 16px));
+          box-sizing: border-box;
+          padding: 4px;
+          border: 1px solid var(--panel-border);
+          border-radius: 8px;
+          background: var(--panel-bg);
+          color: var(--text-main);
+          box-shadow: var(--panel-shadow);
+          font: 12px/1.4 system-ui, -apple-system, sans-serif;
+        `;
+
+        const keepSelectedButton = document.createElement('button');
+        keepSelectedButton.type = 'button';
+        keepSelectedButton.setAttribute('role', 'menuitem');
+        keepSelectedButton.setAttribute('aria-label', this.t('md_settings_keep_selected'));
+        keepSelectedButton.innerHTML = `
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="#ef4444" stroke-width="2.5" fill="none" stroke-linecap="round" aria-hidden="true" style="flex: 0 0 auto;">
+            <path d="M6 6l12 12"></path><path d="M18 6L6 18"></path>
+          </svg>
+          <span>${this.t('md_settings_keep_selected')}</span>
+        `;
+        keepSelectedButton.style.cssText = `
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          width: 100%;
+          box-sizing: border-box;
+          padding: 7px 9px;
+          border: 0;
+          border-radius: 5px;
+          background: transparent;
+          color: inherit;
+          cursor: pointer;
+          text-align: left;
+          font: inherit;
+          white-space: normal;
+        `;
+        keepSelectedButton.addEventListener('mouseenter', () => {
+          keepSelectedButton.style.background = 'var(--card-bg-hover)';
+        });
+        keepSelectedButton.addEventListener('mouseleave', () => {
+          keepSelectedButton.style.background = 'transparent';
+        });
+        keepSelectedButton.addEventListener('contextmenu', (menuEvent) => {
+          menuEvent.preventDefault();
+          menuEvent.stopPropagation();
+        });
+        keepSelectedButton.addEventListener('click', (clickEvent) => {
+          clickEvent.preventDefault();
+          clickEvent.stopPropagation();
+          const selection = articleContextMenuSelection;
+          const value = String(articleArea.value || '');
+          if (!selection || selection.end <= selection.start) {
+            closeArticleContextMenu();
+            return;
+          }
+          const safeStart = Math.max(0, Math.min(value.length, selection.start));
+          const safeEnd = Math.max(safeStart, Math.min(value.length, selection.end));
+          const selectedText = value.slice(safeStart, safeEnd);
+          articleArea.value = selectedText;
+          articleArea.focus();
+          articleArea.setSelectionRange(0, selectedText.length);
+          articleArea.__dev1MdLastSelection = { start: 0, end: selectedText.length };
+          articleArea.dispatchEvent(new Event('input', { bubbles: true }));
+          articleArea.dispatchEvent(new Event('select', { bubbles: true }));
+          closeArticleContextMenu();
+        });
+        menu.appendChild(keepSelectedButton);
+
+        const rootLayer = (this.shadow && this.shadow.querySelector('.dev1-helper-root')) || document.body;
+        rootLayer.appendChild(menu);
+        articleContextMenu = menu;
+
+        const margin = 8;
+        const menuRect = menu.getBoundingClientRect();
+        const left = Math.max(margin, Math.min(window.innerWidth - menuRect.width - margin, event.clientX));
+        const top = Math.max(margin, Math.min(window.innerHeight - menuRect.height - margin, event.clientY));
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
+
+        articleContextMenuOutsideHandler = (outsideEvent) => {
+          const path = typeof outsideEvent.composedPath === 'function' ? outsideEvent.composedPath() : [];
+          if (articleContextMenu && !path.includes(articleContextMenu) && !articleContextMenu.contains(outsideEvent.target)) {
+            closeArticleContextMenu();
+          }
+        };
+        articleContextMenuKeydownHandler = (keyEvent) => {
+          if (keyEvent.key === 'Escape') {
+            keyEvent.preventDefault();
+            closeArticleContextMenu();
+          }
+        };
+        setTimeout(() => {
+          if (articleContextMenu) {
+            document.addEventListener('pointerdown', articleContextMenuOutsideHandler, true);
+            document.addEventListener('keydown', articleContextMenuKeydownHandler, true);
+          }
+        }, 0);
+      };
+
+      articleArea.addEventListener('contextmenu', (event) => {
+        const value = String(articleArea.value || '');
+        const savedSelection = articleArea.__dev1MdLastSelection || {};
+        const rawStart = Number.isFinite(articleArea.selectionStart) ? articleArea.selectionStart : savedSelection.start;
+        const rawEnd = Number.isFinite(articleArea.selectionEnd) ? articleArea.selectionEnd : savedSelection.end;
+        const start = Math.max(0, Math.min(value.length, Math.min(rawStart, rawEnd)));
+        const end = Math.max(start, Math.min(value.length, Math.max(rawStart, rawEnd)));
+        if (end <= start) {
+          closeArticleContextMenu();
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        showArticleContextMenu(event, start, end);
+      });
 
       // Create TOC Button
       const tocBtn = document.createElement('button');
       tocBtn.type = 'button';
       tocBtn.dataset.noDrag = 'true';
-      tocBtn.title = '文章目录';
-      tocBtn.setAttribute('aria-label', '文章目录');
+      tocBtn.title = this.t('md_settings_toc');
+      tocBtn.setAttribute('aria-label', this.t('md_settings_toc'));
       tocBtn.style.cssText = `
         width: 22px;
         height: 22px;
@@ -9451,7 +9676,7 @@
         
         if (tocItems.length === 0) {
           const noToc = document.createElement('div');
-          noToc.textContent = '无目录项';
+          noToc.textContent = this.t('md_settings_no_toc');
           noToc.style.cssText = `
             padding: 16px;
             color: var(--text-muted);
@@ -9597,7 +9822,7 @@
           flex-shrink: 0;
         `;
         tocHeader.innerHTML = `
-          <span>文章目录</span>
+          <span>${this.t('md_settings_toc')}</span>
           <button type="button" class="toc-close-btn" style="
             border: 0; background: transparent; color: var(--text-muted);
             font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 6px;
@@ -9677,8 +9902,8 @@
       const searchBtn = document.createElement('button');
       searchBtn.type = 'button';
       searchBtn.dataset.noDrag = 'true';
-      searchBtn.title = '搜索正文';
-      searchBtn.setAttribute('aria-label', '搜索正文');
+      searchBtn.title = this.t('md_settings_search_article');
+      searchBtn.setAttribute('aria-label', this.t('md_settings_search_article'));
       searchBtn.style.cssText = `
         width: 22px;
         height: 22px;
@@ -9729,7 +9954,7 @@
         const textValue = articleArea.value || '';
         if (!query) {
           const hint = document.createElement('div');
-          hint.textContent = '输入关键词搜索正文';
+          hint.textContent = this.t('md_settings_search_hint');
           hint.style.cssText = 'padding: 18px 12px; color: var(--text-muted); font-size: 12px; text-align: center;';
           results.appendChild(hint);
           return;
@@ -9748,7 +9973,7 @@
 
         if (matches.length === 0) {
           const empty = document.createElement('div');
-          empty.textContent = '未找到匹配内容';
+          empty.textContent = this.t('md_settings_search_empty');
           empty.style.cssText = 'padding: 18px 12px; color: var(--text-muted); font-size: 12px; text-align: center;';
           results.appendChild(empty);
           return;
@@ -9757,7 +9982,7 @@
         matches.forEach((matchIndex, occurrenceIndex) => {
           const item = document.createElement('button');
           item.type = 'button';
-          item.title = `第 ${occurrenceIndex + 1} 个匹配`;
+          item.title = this.t('md_settings_search_match').replace('{n}', String(occurrenceIndex + 1));
           item.style.cssText = `
             display: flex;
             align-items: flex-start;
@@ -9809,7 +10034,7 @@
 
         if (matches.length === 100 && sourceLower.indexOf(queryLower, searchFrom) >= 0) {
           const limit = document.createElement('div');
-          limit.textContent = '仅显示前 100 个结果';
+          limit.textContent = this.t('md_settings_search_limit');
           limit.style.cssText = 'padding: 8px 10px 10px; color: var(--text-muted); font-size: 11px; text-align: center;';
           results.appendChild(limit);
         }
@@ -9849,8 +10074,8 @@
         searchHeader.style.cssText = 'display:flex; align-items:center; gap:6px; padding:8px; border-bottom:1px solid var(--panel-border); flex-shrink:0;';
         const searchInput = document.createElement('input');
         searchInput.type = 'search';
-        searchInput.placeholder = '搜索正文内容...';
-        searchInput.setAttribute('aria-label', '搜索正文内容');
+        searchInput.placeholder = this.t('md_settings_search_placeholder');
+        searchInput.setAttribute('aria-label', this.t('md_settings_search_placeholder'));
         searchInput.autocomplete = 'off';
         searchInput.spellcheck = false;
         searchInput.style.cssText = `
@@ -9867,8 +10092,8 @@
         `;
         const closeSearchBtn = document.createElement('button');
         closeSearchBtn.type = 'button';
-        closeSearchBtn.title = '关闭搜索';
-        closeSearchBtn.setAttribute('aria-label', '关闭搜索');
+        closeSearchBtn.title = this.t('md_settings_close_search');
+        closeSearchBtn.setAttribute('aria-label', this.t('md_settings_close_search'));
         closeSearchBtn.textContent = '×';
         closeSearchBtn.style.cssText = 'width:24px; height:24px; border:0; border-radius:5px; background:transparent; color:var(--text-muted); cursor:pointer; font-size:16px; line-height:1; padding:0;';
         closeSearchBtn.addEventListener('click', (event) => {
@@ -9974,7 +10199,7 @@
       const createPanelResizeHandle = () => {
         const handle = document.createElement('div');
         handle.dataset.noDrag = 'true';
-        handle.title = '拖动调整面板宽度';
+        handle.title = this.t('md_settings_resize');
         handle.style.cssText = `
           position: absolute;
           top: 0;
@@ -10061,9 +10286,9 @@
         helpPopover = document.createElement('div');
         helpPopover.className = 'md-help-popover';
         helpPopover.innerHTML = `
-          <div>1. 可以拖动图片进入模板、笔记或正文输入框；有 http/https 链接的图片会保留链接，本地或临时图片会临时存储并在导出时转为 Base64。</div>
-          <div style="margin-top:6px;">2. 如果处于「队列批量处理」，这里的改变会临时存储，跟随 URL；Tab 页关闭后对应临时存储会清除。</div>
-          <div style="margin-top:6px;">3. <span style="color:#f59e0b;">每次打开本面板</span>都会重新获取一次「正文（提取结果）」并<span style="color:#f59e0b;">更新正文框</span>。</div>
+          <div>${this.t('md_settings_help_1')}</div>
+          <div style="margin-top:6px;">${this.t('md_settings_help_2')}</div>
+          <div style="margin-top:6px;">${this.t('md_settings_help_3')}</div>
         `;
         panel.appendChild(helpPopover);
         helpPopoverOutsideHandler = (outsideEvent) => {
@@ -10084,7 +10309,7 @@
       let isPinned = true;
       const pinBtn = header.querySelector('.md-settings-pin');
       const updatePinUI = () => {
-        pinBtn.title = isPinned ? '取消置顶' : '置顶';
+        pinBtn.title = isPinned ? this.t('md_settings_unpin') : this.t('md_settings_pin');
         const svg = pinBtn.querySelector('svg');
         if (svg) {
           svg.style.fill = isPinned ? 'currentColor' : 'none';
@@ -10175,7 +10400,7 @@
         if (button.disabled) return;
         button.disabled = true;
         button.style.opacity = '0.65';
-        button.textContent = '导出中...';
+        button.textContent = this.t('md_settings_exporting');
         try {
           await saveContent();
           this._removeMdSettingsPanel();
@@ -10183,7 +10408,7 @@
         } finally {
           button.disabled = false;
           button.style.opacity = '1';
-          button.textContent = '导出';
+          button.textContent = this.t('md_settings_export');
         }
       };
       templateExportBtn.addEventListener('click', () => exportMarkdown(templateExportBtn));
